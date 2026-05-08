@@ -1,0 +1,25 @@
+{
+  "name": "preview-campaign",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "backend-queue",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,queue,frontend -c blue,magenta,green \"npm run dev --workspace=backend\" \"npm run dev --workspace=backend-queue\" \"npm run dev --workspace=frontend\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:queue": "npm run dev --workspace=backend-queue",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=backend-queue && npm run build --workspace=frontend",
+    "db:migrate": "npm run migrate --workspace=backend",
+    "db:seed": "npm run seed --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "cron-parser": "^5.5.0"
+  }
+}

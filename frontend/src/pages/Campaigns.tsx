@@ -1,0 +1,683 @@
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import {
+  getCampaigns,
+  createCampaign,
+  updateCampaign,
+  deleteCampaign,
+  runCampaign,
+  stopCampaign,
+  getContactLists,
+  getDncGroups,
+  listScheduleTemplates,
+  listHolidayCalendars,
+} from '../api/client';
+import {
+  Card,
+  Table,
+  StatusBadge,
+  Button,
+  Modal,
+  Input,
+  Select,
+  PageLoader,
+  EmptyState,
+} from '../components/ui';
+import {
+  Plus,
+  Play,
+  Pause,
+  ChevronRight,
+  ArrowLeft,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
+
+export default function CampaignsPage() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [step, setStep] = useState(1);
+  // Edit-mode reuses the same form / modal; null means "create" mode.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [form, setForm] = useState({
+    name: '',
+    schedule_type: 'finite',
+    max_attempts: '5',
+    attempt_interval_min: '90',
+    auto_dial_delay_sec: '8',
+    caller_id: '',
+    start_date: '',
+    end_date: '',
+    agent_priority_enabled: false,
+    contact_list_ids: [] as string[],
+    schedule_template_id: '',
+    holiday_calendar_id: '',
+    dnc_group_ids: [] as string[],
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: getCampaigns,
+  });
+  const { data: lists } = useQuery({
+    queryKey: ['contact-lists'],
+    queryFn: getContactLists,
+  });
+  const { data: templates } = useQuery({
+    queryKey: ['schedule-templates'],
+    queryFn: listScheduleTemplates,
+  });
+  const { data: calendars } = useQuery({
+    queryKey: ['holiday-calendars'],
+    queryFn: listHolidayCalendars,
+  });
+  const { data: dncGroups } = useQuery({
+    queryKey: ['dnc-groups'],
+    queryFn: getDncGroups,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      createCampaign({
+        ...form,
+        max_attempts:
+          form.schedule_type === 'infinite'
+            ? null
+            : parseInt(form.max_attempts),
+        attempt_interval_min: parseInt(form.attempt_interval_min),
+        auto_dial_delay_sec: parseInt(form.auto_dial_delay_sec),
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      closeCreate();
+    },
+  });
+
+  // Edit only patches the fields the PATCH endpoint understands; contact
+  // lists are not editable from this page (they're set at create time).
+  const editMut = useMutation({
+    mutationFn: () =>
+      updateCampaign(editingId!, {
+        name: form.name,
+        max_attempts:
+          form.schedule_type === 'infinite'
+            ? null
+            : parseInt(form.max_attempts),
+        attempt_interval_min: parseInt(form.attempt_interval_min),
+        auto_dial_delay_sec: parseInt(form.auto_dial_delay_sec),
+        agent_priority_enabled: form.agent_priority_enabled,
+        schedule_template_id: form.schedule_template_id,
+        holiday_calendar_id: form.holiday_calendar_id,
+        dnc_group_ids: form.dnc_group_ids,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      closeCreate();
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteCampaign(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      setDeleteTarget(null);
+    },
+  });
+
+  const runMut = useMutation({
+    mutationFn: (id: string) => runCampaign(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+  const stopMut = useMutation({
+    mutationFn: (id: string) => stopCampaign(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+  });
+
+  const resetForm = () =>
+    setForm({
+      name: '',
+      schedule_type: 'finite',
+      max_attempts: '5',
+      attempt_interval_min: '90',
+      auto_dial_delay_sec: '8',
+      caller_id: '',
+      start_date: '',
+      end_date: '',
+      agent_priority_enabled: false,
+      contact_list_ids: [],
+      schedule_template_id: '',
+      holiday_calendar_id: '',
+      dnc_group_ids: [],
+    });
+
+  const closeCreate = () => {
+    setShowCreate(false);
+    setEditingId(null);
+    setStep(1);
+    resetForm();
+  };
+
+  const openEdit = (r: any) => {
+    setEditingId(r.id);
+    setForm({
+      name: r.name || '',
+      schedule_type: r.schedule_type || 'finite',
+      max_attempts: r.max_attempts != null ? String(r.max_attempts) : '5',
+      attempt_interval_min: String(r.attempt_interval_min ?? 90),
+      auto_dial_delay_sec: String(r.auto_dial_delay_sec ?? 8),
+      caller_id: r.caller_id || '',
+      start_date: r.start_date ? String(r.start_date).slice(0, 10) : '',
+      end_date: r.end_date ? String(r.end_date).slice(0, 10) : '',
+      agent_priority_enabled: !!r.agent_priority_enabled,
+      contact_list_ids: (r.contact_lists || []).map((l: any) => l.id),
+      schedule_template_id: r.schedule_template_id || '',
+      holiday_calendar_id: r.holiday_calendar_id || '',
+      // Pre-fill from the junction array exposed by the list endpoint; fall
+      // back to the legacy single column for older rows.
+      dnc_group_ids: Array.isArray(r.dnc_group_ids)
+        ? r.dnc_group_ids
+        : r.dnc_group_id
+          ? [r.dnc_group_id]
+          : [],
+    });
+    setStep(1);
+    setShowCreate(true);
+  };
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  if (isLoading) return <PageLoader />;
+
+  return (
+    <div className='p-6 space-y-5'>
+      <div className='flex items-center justify-between'>
+        <div>
+          <h1 className='text-xl font-bold text-gray-900'>Campaigns</h1>
+          <p className='text-sm text-gray-400 mt-0.5'>
+            {data?.data?.length || 0} campaigns total
+          </p>
+        </div>
+        <Button
+          icon={<Plus className='w-4 h-4' />}
+          onClick={() => setShowCreate(true)}
+        >
+          New Campaign
+        </Button>
+      </div>
+
+      <Card>
+        {data?.data?.length === 0 ? (
+          <EmptyState
+            title='No campaigns yet'
+            description='Create your first campaign to start outbound calling.'
+            action={
+              <Button
+                icon={<Plus className='w-4 h-4' />}
+                onClick={() => setShowCreate(true)}
+              >
+                Create Campaign
+              </Button>
+            }
+          />
+        ) : (
+          <Table
+            cols={[
+              {
+                header: 'Name',
+                render: (r: any) => (
+                  <div>
+                    <div className='font-medium text-gray-900'>{r.name}</div>
+                    {r.agent_priority_enabled && (
+                      <span className='text-xs text-indigo-500'>
+                        Agent priority
+                      </span>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                header: 'Type',
+                render: (r: any) => <StatusBadge status={r.schedule_type} />,
+              },
+              {
+                header: 'Status',
+                render: (r: any) => <StatusBadge status={r.status} />,
+              },
+              {
+                header: 'Max Attempts',
+                render: (r: any) => r.max_attempts || '∞',
+              },
+              {
+                header: 'Actions',
+                width: '180px',
+                render: (r: any) => (
+                  <div
+                    className='flex items-center gap-1'
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {r.status === 'active' ? (
+                      <button
+                        onClick={() => stopMut.mutate(r.id)}
+                        disabled={stopMut.isPending}
+                        title='Pause campaign'
+                        className='p-1.5 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50'
+                      >
+                        <Pause className='w-4 h-4' />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => runMut.mutate(r.id)}
+                        disabled={runMut.isPending}
+                        title='Run campaign'
+                        className='p-1.5 rounded-md text-green-600 hover:text-green-700 hover:bg-green-50 transition disabled:opacity-50'
+                      >
+                        <Play className='w-4 h-4' />
+                      </button>
+                    )}
+                    {r.status !== 'active' ? (
+                      <button
+                        onClick={() => openEdit(r)}
+                        title='Edit campaign'
+                        className='p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition'
+                      >
+                        <Pencil className='w-4 h-4' />
+                      </button>
+                    ) : (
+                      <span className='w-7 h-7 inline-block' />
+                    )}
+                    {r.status !== 'active' ? (
+                      <button
+                        onClick={() => setDeleteTarget(r)}
+                        title='Delete campaign'
+                        className='p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition'
+                      >
+                        <Trash2 className='w-4 h-4' />
+                      </button>
+                    ) : (
+                      <span className='w-7 h-7 inline-block' />
+                    )}
+                    <button
+                      onClick={() => navigate(`/campaigns/${r.id}`)}
+                      title='View details'
+                      className='p-1.5 rounded-md text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition'
+                    >
+                      <ChevronRight className='w-4 h-4' />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={data?.data || []}
+            keyFn={(r: any) => r.id}
+            onRowClick={(r: any) => navigate(`/campaigns/${r.id}`)}
+          />
+        )}
+      </Card>
+
+      {/* Create / Edit Modal */}
+      <Modal
+        title={editingId ? 'Edit Campaign' : 'Create Campaign'}
+        open={showCreate}
+        onClose={closeCreate}
+        size='lg'
+      >
+        <div className='space-y-4'>
+          {/* Step indicator */}
+          <div className='flex items-center gap-2 text-xs'>
+            <span
+              className={
+                step === 1
+                  ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
+                  : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
+              }
+            >
+              1. Details
+            </span>
+            <span className='text-gray-300'>—</span>
+            <span
+              className={
+                step === 2
+                  ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
+                  : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
+              }
+            >
+              2. Contacts & Routing
+            </span>
+          </div>
+
+          {step === 1 && (
+            <>
+              <Input
+                label='Campaign Name *'
+                value={form.name}
+                onChange={(e) => set('name', e.target.value)}
+                placeholder='e.g. Q2 Loan Outreach'
+              />
+
+              <div className='grid grid-cols-2 gap-3'>
+                <Select
+                  label='Schedule Type'
+                  value={form.schedule_type}
+                  onChange={(e) => set('schedule_type', e.target.value)}
+                  options={[
+                    { value: 'finite', label: 'Finite (runs to completion)' },
+                    {
+                      value: 'infinite',
+                      label: 'Infinite (runs until stopped)',
+                    },
+                  ]}
+                />
+                <Input
+                  label='Auto-dial Delay (seconds)'
+                  type='number'
+                  value={form.auto_dial_delay_sec}
+                  onChange={(e) => set('auto_dial_delay_sec', e.target.value)}
+                />
+              </div>
+
+              {form.schedule_type === 'finite' && (
+                <div className='grid grid-cols-2 gap-3'>
+                  <Input
+                    label='Max Attempts'
+                    type='number'
+                    value={form.max_attempts}
+                    onChange={(e) => set('max_attempts', e.target.value)}
+                  />
+                  <Input
+                    label='Retry Interval (minutes)'
+                    type='number'
+                    value={form.attempt_interval_min}
+                    onChange={(e) =>
+                      set('attempt_interval_min', e.target.value)
+                    }
+                  />
+                </div>
+              )}
+
+              <Input
+                label='Caller ID (E.164 format)'
+                value={form.caller_id}
+                onChange={(e) => set('caller_id', e.target.value)}
+                placeholder='+18005550100'
+              />
+
+              <div className='flex gap-3 pt-2'>
+                <Button
+                  variant='secondary'
+                  className='flex-1'
+                  onClick={closeCreate}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className='flex-1'
+                  disabled={!form.name}
+                  onClick={() => setStep(2)}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              {/* Contact lists — edit-mode shows them read-only because the
+                  PATCH endpoint does not support changing list assignments. */}
+              {editingId ? (
+                <div>
+                  <label className='block text-xs text-gray-500 mb-1'>
+                    Contact Lists
+                  </label>
+                  <div className='border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm text-gray-600'>
+                    {form.contact_list_ids.length
+                      ? (lists?.data || [])
+                          .filter((l: any) =>
+                            form.contact_list_ids.includes(l.id),
+                          )
+                          .map((l: any) => l.name)
+                          .join(', ') || '—'
+                      : '—'}
+                    <p className='text-xs text-gray-400 mt-1'>
+                      Contact list assignments are fixed at creation time.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className='block text-xs text-gray-500 mb-1'>
+                    Contact Lists *
+                  </label>
+                  <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto'>
+                    {lists?.data?.length === 0 && (
+                      <p className='text-xs text-gray-400 p-3'>
+                        No contact lists. Create one first.
+                      </p>
+                    )}
+                    {lists?.data?.map((l: any) => (
+                      <label
+                        key={l.id}
+                        className='flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer'
+                      >
+                        <input
+                          type='checkbox'
+                          value={l.id}
+                          checked={form.contact_list_ids.includes(l.id)}
+                          onChange={(e) =>
+                            set(
+                              'contact_list_ids',
+                              e.target.checked
+                                ? [...form.contact_list_ids, l.id]
+                                : form.contact_list_ids.filter(
+                                    (x: string) => x !== l.id,
+                                  ),
+                            )
+                          }
+                          className='w-4 h-4 text-indigo-600 rounded'
+                        />
+                        <div>
+                          <div className='text-sm font-medium text-gray-900'>
+                            {l.name}
+                          </div>
+                          <div className='text-xs text-gray-400'>
+                            {l.contact_count} contacts
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className='grid grid-cols-2 gap-3'>
+                <Input
+                  label='Start Date'
+                  type='date'
+                  value={form.start_date}
+                  onChange={(e) => set('start_date', e.target.value)}
+                />
+                <Input
+                  label='End Date'
+                  type='date'
+                  value={form.end_date}
+                  onChange={(e) => set('end_date', e.target.value)}
+                />
+              </div>
+
+              {/* Routing assignments — optional FKs on campaigns */}
+              <Select
+                label='Schedule Template'
+                value={form.schedule_template_id}
+                onChange={(e) => set('schedule_template_id', e.target.value)}
+                options={[
+                  { value: '', label: '— None —' },
+                  ...(templates?.data || []).map((t: any) => ({
+                    value: t.id,
+                    label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
+                  })),
+                ]}
+              />
+              <div className='grid grid-cols-2 gap-3'>
+                <Select
+                  label='Holiday Calendar'
+                  value={form.holiday_calendar_id}
+                  onChange={(e) => set('holiday_calendar_id', e.target.value)}
+                  options={[
+                    { value: '', label: '— None —' },
+                    ...(calendars?.data || []).map((c: any) => ({
+                      value: c.id,
+                      label: c.country_code
+                        ? `${c.name} (${c.country_code})`
+                        : c.name,
+                    })),
+                  ]}
+                />
+                <div>
+                  <label className='block text-xs text-gray-500 mb-1'>
+                    DNC Groups
+                  </label>
+                  <div className='border border-gray-200 rounded-lg max-h-32 overflow-y-auto p-2 space-y-1 bg-white'>
+                    {(dncGroups?.data || []).length === 0 ? (
+                      <p className='text-xs text-gray-400 px-1 py-1'>
+                        No DNC groups yet.
+                      </p>
+                    ) : (
+                      (dncGroups?.data || []).map((g: any) => {
+                        const checked = form.dnc_group_ids.includes(g.id);
+                        return (
+                          <label
+                            key={g.id}
+                            className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'
+                          >
+                            <input
+                              type='checkbox'
+                              checked={checked}
+                              onChange={(e) =>
+                                set(
+                                  'dnc_group_ids',
+                                  e.target.checked
+                                    ? [...form.dnc_group_ids, g.id]
+                                    : form.dnc_group_ids.filter(
+                                        (id) => id !== g.id,
+                                      ),
+                                )
+                              }
+                              className='rounded border-gray-300'
+                            />
+                            <span className='truncate'>{g.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                  <p className='text-xs text-gray-400 mt-1'>
+                    {form.dnc_group_ids.length
+                      ? `${form.dnc_group_ids.length} selected`
+                      : 'None selected — campaign will not suppress any numbers.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Agent priority */}
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input
+                  type='checkbox'
+                  checked={form.agent_priority_enabled}
+                  onChange={(e) =>
+                    set('agent_priority_enabled', e.target.checked)
+                  }
+                  className='w-4 h-4 text-indigo-600 rounded'
+                />
+                <div>
+                  <div className='text-sm font-medium text-gray-900'>
+                    Enable Agent Priority
+                  </div>
+                  <div className='text-xs text-gray-400'>
+                    Route contacts to their assigned agent
+                  </div>
+                </div>
+              </label>
+
+              <div className='flex gap-3 pt-2'>
+                <Button
+                  variant='secondary'
+                  className='flex-1'
+                  icon={<ArrowLeft className='w-4 h-4' />}
+                  onClick={() => setStep(1)}
+                >
+                  Back
+                </Button>
+                <Button
+                  className='flex-1'
+                  loading={editingId ? editMut.isPending : createMut.isPending}
+                  disabled={
+                    !form.name || (!editingId && !form.contact_list_ids.length)
+                  }
+                  onClick={() =>
+                    editingId ? editMut.mutate() : createMut.mutate()
+                  }
+                >
+                  {editingId ? 'Save Changes' : 'Create Campaign'}
+                </Button>
+              </div>
+              {(editingId ? editMut.isError : createMut.isError) && (
+                <p className='text-xs text-red-500'>
+                  {
+                    ((editingId ? editMut.error : createMut.error) as any)
+                      ?.response?.data?.error
+                  }
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <Modal
+        title='Delete campaign?'
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        size='sm'
+      >
+        <div className='space-y-4'>
+          <p className='text-sm text-gray-600'>
+            This will permanently delete{' '}
+            <span className='font-medium text-gray-900'>
+              {deleteTarget?.name}
+            </span>{' '}
+            and all of its job history. This action cannot be undone.
+          </p>
+          {deleteMut.isError && (
+            <p className='text-xs text-red-500'>
+              {(deleteMut.error as any)?.response?.data?.error ||
+                'Delete failed'}
+            </p>
+          )}
+          <div className='flex gap-3'>
+            <Button
+              variant='secondary'
+              className='flex-1'
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant='danger'
+              className='flex-1'
+              loading={deleteMut.isPending}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
