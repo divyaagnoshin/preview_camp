@@ -256,8 +256,8 @@ export default function DNCPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-xl font-bold text-gray-900'>DNC Management</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>DNC Management</h1>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
             Do Not Call suppression lists
           </p>
         </div>

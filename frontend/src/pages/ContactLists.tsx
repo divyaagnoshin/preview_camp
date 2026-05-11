@@ -107,8 +107,8 @@ export function ContactListsPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-xl font-bold text-gray-900'>Contact Lists</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Contact Lists</h1>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
             {data?.data?.length || 0} lists total
           </p>
         </div>
@@ -881,9 +881,9 @@ export function ContactListDetailPage() {
           <ArrowLeft className='w-4 h-4 text-gray-500' />
         </button>
         <div className='flex-1'>
-          <h1 className='text-xl font-bold text-gray-900'>{data.name}</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>{data.name}</h1>
           {data.description && (
-            <p className='text-sm text-gray-400 mt-0.5'>{data.description}</p>
+            <p className='text-sm text-[#7A5C44] mt-0.5'>{data.description}</p>
           )}
         </div>
         <div className='flex gap-2'>

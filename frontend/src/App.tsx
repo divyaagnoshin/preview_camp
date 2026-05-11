@@ -23,6 +23,8 @@ import {
 import DNCPage from './pages/DNC';
 import AgentsPage from './pages/Agents';
 import ReportsPage from './pages/Reports';
+import OrganizationsPage from './pages/Organizations';
+import OrganizationDetailPage from './pages/OrganizationDetail';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -37,8 +39,10 @@ function PrivateRoute({
 }) {
   const { token, user } = useAuth();
   if (!token) return <Navigate to='/login' replace />;
-  if (roles && user && !roles.includes(user.role))
-    return <Navigate to='/workspace' replace />;
+  if (roles && user && !roles.includes(user.role)) {
+    const fallback = user.role === 'superadmin' ? '/organizations' : '/workspace';
+    return <Navigate to={fallback} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -79,7 +83,7 @@ function AppRoutes() {
       <Route
         path='/campaigns'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <CampaignsPage />
             </Layout>
@@ -89,7 +93,7 @@ function AppRoutes() {
       <Route
         path='/campaigns/:id'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <CampaignDetailPage />
             </Layout>
@@ -99,7 +103,7 @@ function AppRoutes() {
       <Route
         path='/jobs'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <JobsPage />
             </Layout>
@@ -109,7 +113,7 @@ function AppRoutes() {
       <Route
         path='/jobs/:id'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <JobDetailPage />
             </Layout>
@@ -119,7 +123,7 @@ function AppRoutes() {
       <Route
         path='/contact-lists'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ContactListsPage />
             </Layout>
@@ -129,7 +133,7 @@ function AppRoutes() {
       <Route
         path='/contact-lists/:id'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ContactListDetailPage />
             </Layout>
@@ -139,7 +143,7 @@ function AppRoutes() {
       <Route
         path='/contact-lists/:id/attributes'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ContactListAttributesPage />
             </Layout>
@@ -149,7 +153,7 @@ function AppRoutes() {
       <Route
         path='/contact-lists/:id/attributes/new'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ContactListAttributesNewPage />
             </Layout>
@@ -159,7 +163,7 @@ function AppRoutes() {
       <Route
         path='/holiday-calendars'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <HolidayCalendarsPage />
             </Layout>
@@ -169,7 +173,7 @@ function AppRoutes() {
       <Route
         path='/holiday-calendars/:id'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <HolidayCalendarDetailPage />
             </Layout>
@@ -179,7 +183,7 @@ function AppRoutes() {
       <Route
         path='/schedule-templates'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ScheduleTemplatesPage />
             </Layout>
@@ -189,7 +193,7 @@ function AppRoutes() {
       <Route
         path='/schedule-templates/:id'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ScheduleTemplateDetailPage />
             </Layout>
@@ -199,7 +203,7 @@ function AppRoutes() {
       <Route
         path='/dnc'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <DNCPage />
             </Layout>
@@ -209,7 +213,7 @@ function AppRoutes() {
       <Route
         path='/agents'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <AgentsPage />
             </Layout>
@@ -219,9 +223,29 @@ function AppRoutes() {
       <Route
         path='/reports'
         element={
-          <PrivateRoute roles={['admin', 'supervisor']}>
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/organizations'
+        element={
+          <PrivateRoute roles={['superadmin']}>
+            <Layout>
+              <OrganizationsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/organizations/:id'
+        element={
+          <PrivateRoute roles={['superadmin']}>
+            <Layout>
+              <OrganizationDetailPage />
             </Layout>
           </PrivateRoute>
         }

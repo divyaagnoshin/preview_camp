@@ -215,8 +215,8 @@ export default function ContactListAttributesPage() {
           <ArrowLeft className='w-4 h-4 text-gray-500' />
         </button>
         <div className='flex-1'>
-          <h1 className='text-xl font-bold text-gray-900'>Manage Attributes</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Manage Attributes</h1>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
             {list?.name} · {selectedIds.length} of {data?.data?.length || 0}{' '}
             selected
           </p>

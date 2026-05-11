@@ -5,9 +5,35 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Org-context helpers — superadmin only. When set, every request carries the
+// X-Org-Context header so the backend scopes admin-only queries (campaigns,
+// jobs, contact lists, agents, reports …) to the chosen tenant.
+const ORG_CTX_KEY = 'org_context';
+export interface OrgContext {
+  id: string;
+  name: string;
+}
+export function getOrgContext(): OrgContext | null {
+  const raw = localStorage.getItem(ORG_CTX_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as OrgContext;
+  } catch {
+    return null;
+  }
+}
+export function setOrgContext(ctx: OrgContext): void {
+  localStorage.setItem(ORG_CTX_KEY, JSON.stringify(ctx));
+}
+export function clearOrgContext(): void {
+  localStorage.removeItem(ORG_CTX_KEY);
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const ctx = getOrgContext();
+  if (ctx?.id) config.headers['X-Org-Context'] = ctx.id;
   return config;
 });
 
@@ -25,6 +51,77 @@ api.interceptors.response.use(
 // ── Auth ──────────────────────────────────────────────────
 export const login = (email: string, password: string) =>
   api.post('/auth/login', { email, password }).then((r) => r.data);
+
+// ── Organizations (superadmin) ────────────────────────────
+export interface Organization {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  admin_count?: number;
+  user_count?: number;
+}
+export interface OrgAdmin {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+export const listOrganizations = (): Promise<{ data: Organization[] }> =>
+  api.get('/organizations').then((r) => r.data);
+export const createOrganization = (body: {
+  name: string;
+  description?: string;
+}): Promise<Organization> =>
+  api.post('/organizations', body).then((r) => r.data);
+export const updateOrganization = (
+  id: string,
+  body: { name?: string; description?: string | null },
+): Promise<Organization> =>
+  api.patch(`/organizations/${id}`, body).then((r) => r.data);
+export const deleteOrganization = (id: string): Promise<void> =>
+  api.delete(`/organizations/${id}`).then((r) => r.data);
+export const listOrgAdmins = (
+  orgId: string,
+): Promise<{ data: OrgAdmin[] }> =>
+  api.get(`/organizations/${orgId}/admins`).then((r) => r.data);
+export const createOrgAdmin = (
+  orgId: string,
+  body: {
+    email: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+  },
+): Promise<OrgAdmin> =>
+  api.post(`/organizations/${orgId}/admins`, body).then((r) => r.data);
+
+// Detail + cross-role user management for the org-detail page (superadmin).
+export const getOrganization = (id: string): Promise<Organization> =>
+  api.get(`/organizations/${id}`).then((r) => r.data);
+export const listOrgUsers = (
+  orgId: string,
+): Promise<{ data: OrgAdmin[] }> =>
+  api.get(`/organizations/${orgId}/users`).then((r) => r.data);
+export const createOrgUser = (
+  orgId: string,
+  body: {
+    email: string;
+    password: string;
+    first_name: string;
+    last_name: string;
+    role: 'admin' | 'supervisor' | 'agent';
+  },
+): Promise<OrgAdmin> =>
+  api.post(`/organizations/${orgId}/users`, body).then((r) => r.data);
+export const deleteOrgUser = (orgId: string, userId: string): Promise<void> =>
+  api
+    .delete(`/organizations/${orgId}/users/${userId}`)
+    .then((r) => r.data);
 
 // ── Campaigns ─────────────────────────────────────────────
 export const getCampaigns = (params?: any) =>
@@ -341,6 +438,52 @@ export const sendHeartbeat = () =>
   api.post('/sessions/heartbeat', {}).then((r) => r.data);
 export const goOffline = () =>
   api.patch('/sessions/offline', {}).then((r) => r.data);
+
+// ── Agents (admin management) ─────────────────────────────
+export interface AgentUser {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+export interface AgentSession {
+  id: string;
+  agent_id: string;
+  selected_job_ids: string[];
+  status: 'offline' | 'available' | 'with_agent';
+  current_contact_id: string | null;
+  current_job_id: string | null;
+  login_at: string;
+  logout_at: string | null;
+  last_heartbeat_at: string;
+  current_phone_number: string | null;
+  current_first_name: string | null;
+  current_last_name: string | null;
+  current_campaign_name: string | null;
+}
+export const listAgents = (): Promise<{ data: AgentUser[] }> =>
+  api.get('/agents').then((r) => r.data);
+export const listAgentSessions = (): Promise<{ data: AgentSession[] }> =>
+  api.get('/sessions').then((r) => r.data);
+export const createAgent = (body: {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  role?: 'agent' | 'supervisor' | 'admin';
+}): Promise<AgentUser> => api.post('/agents', body).then((r) => r.data);
+export const updateAgent = (
+  id: string,
+  body: { is_active?: boolean; first_name?: string; last_name?: string },
+): Promise<AgentUser> =>
+  api.patch(`/agents/${id}`, body).then((r) => r.data);
+export const deleteAgent = (
+  id: string,
+): Promise<void | { id: string; deactivated: boolean; reason: string }> =>
+  api.delete(`/agents/${id}`).then((r) => r.data);
 
 // ── Reports ───────────────────────────────────────────────
 export const getCampaignReport = (id: string, params?: any) =>

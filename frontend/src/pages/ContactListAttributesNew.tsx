@@ -105,7 +105,7 @@ export default function ContactListAttributesNewPage() {
           <h1 className='text-base'>
             <button
               onClick={() => navigate(`/contact-lists/${id}/attributes`)}
-              className='text-indigo-600 hover:underline font-semibold'
+              className='text-[#F4521E] hover:underline font-semibold font-semibold'
             >
               Contact Attributes
             </button>

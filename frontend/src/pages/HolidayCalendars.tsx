@@ -51,7 +51,7 @@ const COUNTRY_OPTIONS = [
   { value: 'AE', label: '🇦🇪 UAE' },
 ];
 const flagFor = (code: string | null) =>
-  COUNTRY_OPTIONS.find((c) => c.value === code)?.label ?? code ?? '—';
+  COUNTRY_OPTIONS.find((c) => c.value === code)?.label ?? code ?? ' ';
 
 // ── Page 1: Calendars list ───────────────────────────────────
 export function HolidayCalendarsPage() {
@@ -80,7 +80,7 @@ export function HolidayCalendarsPage() {
   const rows = data?.data || [];
 
   return (
-    <div className='p-6 space-y-6'>
+    <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
       <div className='flex items-center justify-between'>
         <div>
           <h1 className='text-2xl font-bold text-gray-900'>Holidays</h1>
@@ -244,6 +244,7 @@ export function HolidayCalendarsPage() {
             setShowCreate(false);
             setEditTarget(null);
           }}
+          onCreated={(id) => navigate(`/holiday-calendars/${id}`)}
         />
       )}
     </div>
@@ -254,9 +255,11 @@ export function HolidayCalendarsPage() {
 function CalendarEditor({
   target,
   onClose,
+  onCreated,
 }: {
   target: HolidayCalendar | null;
   onClose: () => void;
+  onCreated?: (id: string) => void;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(target?.name ?? '');
@@ -270,9 +273,13 @@ function CalendarEditor({
         ? updateHolidayCalendar(target!.id, body)
         : createHolidayCalendar(body);
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['holiday-calendars'] });
-      onClose();
+      if (!isEdit && onCreated) {
+        onCreated(res.id);
+      } else {
+        onClose();
+      }
     },
     onError: (e: any) => alert(e?.response?.data?.error || 'Save failed'),
   });
@@ -375,7 +382,7 @@ export function HolidayCalendarDetailPage() {
   });
 
   return (
-    <div className='p-6 space-y-6'>
+    <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
       <div className='flex items-center justify-between'>
         <div className='flex items-center gap-3'>
           <button
@@ -408,9 +415,9 @@ export function HolidayCalendarDetailPage() {
       </div>
 
       <div className='grid grid-cols-3 gap-4'>
-        <StatCard label='Total in Year' value={rows.length} color='indigo' />
-        <StatCard label='Full-Day Blocks' value={fullDayCount} color='green' />
-        <StatCard label='Time-Range Blocks' value={blockCount} color='orange' />
+        <StatCard label='Total in Year' value={rows.length} />
+        <StatCard label='Full-Day Blocks' value={fullDayCount} />
+        <StatCard label='Time-Range Blocks' value={blockCount} />
       </div>
 
       <Card>

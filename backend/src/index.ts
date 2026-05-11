@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 
 import authRouter from './routes/auth';
+import organizationsRouter from './routes/organizations';
 import contactListsRouter from './routes/contactLists';
 import contactsRouter from './routes/contacts';
 import cloudImportRouter from './routes/cloudImport';
@@ -26,6 +27,7 @@ import {
 import { errorHandler } from './middleware/errorHandler';
 import { startScheduler } from './services/scheduler';
 import { seedTimezones } from './db/seedTimezones';
+import { seedSuperadmin } from './db/seedSuperadmin';
 
 dotenv.config();
 
@@ -45,6 +47,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ── Routes ────────────────────────────────────────────────
 app.use('/v1/auth', authRouter);
+app.use('/v1/organizations', organizationsRouter);
 app.use('/v1/contact-lists', contactListsRouter);
 app.use('/v1/contact-lists', cloudImportRouter);
 app.use('/v1/cloud-import-configs', cloudImportConfigsRouter);
@@ -76,6 +79,7 @@ app.listen(PORT, () => {
   startScheduler();
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();
+  seedSuperadmin();
 });
 
 export default app;

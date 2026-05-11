@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
 import pool, { withTransaction } from '../db/pool';
 import { authenticate, requireRole } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -992,6 +993,124 @@ agentsRouter.get(
   },
 );
 
+// POST /v1/agents — admin-only. Creates a new agent user under the caller's
+// organization. Email is normalised; password is hashed with bcrypt.
+agentsRouter.post(
+  '/',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, password, first_name, last_name, role } = req.body || {};
+      if (!email || !password || !first_name || !last_name)
+        throw new AppError(
+          400,
+          'email, password, first_name, last_name required',
+        );
+      if (typeof password !== 'string' || password.length < 8)
+        throw new AppError(400, 'password must be at least 8 characters');
+      const finalRole =
+        role && ['agent', 'supervisor', 'admin'].includes(role)
+          ? role
+          : 'agent';
+
+      const hash = await bcrypt.hash(password, 10);
+      const { rows } = await pool.query(
+        `INSERT INTO users
+           (org_id, email, password_hash, first_name, last_name, role)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, email, first_name, last_name, role, is_active, created_at`,
+        [
+          req.user!.orgId,
+          String(email).toLowerCase().trim(),
+          hash,
+          first_name,
+          last_name,
+          finalRole,
+        ],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PATCH /v1/agents/:id — admin-only. Toggle active status or rename. Limited
+// to users in the caller's org.
+agentsRouter.patch(
+  '/:id',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { is_active, first_name, last_name } = req.body || {};
+      const { rows } = await pool.query(
+        `UPDATE users SET
+           is_active = COALESCE($1, is_active),
+           first_name = COALESCE($2, first_name),
+           last_name = COALESCE($3, last_name),
+           updated_at = NOW()
+         WHERE id = $4 AND org_id = $5
+         RETURNING id, email, first_name, last_name, role, is_active, created_at`,
+        [
+          is_active === undefined ? null : is_active,
+          first_name || null,
+          last_name || null,
+          req.params.id,
+          req.user!.orgId,
+        ],
+      );
+      if (!rows[0]) throw new AppError(404, 'Agent not found');
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// DELETE /v1/agents/:id — admin-only. Removes a user from the caller's org.
+// Self-delete is forbidden so an admin can't accidentally lock themselves
+// out. Hard-deletes the row when no FK dependencies block it; otherwise
+// falls back to deactivation so historical interactions remain queryable.
+agentsRouter.delete(
+  '/:id',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (req.params.id === req.user!.userId)
+        throw new AppError(400, 'You cannot delete your own account');
+
+      const { rows: target } = await pool.query(
+        `SELECT id FROM users WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!target[0]) throw new AppError(404, 'User not found');
+
+      try {
+        await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
+        res.status(204).send();
+      } catch (e: any) {
+        if (e?.code === '23503') {
+          await pool.query(
+            `UPDATE users SET is_active = false, updated_at = NOW()
+             WHERE id = $1`,
+            [req.params.id],
+          );
+          res.json({
+            id: req.params.id,
+            deactivated: true,
+            reason:
+              'User has historical activity and was deactivated instead of deleted',
+          });
+          return;
+        }
+        throw e;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ── SESSIONS (live agent status) ──────────────────────────
 export const sessionsRouter = Router();
 sessionsRouter.use(authenticate);
@@ -999,11 +1118,24 @@ sessionsRouter.get(
   '/',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Enriched with the agent's currently-held contact (phone + name) and
+      // active job/campaign so the Agents page can render a meaningful
+      // "Current Contact" cell instead of a placeholder.
       const { rows } = await pool.query(
-        `SELECT s.* FROM agent_sessions s
-       JOIN users u ON u.id = s.agent_id
-       WHERE u.org_id = $1
-       ORDER BY s.last_heartbeat_at DESC`,
+        `SELECT s.id, s.agent_id, s.selected_job_ids, s.status,
+                s.current_contact_id, s.current_job_id,
+                s.login_at, s.logout_at, s.last_heartbeat_at,
+                c.phone_number    AS current_phone_number,
+                c.first_name      AS current_first_name,
+                c.last_name       AS current_last_name,
+                camp.name         AS current_campaign_name
+         FROM agent_sessions s
+         JOIN users u ON u.id = s.agent_id
+         LEFT JOIN contacts c ON c.id = s.current_contact_id
+         LEFT JOIN campaign_jobs cj ON cj.id = s.current_job_id
+         LEFT JOIN campaigns camp ON camp.id = cj.campaign_id
+         WHERE u.org_id = $1
+         ORDER BY s.last_heartbeat_at DESC`,
         [req.user!.orgId],
       );
       res.json({ data: rows });

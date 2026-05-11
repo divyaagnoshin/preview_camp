@@ -58,10 +58,10 @@ export default function CampaignDetailPage() {
         </button>
         <div className='flex-1'>
           <div className='flex items-center gap-2'>
-            <h1 className='text-xl font-bold text-gray-900'>{campaign.name}</h1>
+            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
           </div>
-          <p className='text-sm text-gray-400 mt-0.5 capitalize'>
+          <p className='text-sm text-[#7A5C44] mt-0.5 capitalize'>
             {campaign.schedule_type} campaign
             {campaign.agent_priority_enabled && ' · Agent priority enabled'}
           </p>
@@ -211,7 +211,7 @@ export default function CampaignDetailPage() {
               <span className='text-sm text-gray-900'>{l.name}</span>
               <button
                 onClick={() => navigate(`/contact-lists/${l.id}`)}
-                className='ml-auto text-xs text-indigo-600 hover:underline'
+                className='ml-auto text-xs text-[#F4521E] hover:underline font-semibold'
               >
                 View →
               </button>

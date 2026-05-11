@@ -30,9 +30,9 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6 animate-fade-up">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Reports</h1>
+        <h1 className="text-2xl font-bold text-[#1A0F00]">Reports</h1>
         <p className="text-sm text-gray-400 mt-0.5">Campaign performance and interaction analytics</p>
       </div>
 

@@ -224,7 +224,7 @@ export default function WorkspacePage() {
           </p>
           <button
             onClick={() => setPhase('selecting')}
-            className='w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition'
+            className='w-full bg-gradient-to-r from-[#F4521E] to-[#F5A623] text-white font-medium py-2.5 rounded-lg transition'
           >
             Get Started
           </button>
@@ -448,7 +448,7 @@ export default function WorkspacePage() {
                 <button
                   disabled={!dispCode || disposeMutation.isPending}
                   onClick={() => disposeMutation.mutate()}
-                  className='w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition'
+                  className='w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#F4521E] to-[#F5A623] disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition'
                 >
                   <CheckCircle className='w-4 h-4' />
                   {disposeMutation.isPending ? 'Saving...' : 'Save & Continue'}

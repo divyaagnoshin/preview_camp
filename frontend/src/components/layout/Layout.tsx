@@ -3,26 +3,10 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { useAuth } from '../../hooks/useAuth';
 import {
-  Phone,
-  LayoutDashboard,
-  Megaphone,
-  Users,
-  List,
-  ShieldOff,
-  Settings,
-  BarChart2,
-  LogOut,
-  Menu,
-  X,
-  Briefcase,
-  ChevronDown,
-  CalendarOff,
-  Clock,
+  Phone, LayoutDashboard, Megaphone, Users, List, ShieldOff, BarChart2,
+  LogOut, Menu, X, Briefcase, ChevronDown, CalendarOff, Clock, Building2, Zap,
 } from 'lucide-react';
 
-// A nav entry may declare `children`. When present, the entry renders as a
-// collapsible group: clicking the row still navigates to `to`, but a chevron
-// reveals nested sub-routes (rendered with the same NavLink active styling).
 type NavItem = {
   to: string;
   icon: typeof LayoutDashboard;
@@ -32,139 +16,80 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  { to: '/organizations', icon: Building2, label: 'Organizations', roles: ['superadmin'] },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'supervisor', 'agent', 'superadmin'] },
   {
-    to: '/dashboard',
-    icon: LayoutDashboard,
-    label: 'Dashboard',
-    roles: ['admin', 'supervisor', 'agent'],
-  },
-  {
-    to: '/workspace',
-    icon: Phone,
-    label: 'Workspace',
-    roles: ['agent', 'admin', 'supervisor'],
-  },
-  {
-    to: '/campaigns',
-    icon: Megaphone,
-    label: 'Campaigns',
-    roles: ['admin', 'supervisor'],
+    to: '/campaigns', icon: Megaphone, label: 'Campaigns', roles: ['admin', 'supervisor', 'superadmin'],
     children: [
-      {
-        to: '/schedule-templates',
-        icon: Clock,
-        label: 'Schedule Templates',
-        roles: ['admin', 'supervisor'],
-      },
-      {
-        to: '/holiday-calendars',
-        icon: CalendarOff,
-        label: 'Holidays',
-        roles: ['admin', 'supervisor'],
-      },
-      {
-        to: '/dnc',
-        icon: ShieldOff,
-        label: 'DNC',
-        roles: ['admin', 'supervisor'],
-      },
+      { to: '/schedule-templates', icon: Clock, label: 'Schedule Templates', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/holiday-calendars', icon: CalendarOff, label: 'Holidays', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/dnc', icon: ShieldOff, label: 'DNC', roles: ['admin', 'supervisor', 'superadmin'] },
     ],
   },
-  {
-    to: '/jobs',
-    icon: Briefcase,
-    label: 'Jobs',
-    roles: ['admin', 'supervisor'],
-  },
-  {
-    to: '/contact-lists',
-    icon: List,
-    label: 'Contact Lists',
-    roles: ['admin', 'supervisor'],
-  },
-  {
-    to: '/agents',
-    icon: Users,
-    label: 'Agents',
-    roles: ['admin', 'supervisor'],
-  },
-  {
-    to: '/reports',
-    icon: BarChart2,
-    label: 'Reports',
-    roles: ['admin', 'supervisor'],
-  },
+  { to: '/jobs', icon: Briefcase, label: 'Jobs', roles: ['admin', 'supervisor', 'superadmin'] },
+  { to: '/contact-lists', icon: List, label: 'Contact Lists', roles: ['admin', 'supervisor', 'superadmin'] },
+  { to: '/agents', icon: Users, label: 'Users', roles: ['admin', 'supervisor', 'superadmin'] },
+  { to: '/reports', icon: BarChart2, label: 'Reports', roles: ['admin', 'supervisor', 'superadmin'] },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const { user, logout, isAdmin, isSupervisor } = useAuth();
+  const { user, logout, isSuperadmin, orgContext } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Tracks which parent groups the user has manually toggled open. Groups
-  // whose own route or any child route is active are auto-expanded regardless.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
-  const visibleNav = navItems.filter((n) => n.roles.includes(user?.role || ''));
+  const visibleNav = navItems.filter((n) => {
+    if (!n.roles.includes(user?.role || '')) return false;
+    if (isSuperadmin && !orgContext && n.to !== '/organizations') return false;
+    return true;
+  });
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
+  const isPathActive = (to: string) => location.pathname === to || location.pathname.startsWith(to + '/');
 
-  const isPathActive = (to: string) =>
-    location.pathname === to || location.pathname.startsWith(to + '/');
+  const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
 
   const NavItems = () => (
     <>
       {visibleNav.map((n) => {
-        const visibleChildren = (n.children || []).filter((c) =>
-          c.roles.includes(user?.role || ''),
-        );
+        const visibleChildren = (n.children || []).filter((c) => c.roles.includes(user?.role || ''));
         const hasChildren = visibleChildren.length > 0;
         const childActive = visibleChildren.some((c) => isPathActive(c.to));
-        const expanded =
-          openGroups[n.to] ?? (isPathActive(n.to) || childActive);
+        const expanded = openGroups[n.to] ?? (isPathActive(n.to) || childActive);
 
         return (
           <div key={n.to}>
-            <div className='flex items-center'>
+            <div className='flex items-center group'>
               <NavLink
                 to={n.to}
                 onClick={() => setMobileOpen(false)}
                 end={hasChildren}
                 className={({ isActive }) =>
                   clsx(
-                    'flex-1 flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition',
-                    isActive
-                      ? 'bg-indigo-50 text-indigo-700 font-medium'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+                    'flex-1 flex items-center gap-3.5 px-4 py-3 rounded-xl text-[15px] font-medium transition-all duration-150',
+                    isActive || childActive
+                      ? 'bg-gradient-to-r from-[#F4521E] to-[#F5A623] text-white font-semibold shadow-[0_4px_16px_rgba(244,82,30,0.45)]'
+                      : 'text-[#D4A888] hover:bg-white/10 hover:text-white',
                   )
                 }
               >
-                <n.icon className='w-4 h-4 flex-shrink-0' />
-                {n.label}
+                <n.icon className='w-5 h-5 flex-shrink-0' />
+                <span style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}>{n.label}</span>
               </NavLink>
               {hasChildren && (
                 <button
                   type='button'
-                  aria-label={expanded ? 'Collapse' : 'Expand'}
-                  onClick={() =>
-                    setOpenGroups((g) => ({ ...g, [n.to]: !expanded }))
-                  }
-                  className='ml-1 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600'
+                  onClick={() => setOpenGroups((g) => ({ ...g, [n.to]: !expanded }))}
+                  className='ml-1 p-2 rounded-lg text-[#8A6A50] hover:text-white hover:bg-white/10 transition-colors'
                 >
-                  <ChevronDown
-                    className={clsx(
-                      'w-3.5 h-3.5 transition-transform',
-                      expanded ? 'rotate-0' : '-rotate-90',
-                    )}
-                  />
+                  <ChevronDown className={clsx('w-4 h-4 transition-transform duration-200', expanded ? 'rotate-0' : '-rotate-90')} />
                 </button>
               )}
             </div>
+
             {hasChildren && expanded && (
-              <div className='ml-4 mt-0.5 pl-3 border-l border-gray-100 space-y-0.5'>
+              <div className='ml-5 mt-1 pl-4 border-l-2 border-[#F4521E]/30 space-y-0.5'>
                 {visibleChildren.map((c) => (
                   <NavLink
                     key={c.to}
@@ -172,14 +97,14 @@ export default function Layout({ children }: { children: ReactNode }) {
                     onClick={() => setMobileOpen(false)}
                     className={({ isActive }) =>
                       clsx(
-                        'flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition',
+                        'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150',
                         isActive
-                          ? 'bg-indigo-50 text-indigo-700 font-medium'
-                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
+                          ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
+                          : 'text-[#A07860] hover:text-[#F5C89A] hover:bg-white/8',
                       )
                     }
                   >
-                    <c.icon className='w-3.5 h-3.5 flex-shrink-0' />
+                    <c.icon className='w-4 h-4 flex-shrink-0' />
                     {c.label}
                   </NavLink>
                 ))}
@@ -191,84 +116,93 @@ export default function Layout({ children }: { children: ReactNode }) {
     </>
   );
 
+  const SidebarContent = () => (
+    <>
+      {/* Logo */}
+      <div className='flex items-center gap-3.5 px-5 py-5 border-b border-white/8'>
+        <div className='w-10 h-10 bg-gradient-to-br from-[#F4521E] to-[#F5A623] rounded-xl flex items-center justify-center shadow-[0_4px_14px_rgba(244,82,30,0.55)] flex-shrink-0'>
+          <Zap className='w-5 h-5 text-white' fill='white' />
+        </div>
+        <div>
+          <div className='text-[15px] font-bold text-white tracking-wide' style={{ fontFamily: 'Syne, sans-serif' }}>
+            PreviewCamp
+          </div>
+          <div className='text-[12px] text-[#8A6A50] leading-none mt-0.5'>
+            {isSuperadmin ? (orgContext ? orgContext.name : 'Platform') : user?.orgName}
+          </div>
+        </div>
+      </div>
+
+      {/* Nav label */}
+      <div className='px-5 pt-5 pb-1'>
+        <span className='text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6A4A32]'>Navigation</span>
+      </div>
+
+      {/* Nav */}
+      <nav className='flex-1 px-3 py-2 space-y-0.5 overflow-y-auto'>
+        <NavItems />
+      </nav>
+
+      {/* User footer */}
+      <div className='p-4 border-t border-white/8'>
+        <div className='flex items-center gap-3 px-3 py-3 rounded-xl bg-white/5 hover:bg-white/8 transition-colors group cursor-default'>
+          <div className='w-9 h-9 bg-gradient-to-br from-[#F4521E] to-[#F5A623] rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0 shadow-[0_2px_8px_rgba(244,82,30,0.4)]'>
+            {initials}
+          </div>
+          <div className='flex-1 min-w-0'>
+            <div className='text-[13px] font-semibold text-[#EED5BC] truncate'>
+              {user?.firstName} {user?.lastName}
+            </div>
+            <div className='text-[11px] text-[#7A5C44] capitalize mt-0.5'>{user?.role}</div>
+          </div>
+          <button
+            onClick={handleLogout}
+            title='Sign out'
+            className='p-1.5 rounded-lg text-[#7A5C44] hover:text-[#F4521E] hover:bg-[#F4521E]/12 transition-colors opacity-0 group-hover:opacity-100'
+          >
+            <LogOut className='w-4 h-4' />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
-    <div className='flex h-screen bg-gray-50 overflow-hidden'>
-      {/* Sidebar — desktop */}
-      <aside className='hidden md:flex flex-col w-56 bg-white border-r border-gray-200 flex-shrink-0'>
-        <div className='flex items-center gap-2.5 px-4 py-4 border-b border-gray-100'>
-          <div className='w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center'>
-            <Phone className='w-4 h-4 text-white' />
-          </div>
-          <div>
-            <div className='text-sm font-bold text-gray-900 leading-none'>
-              PreviewCamp
-            </div>
-            <div className='text-xs text-gray-400 leading-none mt-0.5'>
-              {user?.orgName}
-            </div>
-          </div>
-        </div>
-        <nav className='flex-1 p-3 space-y-0.5 overflow-y-auto'>
-          <NavItems />
-        </nav>
-        <div className='p-3 border-t border-gray-100'>
-          <div className='flex items-center gap-2 px-2 py-2 rounded-lg'>
-            <div className='w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center text-xs font-bold text-indigo-700'>
-              {user?.firstName?.[0]}
-              {user?.lastName?.[0]}
-            </div>
-            <div className='flex-1 min-w-0'>
-              <div className='text-xs font-medium text-gray-900 truncate'>
-                {user?.firstName} {user?.lastName}
-              </div>
-              <div className='text-xs text-gray-400 capitalize'>
-                {user?.role}
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              title='Sign out'
-              className='p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600'
-            >
-              <LogOut className='w-3.5 h-3.5' />
-            </button>
-          </div>
-        </div>
+    <div className='flex h-screen overflow-hidden' style={{ background: '#FFF8F2' }}>
+      {/* Sidebar — desktop: increased from 260px → 300px */}
+      <aside
+        className='hidden md:flex flex-col flex-shrink-0'
+        style={{ width: '300px', background: '#180E00' }}
+      >
+        <SidebarContent />
       </aside>
 
       {/* Mobile sidebar */}
       {mobileOpen && (
         <div className='fixed inset-0 z-50 md:hidden'>
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setMobileOpen(false)}
-          />
-          <aside className='absolute left-0 top-0 h-full w-56 bg-white flex flex-col'>
-            <div className='flex items-center justify-between px-4 py-4 border-b border-gray-100'>
-              <span className='font-bold text-gray-900 text-sm'>
-                PreviewCamp
-              </span>
-              <button onClick={() => setMobileOpen(false)}>
-                <X className='w-5 h-5 text-gray-400' />
-              </button>
-            </div>
-            <nav className='flex-1 p-3 space-y-0.5 overflow-y-auto'>
-              <NavItems />
-            </nav>
+          <div className='absolute inset-0 bg-black/60 backdrop-blur-sm' onClick={() => setMobileOpen(false)} />
+          <aside
+            className='absolute left-0 top-0 h-full flex flex-col'
+            style={{ width: '300px', background: '#180E00' }}
+          >
+            <SidebarContent />
           </aside>
         </div>
       )}
 
       {/* Main content */}
-      <div className='flex-1 flex flex-col overflow-hidden'>
+      <div className='flex-1 flex flex-col overflow-hidden min-w-0'>
         {/* Mobile top bar */}
-        <div className='md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200'>
-          <button onClick={() => setMobileOpen(true)}>
-            <Menu className='w-5 h-5 text-gray-600' />
+        <div className='md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-[#FFE0C8]'>
+          <button onClick={() => setMobileOpen(true)} className='p-2 rounded-xl hover:bg-orange-50'>
+            <Menu className='w-5 h-5 text-[#5C4030]' />
           </button>
-          <span className='font-bold text-gray-900 text-sm'>PreviewCamp</span>
-          <div className='w-5' />
+          <span className='font-bold text-[#1A0F00] text-sm' style={{ fontFamily: 'Syne, sans-serif' }}>PreviewCamp</span>
+          <div className='w-9 h-9 bg-gradient-to-br from-[#F4521E] to-[#F5A623] rounded-full flex items-center justify-center text-xs font-bold text-white'>
+            {initials}
+          </div>
         </div>
+
         <main className='flex-1 overflow-y-auto'>{children}</main>
       </div>
     </div>

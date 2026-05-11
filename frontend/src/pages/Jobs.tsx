@@ -14,7 +14,7 @@ export function JobsPage() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Jobs</h1>
+          <h1 className="text-2xl font-bold text-[#1A0F00]">Jobs</h1>
           <p className="text-sm text-gray-400 mt-0.5">System-created runtime instances of campaigns</p>
         </div>
         <Button variant="secondary" icon={<RefreshCw className="w-4 h-4" />} onClick={() => refetch()}>Refresh</Button>
@@ -92,7 +92,7 @@ export function JobDetailPage() {
         </button>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-gray-900">{job.campaign_name}</h1>
+            <h1 className="text-2xl font-bold text-[#1A0F00]">{job.campaign_name}</h1>
             <span className="text-sm text-gray-400">Run #{job.job_run_number}</span>
             <StatusBadge status={job.status} />
           </div>

@@ -33,6 +33,7 @@ import {
   Clock,
   ChevronDown,
   Check,
+  X,
 } from 'lucide-react';
 
 // 0=Sun … 6=Sat — matches the schedule_windows.day_of_week CHECK constraint.
@@ -76,7 +77,7 @@ export function ScheduleTemplatesPage() {
   const rows = data?.data || [];
 
   return (
-    <div className='p-6 space-y-6'>
+    <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
       <div className='flex items-center justify-between'>
         <div>
           <h1 className='text-2xl font-bold text-gray-900'>
@@ -220,6 +221,7 @@ export function ScheduleTemplatesPage() {
             setShowCreate(false);
             setEditTarget(null);
           }}
+          onCreated={(id) => navigate(`/schedule-templates/${id}`)}
         />
       )}
     </div>
@@ -230,9 +232,11 @@ export function ScheduleTemplatesPage() {
 function TemplateEditor({
   target,
   onClose,
+  onCreated,
 }: {
   target: ScheduleTemplate | null;
   onClose: () => void;
+  onCreated?: (id: string) => void;
 }) {
   const qc = useQueryClient();
   const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -247,9 +251,13 @@ function TemplateEditor({
         ? updateScheduleTemplate(target!.id, body)
         : createScheduleTemplate(body);
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ['schedule-templates'] });
-      onClose();
+      if (!isEdit && onCreated) {
+        onCreated(res.id);
+      } else {
+        onClose();
+      }
     },
     onError: (e: any) => alert(e?.response?.data?.error || 'Save failed'),
   });
@@ -274,8 +282,9 @@ function TemplateEditor({
           onChange={setTimezone}
         />
         <p className='text-xs text-gray-500'>
-          You can add day-wise time windows after saving on the template detail
-          page.
+          {isEdit
+            ? 'Update the template name or timezone.'
+            : 'After saving you will be taken to the template to add time windows.'}
         </p>
         <div className='flex gap-2 justify-end pt-2'>
           <Button variant='secondary' onClick={onClose}>
@@ -286,7 +295,7 @@ function TemplateEditor({
             disabled={!name.trim()}
             onClick={() => mut.mutate()}
           >
-            {isEdit ? 'Save' : 'Create'}
+            {isEdit ? 'Save' : 'Create & Open'}
           </Button>
         </div>
       </div>
@@ -319,7 +328,7 @@ export function ScheduleTemplateDetailPage() {
   const windows = tmpl.windows || [];
 
   return (
-    <div className='p-6 space-y-6'>
+    <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
       <div>
         <button
           onClick={() => navigate('/schedule-templates')}
@@ -445,7 +454,9 @@ export function ScheduleTemplateDetailPage() {
   );
 }
 
-// ── WindowEditor: add / edit a single day-window ─────────────
+// ── WindowEditor: add (multi-slot) / edit (single) ───────────
+type SlotRow = { day: number; start: string; end: string };
+
 function WindowEditor({
   templateId,
   target,
@@ -457,16 +468,43 @@ function WindowEditor({
 }) {
   const qc = useQueryClient();
   const isEdit = !!target;
+
+  // Edit mode — single controlled row
   const [day, setDay] = useState<number>(target?.day_of_week ?? 1);
   const [start, setStart] = useState(toHHMM(target?.start_time || '09:00'));
   const [end, setEnd] = useState(toHHMM(target?.end_time || '17:00'));
 
+  // Add mode — list of rows (any day, any count)
+  const [slots, setSlots] = useState<SlotRow[]>([
+    { day: 1, start: '09:00', end: '17:00' },
+  ]);
+
+  const addSlot = () =>
+    setSlots((prev) => [...prev, { day: 1, start: '09:00', end: '17:00' }]);
+
+  const removeSlot = (idx: number) =>
+    setSlots((prev) => prev.filter((_, i) => i !== idx));
+
+  const updateSlot = (idx: number, patch: Partial<SlotRow>) =>
+    setSlots((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+
   const mut = useMutation({
     mutationFn: async () => {
-      const body = { day_of_week: day, start_time: start, end_time: end };
-      return isEdit
-        ? updateScheduleWindow(templateId, target!.id, body)
-        : createScheduleWindow(templateId, body);
+      if (isEdit) {
+        return updateScheduleWindow(templateId, target!.id, {
+          day_of_week: day,
+          start_time: start,
+          end_time: end,
+        });
+      }
+      // Add mode — fire all sequentially
+      for (const s of slots) {
+        await createScheduleWindow(templateId, {
+          day_of_week: s.day,
+          start_time: s.start,
+          end_time: s.end,
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedule-template', templateId] });
@@ -475,62 +513,133 @@ function WindowEditor({
     onError: (e: any) => alert(e?.response?.data?.error || 'Save failed'),
   });
 
-  const valid = start < end;
+  // ── Edit mode UI ──────────────────────────────────────────
+  if (isEdit) {
+    const valid = start < end;
+    return (
+      <Modal open onClose={onClose} title='Edit Window'>
+        <div className='space-y-4'>
+          <div>
+            <label className='block text-xs text-gray-500 mb-1'>Day</label>
+            <select
+              value={day}
+              onChange={(e) => setDay(parseInt(e.target.value, 10))}
+              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+            >
+              {DAY_NAMES.map((d, i) => (
+                <option key={i} value={i}>{d}</option>
+              ))}
+            </select>
+          </div>
+          <div className='grid grid-cols-2 gap-3'>
+            <div>
+              <label className='block text-xs text-gray-500 mb-1'>Start</label>
+              <input type='time' value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              />
+            </div>
+            <div>
+              <label className='block text-xs text-gray-500 mb-1'>End</label>
+              <input type='time' value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+              />
+            </div>
+          </div>
+          {!valid && <p className='text-xs text-red-600'>End must be after start.</p>}
+          <div className='flex gap-2 justify-end pt-2'>
+            <Button variant='secondary' onClick={onClose}>Cancel</Button>
+            <Button loading={mut.isPending} disabled={!valid} onClick={() => mut.mutate()}>Save</Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Add mode UI (multi-slot) ──────────────────────────────
+  const allValid = slots.every((s) => s.start < s.end);
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={isEdit ? 'Edit Window' : 'Add Schedule Window'}
-    >
-      <div className='space-y-4'>
-        <div>
-          <label className='block text-xs text-gray-500 mb-1'>Day</label>
-          <select
-            value={day}
-            onChange={(e) => setDay(parseInt(e.target.value, 10))}
-            className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-          >
-            {DAY_NAMES.map((d, i) => (
-              <option key={i} value={i}>
-                {d}
-              </option>
-            ))}
-          </select>
+    <Modal open onClose={onClose} title='Add Schedule Windows'>
+      <div className='space-y-3'>
+        {/* Column headers */}
+        <div className='grid gap-2 items-center' style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}>
+          <span className='text-xs font-medium text-gray-400'>Day</span>
+          <span className='text-xs font-medium text-gray-400'>Start</span>
+          <span className='text-xs font-medium text-gray-400'>End</span>
+          <span />
         </div>
-        <div className='grid grid-cols-2 gap-3'>
-          <div>
-            <label className='block text-xs text-gray-500 mb-1'>Start</label>
-            <input
-              type='time'
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-            />
-          </div>
-          <div>
-            <label className='block text-xs text-gray-500 mb-1'>End</label>
-            <input
-              type='time'
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-            />
-          </div>
+
+        {/* Slot rows — scrollable */}
+        <div className='space-y-2 overflow-y-auto pr-1' style={{ maxHeight: '280px' }}>
+        {slots.map((slot, idx) => {
+          const rowInvalid = slot.start >= slot.end;
+          return (
+            <div key={idx} className='grid gap-2 items-center' style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}>
+              <select
+                value={slot.day}
+                onChange={(e) => updateSlot(idx, { day: parseInt(e.target.value, 10) })}
+                className='border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full'
+              >
+                {DAY_NAMES.map((d, i) => (
+                  <option key={i} value={i}>{d}</option>
+                ))}
+              </select>
+
+              <input
+                type='time'
+                value={slot.start}
+                onChange={(e) => updateSlot(idx, { start: e.target.value })}
+                className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
+              />
+
+              <input
+                type='time'
+                value={slot.end}
+                onChange={(e) => updateSlot(idx, { end: e.target.value })}
+                className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
+              />
+
+              <button
+                type='button'
+                onClick={() => removeSlot(idx)}
+                disabled={slots.length === 1}
+                className='p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed'
+                title='Remove'
+              >
+                <X className='w-4 h-4' />
+              </button>
+            </div>
+          );
+        })}
         </div>
-        {!valid && (
-          <p className='text-xs text-red-600'>End must be after start.</p>
+
+        {/* Validation hint */}
+        {!allValid && (
+          <p className='text-xs text-red-600'>Each end time must be after its start time.</p>
         )}
-        <div className='flex gap-2 justify-end pt-2'>
-          <Button variant='secondary' onClick={onClose}>
-            Cancel
-          </Button>
+
+        {/* Add another slot */}
+        <button
+          type='button'
+          onClick={addSlot}
+          className='flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium pt-1'
+        >
+          <span className='w-5 h-5 rounded-full bg-indigo-600 hover:bg-indigo-800 flex items-center justify-center flex-shrink-0'>
+            <Plus className='w-3 h-3 text-white' strokeWidth={3} />
+          </span>
+          Add another slot
+        </button>
+
+        <div className='flex gap-2 justify-end pt-3 border-t border-gray-100'>
+          <Button variant='secondary' onClick={onClose}>Cancel</Button>
           <Button
             loading={mut.isPending}
-            disabled={!valid}
+            disabled={!allValid}
             onClick={() => mut.mutate()}
           >
-            {isEdit ? 'Save' : 'Add'}
+            {slots.length === 1 ? 'Add Window' : `Add ${slots.length} Windows`}
           </Button>
         </div>
       </div>

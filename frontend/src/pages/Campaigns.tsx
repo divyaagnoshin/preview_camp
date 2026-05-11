@@ -197,8 +197,8 @@ export default function CampaignsPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-xl font-bold text-gray-900'>Campaigns</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Campaigns</h1>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
             {data?.data?.length || 0} campaigns total
           </p>
         </div>
@@ -327,27 +327,27 @@ export default function CampaignsPage() {
         size='lg'
       >
         <div className='space-y-4'>
-          {/* Step indicator */}
-          <div className='flex items-center gap-2 text-xs'>
-            <span
-              className={
-                step === 1
-                  ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
-                  : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
-              }
-            >
-              1. Details
-            </span>
-            <span className='text-gray-300'>—</span>
-            <span
-              className={
-                step === 2
-                  ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
-                  : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
-              }
-            >
-              2. Contacts & Routing
-            </span>
+          {/* Step indicator — four ordered stages walked top-to-bottom. */}
+          <div className='flex items-center gap-2 text-xs flex-wrap'>
+            {[
+              { n: 1, label: '1. Details' },
+              { n: 2, label: '2. Contacts' },
+              { n: 3, label: '3. Schedule' },
+              { n: 4, label: '4. DNC' },
+            ].map((s, i) => (
+              <React.Fragment key={s.n}>
+                {i > 0 && <span className='text-gray-300'>—</span>}
+                <span
+                  className={
+                    step === s.n
+                      ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
+                      : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
+                  }
+                >
+                  {s.label}
+                </span>
+              </React.Fragment>
+            ))}
           </div>
 
           {step === 1 && (
@@ -359,6 +359,9 @@ export default function CampaignsPage() {
                 placeholder='e.g. Q2 Loan Outreach'
               />
 
+              {/* Schedule type drives whether max_attempts is honored.
+                  Switching to "infinite" causes the backend to store
+                  max_attempts as NULL regardless of the dropdown value. */}
               <div className='grid grid-cols-2 gap-3'>
                 <Select
                   label='Schedule Type'
@@ -372,6 +375,40 @@ export default function CampaignsPage() {
                     },
                   ]}
                 />
+                <Select
+                  label='Max Attempts'
+                  value={
+                    form.schedule_type === 'infinite'
+                      ? 'infinite'
+                      : form.max_attempts
+                  }
+                  disabled={form.schedule_type === 'infinite'}
+                  onChange={(e) => set('max_attempts', e.target.value)}
+                  options={
+                    form.schedule_type === 'infinite'
+                      ? [{ value: 'infinite', label: 'Infinite (no limit)' }]
+                      : [
+                          { value: '1', label: '1 attempt' },
+                          { value: '2', label: '2 attempts' },
+                          { value: '3', label: '3 attempts' },
+                          { value: '5', label: '5 attempts' },
+                          { value: '10', label: '10 attempts' },
+                          { value: '15', label: '15 attempts' },
+                          { value: '20', label: '20 attempts' },
+                        ]
+                  }
+                />
+              </div>
+
+              <div className='grid grid-cols-2 gap-3'>
+                <Input
+                  label='Retry Interval (minutes)'
+                  type='number'
+                  value={form.attempt_interval_min}
+                  onChange={(e) =>
+                    set('attempt_interval_min', e.target.value)
+                  }
+                />
                 <Input
                   label='Auto-dial Delay (seconds)'
                   type='number'
@@ -379,25 +416,6 @@ export default function CampaignsPage() {
                   onChange={(e) => set('auto_dial_delay_sec', e.target.value)}
                 />
               </div>
-
-              {form.schedule_type === 'finite' && (
-                <div className='grid grid-cols-2 gap-3'>
-                  <Input
-                    label='Max Attempts'
-                    type='number'
-                    value={form.max_attempts}
-                    onChange={(e) => set('max_attempts', e.target.value)}
-                  />
-                  <Input
-                    label='Retry Interval (minutes)'
-                    type='number'
-                    value={form.attempt_interval_min}
-                    onChange={(e) =>
-                      set('attempt_interval_min', e.target.value)
-                    }
-                  />
-                </div>
-              )}
 
               <Input
                 label='Caller ID (E.164 format)'
@@ -494,6 +512,48 @@ export default function CampaignsPage() {
                 </div>
               )}
 
+              {/* Agent priority */}
+              <label className='flex items-center gap-3 cursor-pointer'>
+                <input
+                  type='checkbox'
+                  checked={form.agent_priority_enabled}
+                  onChange={(e) =>
+                    set('agent_priority_enabled', e.target.checked)
+                  }
+                  className='w-4 h-4 text-indigo-600 rounded'
+                />
+                <div>
+                  <div className='text-sm font-medium text-gray-900'>
+                    Enable Agent Priority
+                  </div>
+                  <div className='text-xs text-gray-400'>
+                    Route contacts to their assigned agent
+                  </div>
+                </div>
+              </label>
+
+              <div className='flex gap-3 pt-2'>
+                <Button
+                  variant='secondary'
+                  className='flex-1'
+                  icon={<ArrowLeft className='w-4 h-4' />}
+                  onClick={() => setStep(1)}
+                >
+                  Back
+                </Button>
+                <Button
+                  className='flex-1'
+                  disabled={!editingId && !form.contact_list_ids.length}
+                  onClick={() => setStep(3)}
+                >
+                  Next
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 3 && (
+            <>
               <div className='grid grid-cols-2 gap-3'>
                 <Input
                   label='Start Date'
@@ -522,93 +582,91 @@ export default function CampaignsPage() {
                   })),
                 ]}
               />
-              <div className='grid grid-cols-2 gap-3'>
-                <Select
-                  label='Holiday Calendar'
-                  value={form.holiday_calendar_id}
-                  onChange={(e) => set('holiday_calendar_id', e.target.value)}
-                  options={[
-                    { value: '', label: '— None —' },
-                    ...(calendars?.data || []).map((c: any) => ({
-                      value: c.id,
-                      label: c.country_code
-                        ? `${c.name} (${c.country_code})`
-                        : c.name,
-                    })),
-                  ]}
-                />
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>
-                    DNC Groups
-                  </label>
-                  <div className='border border-gray-200 rounded-lg max-h-32 overflow-y-auto p-2 space-y-1 bg-white'>
-                    {(dncGroups?.data || []).length === 0 ? (
-                      <p className='text-xs text-gray-400 px-1 py-1'>
-                        No DNC groups yet.
-                      </p>
-                    ) : (
-                      (dncGroups?.data || []).map((g: any) => {
-                        const checked = form.dnc_group_ids.includes(g.id);
-                        return (
-                          <label
-                            key={g.id}
-                            className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'
-                          >
-                            <input
-                              type='checkbox'
-                              checked={checked}
-                              onChange={(e) =>
-                                set(
-                                  'dnc_group_ids',
-                                  e.target.checked
-                                    ? [...form.dnc_group_ids, g.id]
-                                    : form.dnc_group_ids.filter(
-                                        (id) => id !== g.id,
-                                      ),
-                                )
-                              }
-                              className='rounded border-gray-300'
-                            />
-                            <span className='truncate'>{g.name}</span>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-                  <p className='text-xs text-gray-400 mt-1'>
-                    {form.dnc_group_ids.length
-                      ? `${form.dnc_group_ids.length} selected`
-                      : 'None selected — campaign will not suppress any numbers.'}
-                  </p>
-                </div>
-              </div>
 
-              {/* Agent priority */}
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input
-                  type='checkbox'
-                  checked={form.agent_priority_enabled}
-                  onChange={(e) =>
-                    set('agent_priority_enabled', e.target.checked)
-                  }
-                  className='w-4 h-4 text-indigo-600 rounded'
-                />
-                <div>
-                  <div className='text-sm font-medium text-gray-900'>
-                    Enable Agent Priority
-                  </div>
-                  <div className='text-xs text-gray-400'>
-                    Route contacts to their assigned agent
-                  </div>
-                </div>
-              </label>
+              <Select
+                label='Holiday Calendar'
+                value={form.holiday_calendar_id}
+                onChange={(e) => set('holiday_calendar_id', e.target.value)}
+                options={[
+                  { value: '', label: '— None —' },
+                  ...(calendars?.data || []).map((c: any) => ({
+                    value: c.id,
+                    label: c.country_code
+                      ? `${c.name} (${c.country_code})`
+                      : c.name,
+                  })),
+                ]}
+              />
 
               <div className='flex gap-3 pt-2'>
                 <Button
                   variant='secondary'
                   className='flex-1'
                   icon={<ArrowLeft className='w-4 h-4' />}
-                  onClick={() => setStep(1)}
+                  onClick={() => setStep(2)}
+                >
+                  Back
+                </Button>
+                <Button className='flex-1' onClick={() => setStep(4)}>
+                  Next
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 4 && (
+            <>
+              <div>
+                <label className='block text-xs text-gray-500 mb-1'>
+                  DNC Groups
+                </label>
+                <div className='border border-gray-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1 bg-white'>
+                  {(dncGroups?.data || []).length === 0 ? (
+                    <p className='text-xs text-gray-400 px-1 py-1'>
+                      No DNC groups yet.
+                    </p>
+                  ) : (
+                    (dncGroups?.data || []).map((g: any) => {
+                      const checked = form.dnc_group_ids.includes(g.id);
+                      return (
+                        <label
+                          key={g.id}
+                          className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'
+                        >
+                          <input
+                            type='checkbox'
+                            checked={checked}
+                            onChange={(e) =>
+                              set(
+                                'dnc_group_ids',
+                                e.target.checked
+                                  ? [...form.dnc_group_ids, g.id]
+                                  : form.dnc_group_ids.filter(
+                                      (id) => id !== g.id,
+                                    ),
+                              )
+                            }
+                            className='rounded border-gray-300'
+                          />
+                          <span className='truncate'>{g.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p className='text-xs text-gray-400 mt-1'>
+                  {form.dnc_group_ids.length
+                    ? `${form.dnc_group_ids.length} selected`
+                    : 'None selected — campaign will not suppress any numbers.'}
+                </p>
+              </div>
+
+              <div className='flex gap-3 pt-2'>
+                <Button
+                  variant='secondary'
+                  className='flex-1'
+                  icon={<ArrowLeft className='w-4 h-4' />}
+                  onClick={() => setStep(3)}
                 >
                   Back
                 </Button>

@@ -107,8 +107,8 @@ export default function FieldLibraryPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-xl font-bold text-gray-900'>Field Library</h1>
-          <p className='text-sm text-gray-400 mt-0.5'>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Field Library</h1>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
             Default columns available for CSV upload — predefined fields are
             shared globally; custom fields are scoped to your org.
           </p>
