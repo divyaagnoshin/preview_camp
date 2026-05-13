@@ -8,15 +8,18 @@ Full-stack outbound preview campaign calling system.
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js 18+
 - PostgreSQL 14+ running locally
 
 ### 1. Clone & install
+
 ```bash
 npm install
 ```
 
 ### 2. Database setup
+
 ```bash
 # Create the database
 createdb preview_campaign
@@ -33,6 +36,7 @@ npm run db:seed
 ```
 
 ### 3. Run (both backend + frontend)
+
 ```bash
 npm run dev
 ```
@@ -43,11 +47,12 @@ npm run dev
 ---
 
 ## Demo credentials (after seed)
-| Role       | Email                     | Password    |
-|------------|---------------------------|-------------|
-| Admin      | admin@acme.com            | Password1!  |
-| Agent      | raj.patel@acme.com        | Password1!  |
-| Agent      | carla.mendes@acme.com     | Password1!  |
+
+| Role  | Email                 | Password   |
+| ----- | --------------------- | ---------- |
+| Admin | admin@acme.com        | Password1! |
+| Agent | raj.patel@acme.com    | Password1! |
+| Agent | carla.mendes@acme.com | Password1! |
 
 ---
 
@@ -89,6 +94,7 @@ preview-campaign/
 ---
 
 ## API base URL
+
 All endpoints: `http://localhost:3001/v1/`
 
 Key endpoints:
@@ -109,10 +115,76 @@ Key endpoints:
 
 ---
 
+## FreeSWITCH (browser softphone) setup
+
+The agent workspace uses an in-browser SIP client (JsSIP) that registers
+against FreeSWITCH over WSS and dials each contact through it. Mute / Hold
+are handled client-side via SIP re-INVITE.
+
+### What the code does
+
+- `GET /v1/telephony/sip-credentials` — backend auto-provisions a SIP
+  extension (`agent<8hex>`) and random password per user, stored on
+  `users.sip_extension` / `users.sip_password`.
+- The browser registers as that extension at `wss://192.168.9.221:7443`
+  and sends `INVITE sip:<phone>@192.168.9.221` with header
+  `X-Interaction-Id: <uuid>` on every Accept.
+- A backend ESL listener subscribes to channel events and writes
+  `dialed_at` / `answered_at` / `disconnected_at` / `recording_url`
+  back into `contact_interactions` keyed by `fs_uuid`.
+
+### What you must configure on the FreeSWITCH 192.168.9.221 server
+
+1. **Sofia WSS profile** (e.g. `internal`) listening on TCP 7443 with a
+   valid TLS certificate — browsers refuse `ws://` for getUserMedia.
+2. **Directory entries** — for every agent provisioned by the backend,
+   add a user XML file matching the `extension` and `password` shown in
+   the `users` table. (Or wire `mod_xml_curl` against
+   `/v1/telephony/sip-credentials` for dynamic auth.)
+3. **Outbound dialplan** in the context the WSS profile uses, routing
+   `^(\+?\d+)$` through your PSTN gateway, e.g.:
+   ```xml
+   <extension name="outbound_pstn">
+     <condition field="destination_number" expression="^(\+?\d+)$">
+       <action application="set" value="effective_caller_id_number=${FS_OUTBOUND_CALLER_ID_NUMBER}"/>
+       <action application="export" value="sip_h_X-Interaction-Id=${sip_h_X-Interaction-Id}"/>
+       <action application="bridge" data="sofia/gateway/<your_gw>/$1"/>
+     </condition>
+   </extension>
+   ```
+4. **ESL ACL / password** — the `event_socket.conf.xml` must allow the
+   backend's IP and use the password set in `FS_ESL_PASSWORD`.
+5. **(Optional) Recording** — add `<action application="record_session"
+data="$${recordings_dir}/${uuid}.wav"/>` to capture audio; the path
+   flows back to `contact_interactions.recording_url` via `RECORD_STOP`.
+
+### Required env vars (backend/.env)
+
+```
+FS_HOST=192.168.9.221
+FS_SIP_DOMAIN=192.168.9.221
+FS_WSS_URL=wss://192.168.9.221:7443
+FS_STUN_URL=stun:stun.l.google.com:19302
+FS_ESL_HOST=192.168.9.221
+FS_ESL_PORT=8021
+FS_ESL_PASSWORD=ClueCon
+FS_ESL_ENABLED=true
+FS_OUTBOUND_CALLER_ID_NUMBER=+10000000000
+FS_OUTBOUND_CALLER_ID_NAME=Preview Campaign
+```
+
+If FreeSWITCH is unreachable the backend keeps running — only outbound
+calls are unavailable. Set `FS_ESL_ENABLED=false` to silence reconnect
+logs in environments without FreeSWITCH.
+
+---
+
 ## Design version
+
 Based on v19 schema — see `preview_campaign_v19_final.xlsx` for complete data model.
 
 Key design decisions reflected in code:
+
 - `campaign_contact_status` (CCS) is the queue — no separate queue table
 - `contact_interactions` = merged contact_attempts + contact_assignments + call_dispositions
 - 1 INSERT at offer, 1 UPDATE at disposition

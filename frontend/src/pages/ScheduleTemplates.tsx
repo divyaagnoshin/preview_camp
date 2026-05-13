@@ -444,6 +444,7 @@ export function ScheduleTemplateDetailPage() {
         <WindowEditor
           templateId={id!}
           target={editWin}
+          existingWindows={windows}
           onClose={() => {
             setShowAdd(false);
             setEditWin(null);
@@ -460,17 +461,41 @@ type SlotRow = { day: number; start: string; end: string };
 function WindowEditor({
   templateId,
   target,
+  existingWindows,
   onClose,
 }: {
   templateId: string;
   target: ScheduleWindow | null;
+  existingWindows: ScheduleWindow[];
   onClose: () => void;
 }) {
   const qc = useQueryClient();
   const isEdit = !!target;
 
   // Edit mode — single controlled row
-  const [day, setDay] = useState<number>(target?.day_of_week ?? 1);
+  // Days that already have a window on this template, excluding the row
+  // being edited (so editing its time-range doesn't flag it as a self-dupe).
+  const usedDays = useMemo(
+    () =>
+      new Set(
+        existingWindows
+          .filter((w) => !target || w.id !== target.id)
+          .map((w) => w.day_of_week),
+      ),
+    [existingWindows, target],
+  );
+  // Pick a sensible default day: the target's day in edit mode, otherwise the
+  // first weekday that isn't already taken (falls back to 1=Mon if all 7 are
+  // used \u2014 the Save button will be disabled in that case anyway).
+  const initialDay = useMemo(() => {
+    if (target) return target.day_of_week;
+    for (let i = 1; i <= 7; i++) {
+      const d = i % 7; // 1..6,0
+      if (!usedDays.has(d)) return d;
+    }
+    return 1;
+  }, [target, usedDays]);
+  const [day, setDay] = useState<number>(initialDay);
   const [start, setStart] = useState(toHHMM(target?.start_time || '09:00'));
   const [end, setEnd] = useState(toHHMM(target?.end_time || '17:00'));
 
@@ -486,7 +511,9 @@ function WindowEditor({
     setSlots((prev) => prev.filter((_, i) => i !== idx));
 
   const updateSlot = (idx: number, patch: Partial<SlotRow>) =>
-    setSlots((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+    setSlots((prev) =>
+      prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    );
 
   const mut = useMutation({
     mutationFn: async () => {
@@ -527,30 +554,46 @@ function WindowEditor({
               className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
             >
               {DAY_NAMES.map((d, i) => (
-                <option key={i} value={i}>{d}</option>
+                <option key={i} value={i}>
+                  {d}
+                </option>
               ))}
             </select>
           </div>
           <div className='grid grid-cols-2 gap-3'>
             <div>
               <label className='block text-xs text-gray-500 mb-1'>Start</label>
-              <input type='time' value={start}
+              <input
+                type='time'
+                value={start}
                 onChange={(e) => setStart(e.target.value)}
                 className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
               />
             </div>
             <div>
               <label className='block text-xs text-gray-500 mb-1'>End</label>
-              <input type='time' value={end}
+              <input
+                type='time'
+                value={end}
                 onChange={(e) => setEnd(e.target.value)}
                 className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
               />
             </div>
           </div>
-          {!valid && <p className='text-xs text-red-600'>End must be after start.</p>}
+          {!valid && (
+            <p className='text-xs text-red-600'>End must be after start.</p>
+          )}
           <div className='flex gap-2 justify-end pt-2'>
-            <Button variant='secondary' onClick={onClose}>Cancel</Button>
-            <Button loading={mut.isPending} disabled={!valid} onClick={() => mut.mutate()}>Save</Button>
+            <Button variant='secondary' onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              loading={mut.isPending}
+              disabled={!valid}
+              onClick={() => mut.mutate()}
+            >
+              Save
+            </Button>
           </div>
         </div>
       </Modal>
@@ -564,7 +607,10 @@ function WindowEditor({
     <Modal open onClose={onClose} title='Add Schedule Windows'>
       <div className='space-y-3'>
         {/* Column headers */}
-        <div className='grid gap-2 items-center' style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}>
+        <div
+          className='grid gap-2 items-center'
+          style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}
+        >
           <span className='text-xs font-medium text-gray-400'>Day</span>
           <span className='text-xs font-medium text-gray-400'>Start</span>
           <span className='text-xs font-medium text-gray-400'>End</span>
@@ -572,52 +618,65 @@ function WindowEditor({
         </div>
 
         {/* Slot rows — scrollable */}
-        <div className='space-y-2 overflow-y-auto pr-1' style={{ maxHeight: '280px' }}>
-        {slots.map((slot, idx) => {
-          const rowInvalid = slot.start >= slot.end;
-          return (
-            <div key={idx} className='grid gap-2 items-center' style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}>
-              <select
-                value={slot.day}
-                onChange={(e) => updateSlot(idx, { day: parseInt(e.target.value, 10) })}
-                className='border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full'
+        <div
+          className='space-y-2 overflow-y-auto pr-1'
+          style={{ maxHeight: '280px' }}
+        >
+          {slots.map((slot, idx) => {
+            const rowInvalid = slot.start >= slot.end;
+            return (
+              <div
+                key={idx}
+                className='grid gap-2 items-center'
+                style={{ gridTemplateColumns: '1fr 110px 110px 32px' }}
               >
-                {DAY_NAMES.map((d, i) => (
-                  <option key={i} value={i}>{d}</option>
-                ))}
-              </select>
+                <select
+                  value={slot.day}
+                  onChange={(e) =>
+                    updateSlot(idx, { day: parseInt(e.target.value, 10) })
+                  }
+                  className='border border-gray-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full'
+                >
+                  {DAY_NAMES.map((d, i) => (
+                    <option key={i} value={i}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
 
-              <input
-                type='time'
-                value={slot.start}
-                onChange={(e) => updateSlot(idx, { start: e.target.value })}
-                className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
-              />
+                <input
+                  type='time'
+                  value={slot.start}
+                  onChange={(e) => updateSlot(idx, { start: e.target.value })}
+                  className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
+                />
 
-              <input
-                type='time'
-                value={slot.end}
-                onChange={(e) => updateSlot(idx, { end: e.target.value })}
-                className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
-              />
+                <input
+                  type='time'
+                  value={slot.end}
+                  onChange={(e) => updateSlot(idx, { end: e.target.value })}
+                  className={`border rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full ${rowInvalid ? 'border-red-400' : 'border-gray-200'}`}
+                />
 
-              <button
-                type='button'
-                onClick={() => removeSlot(idx)}
-                disabled={slots.length === 1}
-                className='p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed'
-                title='Remove'
-              >
-                <X className='w-4 h-4' />
-              </button>
-            </div>
-          );
-        })}
+                <button
+                  type='button'
+                  onClick={() => removeSlot(idx)}
+                  disabled={slots.length === 1}
+                  className='p-1.5 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed'
+                  title='Remove'
+                >
+                  <X className='w-4 h-4' />
+                </button>
+              </div>
+            );
+          })}
         </div>
 
         {/* Validation hint */}
         {!allValid && (
-          <p className='text-xs text-red-600'>Each end time must be after its start time.</p>
+          <p className='text-xs text-red-600'>
+            Each end time must be after its start time.
+          </p>
         )}
 
         {/* Add another slot */}
@@ -633,7 +692,9 @@ function WindowEditor({
         </button>
 
         <div className='flex gap-2 justify-end pt-3 border-t border-gray-100'>
-          <Button variant='secondary' onClick={onClose}>Cancel</Button>
+          <Button variant='secondary' onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             loading={mut.isPending}
             disabled={!allValid}

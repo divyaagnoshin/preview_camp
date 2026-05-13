@@ -85,9 +85,7 @@ export const updateOrganization = (
   api.patch(`/organizations/${id}`, body).then((r) => r.data);
 export const deleteOrganization = (id: string): Promise<void> =>
   api.delete(`/organizations/${id}`).then((r) => r.data);
-export const listOrgAdmins = (
-  orgId: string,
-): Promise<{ data: OrgAdmin[] }> =>
+export const listOrgAdmins = (orgId: string): Promise<{ data: OrgAdmin[] }> =>
   api.get(`/organizations/${orgId}/admins`).then((r) => r.data);
 export const createOrgAdmin = (
   orgId: string,
@@ -103,9 +101,7 @@ export const createOrgAdmin = (
 // Detail + cross-role user management for the org-detail page (superadmin).
 export const getOrganization = (id: string): Promise<Organization> =>
   api.get(`/organizations/${id}`).then((r) => r.data);
-export const listOrgUsers = (
-  orgId: string,
-): Promise<{ data: OrgAdmin[] }> =>
+export const listOrgUsers = (orgId: string): Promise<{ data: OrgAdmin[] }> =>
   api.get(`/organizations/${orgId}/users`).then((r) => r.data);
 export const createOrgUser = (
   orgId: string,
@@ -119,9 +115,7 @@ export const createOrgUser = (
 ): Promise<OrgAdmin> =>
   api.post(`/organizations/${orgId}/users`, body).then((r) => r.data);
 export const deleteOrgUser = (orgId: string, userId: string): Promise<void> =>
-  api
-    .delete(`/organizations/${orgId}/users/${userId}`)
-    .then((r) => r.data);
+  api.delete(`/organizations/${orgId}/users/${userId}`).then((r) => r.data);
 
 // ── Campaigns ─────────────────────────────────────────────
 export const getCampaigns = (params?: any) =>
@@ -429,6 +423,11 @@ export const goReady = (jobIds: string[]) =>
   api
     .patch('/sessions/ready', { selected_job_ids: jobIds })
     .then((r) => r.data);
+// Possible shapes:
+//   • a contact card (object with interaction_id, etc.)
+//   • { exhausted: true, breakdown } — all CCS rows on selected jobs are
+//     in terminal state, polling further is pointless
+//   • null — nothing dispatchable right now (cool-off / locked), poll again
 export const getNextContact = () =>
   api
     .get('/workspace/next-contact')
@@ -490,12 +489,31 @@ export const createAgent = (body: {
 export const updateAgent = (
   id: string,
   body: { is_active?: boolean; first_name?: string; last_name?: string },
-): Promise<AgentUser> =>
-  api.patch(`/agents/${id}`, body).then((r) => r.data);
+): Promise<AgentUser> => api.patch(`/agents/${id}`, body).then((r) => r.data);
 export const deleteAgent = (
   id: string,
 ): Promise<void | { id: string; deactivated: boolean; reason: string }> =>
   api.delete(`/agents/${id}`).then((r) => r.data);
+
+// ── Telephony (FreeSWITCH SIP creds for the browser softphone) ─
+export interface SipCredentials {
+  extension: string;
+  password: string;
+  sip_domain: string;
+  wss_url: string;
+  stun_url: string;
+  // Optional TURN relay; when set the softphone adds it to iceServers and
+  // can be forced into relay-only mode via force_turn.
+  turn_url: string;
+  turn_username: string;
+  turn_password: string;
+  force_turn: boolean;
+  caller_id_number: string;
+  caller_id_name: string;
+  dial_prefix: string;
+}
+export const getSipCredentials = (): Promise<SipCredentials> =>
+  api.get('/telephony/sip-credentials').then((r) => r.data);
 
 // ── Reports ───────────────────────────────────────────────
 export const getCampaignReport = (id: string, params?: any) =>

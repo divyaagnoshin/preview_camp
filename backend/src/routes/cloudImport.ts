@@ -192,10 +192,16 @@ export interface CloudImportResult {
   batch_id: string;
   provider: string;
   status: string;
-  files: { file: string; imported: number; failed: number }[];
+  files: {
+    file: string;
+    imported: number;
+    failed: number;
+    skipped: number;
+  }[];
   total_rows: number;
   imported_rows: number;
   failed_rows: number;
+  skipped_rows: number;
   errors: { file: string; row: number; error: string }[];
 }
 
@@ -266,12 +272,17 @@ export async function runCloudImport(args: {
     const currentBatchId: string = batchRes.rows[0].id;
     batchId = currentBatchId;
 
-    const fileResults: { file: string; imported: number; failed: number }[] =
-      [];
+    const fileResults: {
+      file: string;
+      imported: number;
+      failed: number;
+      skipped: number;
+    }[] = [];
     const allErrors: { file: string; row: number; error: string }[] = [];
     let totalRows = 0;
     let totalImported = 0;
     let totalFailed = 0;
+    let totalSkipped = 0;
 
     const handleCsv = async (label: string, text: string) => {
       const records = await parseCsv(text);
@@ -285,10 +296,12 @@ export async function runCloudImport(args: {
       );
       totalImported += r.imported;
       totalFailed += r.failed;
+      totalSkipped += r.skipped;
       fileResults.push({
         file: label,
         imported: r.imported,
         failed: r.failed,
+        skipped: r.skipped,
       });
       for (const e of r.errors)
         allErrors.push({ file: label, row: e.row, error: e.error });
@@ -364,6 +377,7 @@ export async function runCloudImport(args: {
       total_rows: totalRows,
       imported_rows: totalImported,
       failed_rows: totalFailed,
+      skipped_rows: totalSkipped,
       errors: allErrors,
     };
   } catch (err: any) {

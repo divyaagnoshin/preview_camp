@@ -192,9 +192,7 @@ export async function importCsvRecords(
       .filter((k: string) => !SYSTEM_FIELDS_SET.has(k)),
   );
   const requiredCustomKeys = defsRes.rows
-    .filter(
-      (d: any) => d.is_required && !SYSTEM_FIELDS_SET.has(d.field_key),
-    )
+    .filter((d: any) => d.is_required && !SYSTEM_FIELDS_SET.has(d.field_key))
     .map((d: any) => d.field_key);
 
   // Phase 1: validate + map every row in memory. Failures (bad phone format,
@@ -547,7 +545,7 @@ export async function importCsvStream(
     // which is acceptable here since the user can simply re-upload — data
     // integrity (FKs, constraints, MVCC) is unaffected. Saves one fsync
     // per upload (≈5-50 ms on typical SSD-backed installs).
-    await client.query("SET LOCAL synchronous_commit = OFF");
+    await client.query('SET LOCAL synchronous_commit = OFF');
     for await (const row of parser as AsyncIterable<any>) {
       totalRows++;
 

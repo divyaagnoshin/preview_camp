@@ -13,6 +13,7 @@ import cloudImportConfigsRouter from './routes/cloudImportConfigs';
 import fieldLibraryRouter from './routes/fieldLibrary';
 import campaignsRouter from './routes/campaigns';
 import holidayCalendarsRouter from './routes/holidayCalendars';
+import telephonyRouter from './routes/telephony';
 // Agent workspace + session-mutation routes moved to backend-queue service.
 import {
   dncRouter,
@@ -28,6 +29,7 @@ import {
 } from './routes/other';
 import { errorHandler } from './middleware/errorHandler';
 import { startScheduler } from './services/scheduler';
+import { startEslListener } from './services/eslListener';
 import { seedTimezones } from './db/seedTimezones';
 import { seedSuperadmin } from './db/seedSuperadmin';
 import { seedFieldLibrary } from './db/seedFieldLibrary';
@@ -67,6 +69,8 @@ app.use('/v1/disposition-codes', dispositionRouter);
 app.use('/v1/reports', reportsRouter);
 app.use('/v1/agents', agentsRouter);
 app.use('/v1/sessions', sessionsRouter);
+app.use('/v1/timezones', timezonesRouter);
+app.use('/v1/telephony', telephonyRouter);
 // /v1/workspace/* and the mutating /v1/sessions/{ready,heartbeat,offline}
 // endpoints are served by the backend-queue service (see ../backend-queue).
 
@@ -82,6 +86,7 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   startScheduler();
+  startEslListener();
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();
   seedSuperadmin();

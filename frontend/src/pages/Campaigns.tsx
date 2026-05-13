@@ -98,8 +98,9 @@ export default function CampaignsPage() {
     },
   });
 
-  // Edit only patches the fields the PATCH endpoint understands; contact
-  // lists are not editable from this page (they're set at create time).
+  // Edit patches the fields the PATCH endpoint understands. Contact lists
+  // and DNC groups are sent as junction arrays and replaced atomically on
+  // the backend (campaigns must be in draft/stopped state to be patched).
   const editMut = useMutation({
     mutationFn: () =>
       updateCampaign(editingId!, {
@@ -113,7 +114,12 @@ export default function CampaignsPage() {
         agent_priority_enabled: form.agent_priority_enabled,
         schedule_template_id: form.schedule_template_id,
         holiday_calendar_id: form.holiday_calendar_id,
+        contact_list_ids: form.contact_list_ids,
         dnc_group_ids: form.dnc_group_ids,
+        // Empty string \u2192 null so the user can clear a previously set
+        // date by wiping the field. PATCH treats null as "set column to NULL".
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['campaigns'] });
@@ -437,72 +443,58 @@ export default function CampaignsPage() {
 
           {step === 2 && (
             <>
-              {/* Contact lists — edit-mode shows them read-only because the
-                  PATCH endpoint does not support changing list assignments. */}
-              {editingId ? (
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>
-                    Contact Lists
-                  </label>
-                  <div className='border border-gray-200 rounded-lg p-3 bg-gray-50 text-sm text-gray-600'>
-                    {form.contact_list_ids.length
-                      ? (lists?.data || [])
-                          .filter((l: any) =>
-                            form.contact_list_ids.includes(l.id),
-                          )
-                          .map((l: any) => l.name)
-                          .join(', ') || '—'
-                      : '—'}
-                    <p className='text-xs text-gray-400 mt-1'>
-                      Contact list assignments are fixed at creation time.
+              {/* Contact lists — editable in both create and edit modes. The
+                  PATCH endpoint replaces campaign_contact_lists atomically
+                  and is gated server-side to draft/stopped campaigns. */}
+              <div>
+                <label className='block text-xs text-gray-500 mb-1'>
+                  Contact Lists *
+                </label>
+                <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto'>
+                  {lists?.data?.length === 0 && (
+                    <p className='text-xs text-gray-400 p-3'>
+                      No contact lists. Create one first.
                     </p>
-                  </div>
-                </div>
-              ) : (
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>
-                    Contact Lists *
-                  </label>
-                  <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto'>
-                    {lists?.data?.length === 0 && (
-                      <p className='text-xs text-gray-400 p-3'>
-                        No contact lists. Create one first.
-                      </p>
-                    )}
-                    {lists?.data?.map((l: any) => (
-                      <label
-                        key={l.id}
-                        className='flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer'
-                      >
-                        <input
-                          type='checkbox'
-                          value={l.id}
-                          checked={form.contact_list_ids.includes(l.id)}
-                          onChange={(e) =>
-                            set(
-                              'contact_list_ids',
-                              e.target.checked
-                                ? [...form.contact_list_ids, l.id]
-                                : form.contact_list_ids.filter(
-                                    (x: string) => x !== l.id,
-                                  ),
-                            )
-                          }
-                          className='w-4 h-4 text-indigo-600 rounded'
-                        />
-                        <div>
-                          <div className='text-sm font-medium text-gray-900'>
-                            {l.name}
-                          </div>
-                          <div className='text-xs text-gray-400'>
-                            {l.contact_count} contacts
-                          </div>
+                  )}
+                  {lists?.data?.map((l: any) => (
+                    <label
+                      key={l.id}
+                      className='flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer'
+                    >
+                      <input
+                        type='checkbox'
+                        value={l.id}
+                        checked={form.contact_list_ids.includes(l.id)}
+                        onChange={(e) =>
+                          set(
+                            'contact_list_ids',
+                            e.target.checked
+                              ? [...form.contact_list_ids, l.id]
+                              : form.contact_list_ids.filter(
+                                  (x: string) => x !== l.id,
+                                ),
+                          )
+                        }
+                        className='w-4 h-4 text-indigo-600 rounded'
+                      />
+                      <div>
+                        <div className='text-sm font-medium text-gray-900'>
+                          {l.name}
                         </div>
-                      </label>
-                    ))}
-                  </div>
+                        <div className='text-xs text-gray-400'>
+                          {l.contact_count} contacts
+                        </div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
-              )}
+                {editingId && (
+                  <p className='text-xs text-gray-400 mt-1'>
+                    Changing lists affects only future job runs; in-progress
+                    contacts on the current job are unaffected.
+                  </p>
+                )}
+              </div>
 
               {/* Agent priority */}
               <label className='flex items-center gap-3 cursor-pointer'>
@@ -667,9 +659,7 @@ export default function CampaignsPage() {
                 <Button
                   className='flex-1'
                   loading={editingId ? editMut.isPending : createMut.isPending}
-                  disabled={
-                    !form.name || (!editingId && !form.contact_list_ids.length)
-                  }
+                  disabled={!form.name || !form.contact_list_ids.length}
                   onClick={() =>
                     editingId ? editMut.mutate() : createMut.mutate()
                   }

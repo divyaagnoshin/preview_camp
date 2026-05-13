@@ -470,6 +470,20 @@ scheduleRouter.post(
       if (!name) throw new AppError(400, 'name required');
       // Windows are optional at create time; they can be added later via the
       // POST /:id/windows endpoint from the template detail page.
+      // Reject duplicate-day windows in the same payload \u2014 the per-row
+      // POST /:id/windows enforces the same rule, but catching it here keeps
+      // the create flow atomic (no half-written template).
+      if (Array.isArray(windows) && windows.length) {
+        const seenDays = new Set<number>();
+        for (const w of windows) {
+          if (seenDays.has(w.day_of_week))
+            throw new AppError(
+              400,
+              `Duplicate window for day ${w.day_of_week}: only one window per weekday allowed.`,
+            );
+          seenDays.add(w.day_of_week);
+        }
+      }
 
       const { rows } = await pool.query(
         `INSERT INTO schedule_templates (org_id, name, timezone, created_by)
@@ -599,6 +613,18 @@ scheduleRouter.post(
         throw new AppError(400, 'start_time and end_time required');
       if (start_time >= end_time)
         throw new AppError(400, 'end_time must be after start_time');
+      // One window per weekday per template: a duplicate day creates ambiguous
+      // dial-eligibility (which window's start/end wins?), so reject up front.
+      const dup = await pool.query(
+        `SELECT 1 FROM schedule_windows
+          WHERE schedule_template_id = $1 AND day_of_week = $2 LIMIT 1`,
+        [req.params.id, day_of_week],
+      );
+      if (dup.rowCount)
+        throw new AppError(
+          409,
+          'A window already exists for that day. Edit the existing one instead.',
+        );
       const { rows } = await pool.query(
         `INSERT INTO schedule_windows (schedule_template_id, day_of_week, start_time, end_time)
        VALUES ($1,$2,$3,$4) RETURNING *`,
@@ -620,6 +646,22 @@ scheduleRouter.patch(
       const { day_of_week, start_time, end_time } = req.body;
       if (day_of_week !== undefined && (day_of_week < 0 || day_of_week > 6))
         throw new AppError(400, 'day_of_week must be 0-6');
+      // If the caller is moving this window to a different weekday, make
+      // sure no sibling window already owns that day.
+      if (day_of_week !== undefined) {
+        const dup = await pool.query(
+          `SELECT 1 FROM schedule_windows
+            WHERE schedule_template_id = $1
+              AND day_of_week = $2
+              AND id <> $3 LIMIT 1`,
+          [req.params.id, day_of_week, req.params.winId],
+        );
+        if (dup.rowCount)
+          throw new AppError(
+            409,
+            'A window already exists for that day. Edit the existing one instead.',
+          );
+      }
       const { rows } = await pool.query(
         `UPDATE schedule_windows
           SET day_of_week = COALESCE($1, day_of_week),

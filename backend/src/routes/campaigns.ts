@@ -196,6 +196,8 @@ router.patch(
         'schedule_template_id',
         'holiday_calendar_id',
         'dnc_group_id',
+        'start_date',
+        'end_date',
       ];
       const sets: string[] = [];
       const params: any[] = [];
@@ -220,6 +222,18 @@ router.patch(
         sets.push(`dnc_group_id = $${params.length}`);
       }
 
+      // contact_list_ids — junction replacement on campaign_contact_lists.
+      // Only the future job runs use this junction (existing jobs/CCS rows
+      // are tied by job_id, not by the junction). The PATCH already blocks
+      // active campaigns above, so callers can only reach here while the
+      // campaign is in draft or stopped state.
+      const listIdsProvided = Array.isArray(req.body.contact_list_ids);
+      const listIds: string[] = listIdsProvided
+        ? req.body.contact_list_ids.filter(Boolean)
+        : [];
+      if (listIdsProvided && !listIds.length)
+        throw new AppError(400, 'contact_list_ids must not be empty');
+
       const updated = await withTransaction(async (client) => {
         if (dncIdsProvided && dncIds.length) {
           const owners = await client.query(
@@ -230,6 +244,17 @@ router.patch(
             throw new AppError(404, 'one or more dnc groups not found');
         }
 
+        if (listIdsProvided) {
+          const owners = await client.query(
+            'SELECT id FROM contact_lists WHERE id = ANY($1::uuid[]) AND org_id=$2',
+            [listIds, req.user!.orgId],
+          );
+          if (owners.rowCount !== listIds.length)
+            throw new AppError(404, 'one or more contact lists not found');
+        }
+
+        // Always bump updated_at so PATCH with only junction-arrays (no
+        // scalar fields) still produces a valid SET clause.
         sets.push('updated_at = NOW()');
         params.push(req.params.id, req.user!.orgId);
         const { rows } = await client.query(
@@ -248,6 +273,20 @@ router.patch(
               `INSERT INTO campaign_dnc_groups (campaign_id, dnc_group_id)
                VALUES ($1,$2) ON CONFLICT DO NOTHING`,
               [req.params.id, gid],
+            );
+          }
+        }
+
+        if (listIdsProvided) {
+          await client.query(
+            'DELETE FROM campaign_contact_lists WHERE campaign_id=$1',
+            [req.params.id],
+          );
+          for (const lid of listIds) {
+            await client.query(
+              `INSERT INTO campaign_contact_lists (campaign_id, contact_list_id)
+               VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+              [req.params.id, lid],
             );
           }
         }
@@ -454,8 +493,7 @@ router.post(
           status: 'active',
           started_at: job.start_time,
           contacts_registered: newCcsRows.length,
-          contacts_skipped_as_duplicate:
-            countRows[0].cnt - newCcsRows.length,
+          contacts_skipped_as_duplicate: countRows[0].cnt - newCcsRows.length,
         };
       });
 

@@ -14,6 +14,18 @@ const REJECTION_CODES = [
   'SUPERVISOR_HOLD',
 ];
 
+// Minimum minutes that must elapse since the last non-pending attempt on a
+// contact before the dispatcher will hand it out again. Defaults to 240 (the
+// historical 4-hour rule). Set DIALER_MIN_REDIAL_MINUTES=0 to disable the
+// floor entirely and let the per-disposition next_attempt_at be the only
+// re-dial cool-off.
+const MIN_REDIAL_MINUTES = (() => {
+  const raw = process.env.DIALER_MIN_REDIAL_MINUTES;
+  if (raw === undefined || raw === '') return 240;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 240;
+})();
+
 // PATCH /sessions/ready
 router.patch(
   '/sessions/ready',
@@ -98,7 +110,25 @@ router.get(
       if (agentPriorityEnabled) fetchParams.push(agentId);
 
       const result = await withTransaction(async (client) => {
-        // Atomic: find + lock CCS row
+        // Atomic: find + lock CCS row.
+        //
+        // Eligibility rules, evaluated together so a contact is only handed
+        // to an agent when ALL of these are true:
+        //   1. CCS row is queued, due, unlocked, not already with an agent.
+        //   2. Campaign is within its start_date / end_date window
+        //      (NULL on either side means "unbounded that direction").
+        //   3. If the campaign has a schedule_template_id, today's day-of-week
+        //      and the current local time (in the TEMPLATE's timezone) must
+        //      fall inside one of that template's schedule_windows. Campaigns
+        //      without a template dial 24/7.
+        //   4. If the campaign has a holiday_calendar_id, today (in the
+        //      template's timezone, falling back to UTC) must NOT be a
+        //      full-day holiday block AND the current local time must NOT
+        //      fall inside a partial block_start..block_end slot.
+        //   5. Phone number is not on a DNC group attached to the campaign.
+        //   6. No non-pending attempt happened in the last 4 hours
+        //      (per-contact cool-off).
+        //   7. Agent-priority assignment filter (when the campaign opts in).
         const { rows: ccsRows } = await client.query(
           `SELECT ccs.*, c.phone_number, c.first_name, c.last_name, c.custom_fields,
                 c.priority as contact_priority, cj.campaign_id,
@@ -107,21 +137,63 @@ router.get(
          JOIN contacts c ON c.id = ccs.contact_id
          JOIN campaign_jobs cj ON cj.id = ccs.job_id
          JOIN campaigns camp ON camp.id = cj.campaign_id
+         LEFT JOIN schedule_templates st ON st.id = camp.schedule_template_id
          WHERE ccs.job_id = ANY($1)
            AND ccs.status = 'queued'
            AND ccs.next_attempt_at <= NOW()
            AND ccs.locked_by_session IS NULL
+           -- (2) Campaign date-range gate.
+           AND (camp.start_date IS NULL OR camp.start_date <= CURRENT_DATE)
+           AND (camp.end_date   IS NULL OR camp.end_date   >= CURRENT_DATE)
+           -- (3) Schedule template window gate. EXTRACT(DOW) returns
+           --     0=Sunday..6=Saturday which matches schedule_windows.day_of_week.
+           --     "(NOW() AT TIME ZONE st.timezone)" returns the wall-clock
+           --     timestamp in that zone; we cast to date for DOW and to time
+           --     for the start/end comparison.
+           AND (
+             camp.schedule_template_id IS NULL
+             OR EXISTS (
+               SELECT 1 FROM schedule_windows sw
+                WHERE sw.schedule_template_id = camp.schedule_template_id
+                  AND sw.day_of_week =
+                    EXTRACT(DOW FROM (NOW() AT TIME ZONE st.timezone))::int
+                  AND (NOW() AT TIME ZONE st.timezone)::time
+                      BETWEEN sw.start_time AND sw.end_time
+             )
+           )
+           -- (4) Holiday calendar gate. Falls back to UTC when no template
+           --     timezone is configured so the check is still timezone-aware
+           --     for the partial-block case.
+           AND NOT EXISTS (
+             SELECT 1 FROM holiday_dates hd
+              WHERE hd.calendar_id = camp.holiday_calendar_id
+                AND hd.holiday_date =
+                  (NOW() AT TIME ZONE COALESCE(st.timezone, 'UTC'))::date
+                AND (
+                  hd.is_full_day_block = TRUE
+                  OR (NOW() AT TIME ZONE COALESCE(st.timezone, 'UTC'))::time
+                       BETWEEN hd.block_start AND hd.block_end
+                )
+           )
+           -- (5) DNC suppression at the campaign level.
            AND c.phone_number NOT IN (
              SELECT dn.phone_number FROM dnc_numbers dn
              JOIN campaign_dnc_groups cdg ON cdg.dnc_group_id = dn.dnc_group_id
              WHERE cdg.campaign_id = cj.campaign_id
            )
-           AND NOT EXISTS (
+           -- (6) Per-contact recent-attempt cool-off. Configurable via
+           --     DIALER_MIN_REDIAL_MINUTES (default 240). When set to 0
+           --     the clause is omitted so only next_attempt_at governs.
+           ${
+             MIN_REDIAL_MINUTES > 0
+               ? `AND NOT EXISTS (
              SELECT 1 FROM contact_interactions ci
              WHERE ci.contact_id = ccs.contact_id
-               AND ci.dialed_at >= NOW() - INTERVAL '4 hours'
+               AND ci.dialed_at >= NOW() - INTERVAL '${MIN_REDIAL_MINUTES} minutes'
                AND ci.call_status != 'pending'
-           )
+           )`
+               : ''
+           }
            ${assignmentFilter}
          ORDER BY ${orderBy}
          LIMIT 1
@@ -204,6 +276,46 @@ router.get(
       });
 
       if (!result) {
+        // Distinguish "nothing right now" (cool-off, locked, recent-attempt
+        // skip) from "nothing ever" (every CCS row terminal). The frontend
+        // uses this to switch from a polling spinner to a final "completed"
+        // screen. Contacts sitting in a future next_attempt_at cool-off
+        // are NOT treated as terminal — the agent stays on the spinner
+        // and the next poll picks them up automatically once their
+        // cool-off elapses.
+        const { rows: aggRows } = await pool.query(
+          `SELECT
+             COUNT(*)::int AS total,
+             COUNT(*) FILTER (
+               WHERE status IN ('completed','exhausted','dnc')
+             )::int AS terminal,
+             COUNT(*) FILTER (WHERE status = 'with_agent')::int AS with_agent,
+             COUNT(*) FILTER (
+               WHERE status = 'queued' AND next_attempt_at > NOW()
+             )::int AS waiting
+           FROM campaign_contact_status
+           WHERE job_id = ANY($1)`,
+          [session.selected_job_ids],
+        );
+        const agg = aggRows[0] || {
+          total: 0,
+          terminal: 0,
+          with_agent: 0,
+          waiting: 0,
+        };
+        const exhausted = agg.total === 0 || agg.terminal === agg.total;
+        if (exhausted) {
+          res.json({
+            exhausted: true,
+            breakdown: {
+              total: agg.total,
+              completed: agg.terminal,
+              with_agent: agg.with_agent,
+              waiting: agg.waiting,
+            },
+          });
+          return;
+        }
         res.status(204).set('Retry-After-Ms', '5000').send();
         return;
       }
@@ -269,7 +381,6 @@ router.post(
     }
   },
 );
-
 
 // POST /workspace/disposition — the single final UPDATE on contact_interactions
 router.post(
@@ -383,14 +494,21 @@ router.post(
           ],
         );
 
-        // Get campaign config for max_attempts check
+        // Get campaign config for max_attempts + retry interval. The
+        // campaign-level attempt_interval_min is the source of truth for
+        // re-dial timing on this campaign; the disposition's
+        // retry_delay_min is used only as a fallback when the campaign
+        // value isn't set (the column is NOT NULL DEFAULT 90, so in
+        // practice the campaign value always wins).
         const { rows: campRows } = await client.query(
-          `SELECT c.max_attempts FROM campaigns c
+          `SELECT c.max_attempts, c.attempt_interval_min FROM campaigns c
          JOIN campaign_jobs cj ON cj.campaign_id = c.id
          WHERE cj.id = $1`,
           [interaction.job_id],
         );
         const maxAttempts = campRows[0]?.max_attempts;
+        const retryMinutes =
+          campRows[0]?.attempt_interval_min ?? code.retry_delay_min ?? 90;
 
         // Get current attempts_made
         const { rows: ccsRows } = await client.query(
@@ -413,17 +531,14 @@ router.post(
           ccsStatus = 'queued';
           nextAttemptAt =
             reschedule_at ||
-            new Date(
-              Date.now() + (code.retry_delay_min || 90) * 60000,
-            ).toISOString();
+            new Date(Date.now() + retryMinutes * 60000).toISOString();
         } else {
           // NEXT_ATTEMPT
           ccsStatus = 'queued';
           nextAttemptAt = new Date(
-            Date.now() + (code.retry_delay_min || 90) * 60000,
+            Date.now() + retryMinutes * 60000,
           ).toISOString();
         }
-
 
         // Update CCS
         await client.query(
