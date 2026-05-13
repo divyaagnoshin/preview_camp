@@ -40,7 +40,10 @@ function PrivateRoute({
   const { token, user } = useAuth();
   if (!token) return <Navigate to='/login' replace />;
   if (roles && user && !roles.includes(user.role)) {
-    const fallback = user.role === 'superadmin' ? '/organizations' : '/workspace';
+    const fallback =
+      user.role === 'superadmin' ? '/organizations'
+      : user.role === 'agent'    ? '/workspace'
+      : '/dashboard';
     return <Navigate to={fallback} replace />;
   }
   return <>{children}</>;

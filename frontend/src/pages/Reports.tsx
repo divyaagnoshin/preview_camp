@@ -54,9 +54,15 @@ export default function ReportsPage() {
         {selectedCampaign && loadReport && <PageLoader />}
         {report && (
           <div className="p-5 space-y-6">
+            {/* Contact accounting */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <StatCard label="Total Contacts"      value={report.total_contacts      || 0} color="gray" />
+              <StatCard label="Successful Contacts" value={report.successful_contacts || 0} color="green" />
+              <StatCard label="Duplicate Contacts"  value={report.duplicate_contacts  || 0} color="orange" />
+            </div>
+
             {/* KPIs */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <StatCard label="Total Contacts"  value={report.total_contacts  || 0} color="gray" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard label="Attempted"       value={report.attempted       || 0} color="indigo" />
               <StatCard label="Connected"       value={report.connected       || 0} color="green" />
               <StatCard label="Completed"       value={report.completed_total || 0} color="blue" />

@@ -197,7 +197,7 @@ export default function CampaignsPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Campaigns</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Campaigns</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {data?.data?.length || 0} campaigns total
           </p>
@@ -376,28 +376,20 @@ export default function CampaignsPage() {
                   ]}
                 />
                 <Select
-                  label='Max Attempts'
-                  value={
-                    form.schedule_type === 'infinite'
-                      ? 'infinite'
-                      : form.max_attempts
-                  }
-                  disabled={form.schedule_type === 'infinite'}
-                  onChange={(e) => set('max_attempts', e.target.value)}
-                  options={
-                    form.schedule_type === 'infinite'
-                      ? [{ value: 'infinite', label: 'Infinite (no limit)' }]
-                      : [
-                          { value: '1', label: '1 attempt' },
-                          { value: '2', label: '2 attempts' },
-                          { value: '3', label: '3 attempts' },
-                          { value: '5', label: '5 attempts' },
-                          { value: '10', label: '10 attempts' },
-                          { value: '15', label: '15 attempts' },
-                          { value: '20', label: '20 attempts' },
-                        ]
-                  }
-                />
+  label='Max Attempts'
+  value={form.max_attempts}
+  onChange={(e) => set('max_attempts', e.target.value)}
+  options={[
+    { value: 'infinite', label: 'Infinite (no limit)' },
+    { value: '1', label: '1 attempt' },
+    { value: '2', label: '2 attempts' },
+    { value: '3', label: '3 attempts' },
+    { value: '5', label: '5 attempts' },
+    { value: '10', label: '10 attempts' },
+    { value: '15', label: '15 attempts' },
+    { value: '20', label: '20 attempts' },
+  ]}
+/>
               </div>
 
               <div className='grid grid-cols-2 gap-3'>
@@ -554,19 +546,21 @@ export default function CampaignsPage() {
 
           {step === 3 && (
             <>
-              <div className='grid grid-cols-2 gap-3'>
+              <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <Input
                   label='Start Date'
                   type='date'
                   value={form.start_date}
                   onChange={(e) => set('start_date', e.target.value)}
                 />
-                <Input
-                  label='End Date'
-                  type='date'
-                  value={form.end_date}
-                  onChange={(e) => set('end_date', e.target.value)}
-                />
+                {form.schedule_type !== 'infinite' && (
+                  <Input
+                    label='End Date'
+                    type='date'
+                    value={form.end_date}
+                    onChange={(e) => set('end_date', e.target.value)}
+                  />
+                )}
               </div>
 
               {/* Routing assignments — optional FKs on campaigns */}

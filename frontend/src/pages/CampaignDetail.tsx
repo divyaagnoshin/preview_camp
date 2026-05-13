@@ -58,7 +58,7 @@ export default function CampaignDetailPage() {
         </button>
         <div className='flex-1'>
           <div className='flex items-center gap-2'>
-            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>{campaign.name}</h1>
+            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
           </div>
           <p className='text-sm text-[#7A5C44] mt-0.5 capitalize'>
@@ -127,12 +127,26 @@ export default function CampaignDetailPage() {
       {/* Report stats */}
       {report && (
         <>
-          <div className='grid grid-cols-2 lg:grid-cols-5 gap-4'>
+          {/* Contact accounting: raw list count vs unique queued vs collapsed dupes */}
+          <div className='grid grid-cols-2 lg:grid-cols-3 gap-4'>
             <StatCard
               label='Total Contacts'
               value={report.total_contacts || 0}
               color='gray'
             />
+            <StatCard
+              label='Successful Contacts'
+              value={report.successful_contacts || 0}
+              color='green'
+            />
+            <StatCard
+              label='Duplicate Contacts'
+              value={report.duplicate_contacts || 0}
+              color='orange'
+            />
+          </div>
+
+          <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
             <StatCard
               label='Attempted'
               value={report.attempted || 0}

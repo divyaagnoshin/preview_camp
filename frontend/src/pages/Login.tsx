@@ -244,7 +244,15 @@ export default function LoginPage() {
       await login(email, password);
       const stored = localStorage.getItem('user');
       const role   = stored ? (JSON.parse(stored).role as string) : '';
-      navigate(role === 'superadmin' ? '/organizations' : '/workspace');
+      // Role-based landing page:
+      //   superadmin → /organizations (cross-tenant management)
+      //   agent      → /workspace     (call-handling UI)
+      //   admin / supervisor / anything else → /dashboard
+      const dest =
+        role === 'superadmin' ? '/organizations'
+        : role === 'agent'    ? '/workspace'
+        :                       '/dashboard';
+      navigate(dest);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
     } finally { setLoading(false); }
@@ -278,7 +286,7 @@ export default function LoginPage() {
             style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)', boxShadow: '0 4px 20px rgba(244,82,30,0.5)' }}>
             <Zap className='w-5 h-5 text-white' fill='white'/>
           </div>
-          <span className='text-xl font-bold text-white' style={{ fontFamily: 'Syne, sans-serif', letterSpacing: '-0.02em' }}>
+          <span className='text-xl font-bold text-white' style={{ fontFamily: 'Sora, sans-serif', letterSpacing: '-0.02em' }}>
             PreviewCamp
           </span>
         </div>
@@ -288,7 +296,7 @@ export default function LoginPage() {
           <CallAnimation/>
           {/* caption below animation */}
           <div className='mt-6 text-center'>
-            <p className='text-sm font-semibold text-[#E8C9B0]' style={{ fontFamily: 'Syne, sans-serif' }}>
+            <p className='text-sm font-semibold text-[#E8C9B0]' style={{ fontFamily: 'Sora, sans-serif' }}>
               Agent → System → Customer
             </p>
             <p className='text-xs text-[#7A5C44] mt-1'>Live preview call routing in action</p>
@@ -298,7 +306,7 @@ export default function LoginPage() {
         {/* Bottom headline + feature pills */}
         <div className='relative z-10 space-y-5'>
           <div>
-            <h2 className='text-3xl font-bold text-white leading-tight' style={{ fontFamily: 'Syne, sans-serif' }}>
+            <h2 className='text-3xl font-bold text-white leading-tight' style={{ fontFamily: 'Sora, sans-serif' }}>
               Power your{' '}
               <span style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 campaigns
@@ -318,7 +326,7 @@ export default function LoginPage() {
               <div key={title} className='rounded-xl p-3'
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
                 <div className='text-lg mb-1'>{icon}</div>
-                <div className='text-xs font-semibold text-[#E8C9B0]' style={{ fontFamily: 'Syne, sans-serif' }}>{title}</div>
+                <div className='text-xs font-semibold text-[#E8C9B0]' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</div>
                 <div className='text-xs text-[#7A5C44]'>{sub}</div>
               </div>
             ))}
@@ -345,7 +353,7 @@ export default function LoginPage() {
               style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)' }}>
               <Zap className='w-5 h-5 text-white' fill='white'/>
             </div>
-            <span className='text-xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>PreviewCamp</span>
+            <span className='text-xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>PreviewCamp</span>
           </div>
 
           {/* ── LOGIN CARD ── */}
@@ -362,7 +370,7 @@ export default function LoginPage() {
             {/* Card header */}
             <div className='mb-7'>
               <h1 className='text-[26px] font-bold text-[#1A0F00] leading-tight mb-1.5'
-                style={{ fontFamily: 'Syne, sans-serif', letterSpacing: '-0.03em' }}>
+                style={{ fontFamily: 'Sora, sans-serif', letterSpacing: '-0.03em' }}>
                 Welcome back
               </h1>
               <p className='text-sm text-[#A16030]'>Sign in to your PreviewCamp account</p>

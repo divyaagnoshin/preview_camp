@@ -347,19 +347,41 @@ router.post(
         if (!countRows[0].cnt)
           throw new AppError(422, 'Campaign has no contacts');
 
-        // Get next run number
-        const { rows: runRows } = await client.query(
-          'SELECT COALESCE(MAX(job_run_number),0)+1 AS next FROM campaign_jobs WHERE campaign_id=$1',
+        // One campaign → one campaign_jobs row, forever. Re-running just
+        // reactivates the existing job (bump run_number, refresh totals)
+        // instead of creating a new job_id every time. This makes the
+        // UNIQUE(contact_id, job_id) constraint on campaign_contact_status
+        // act as a real dedup so re-runs only enqueue newly-added contacts.
+        const { rows: existingJobRows } = await client.query(
+          `SELECT * FROM campaign_jobs
+            WHERE campaign_id=$1
+            ORDER BY job_run_number DESC
+            LIMIT 1`,
           [camp.id],
         );
 
-        // Auto-create job
-        const { rows: jobRows } = await client.query(
-          `INSERT INTO campaign_jobs (campaign_id, job_run_number, status, total_contacts)
-         VALUES ($1,$2,'active',$3) RETURNING *`,
-          [camp.id, runRows[0].next, countRows[0].cnt],
-        );
-        const job = jobRows[0];
+        let job;
+        if (existingJobRows[0]) {
+          const { rows: updatedJob } = await client.query(
+            `UPDATE campaign_jobs
+                SET status='active',
+                    job_run_number = job_run_number + 1,
+                    total_contacts = $2,
+                    start_time = NOW(),
+                    end_time = NULL
+              WHERE id=$1
+              RETURNING *`,
+            [existingJobRows[0].id, countRows[0].cnt],
+          );
+          job = updatedJob[0];
+        } else {
+          const { rows: newJob } = await client.query(
+            `INSERT INTO campaign_jobs (campaign_id, job_run_number, status, total_contacts)
+             VALUES ($1,1,'active',$2) RETURNING *`,
+            [camp.id, countRows[0].cnt],
+          );
+          job = newJob[0];
+        }
 
         // Update campaign status
         await client.query(
@@ -367,12 +389,24 @@ router.post(
           [camp.id],
         );
 
-        // Register all contacts into CCS
-        // DNC check: exclude phones already in linked DNC groups
-        await client.query(
+        // Register all contacts into CCS. Dedup is by (phone_number, job_id),
+        // NOT by (contact_id, job_id), because the same phone can exist in
+        // multiple contact_lists with different contact_id values. Two-layer
+        // dedup:
+        //   1. DISTINCT ON (phone_number) — collapses duplicates inside this
+        //      batch when a campaign is linked to multiple lists that share
+        //      a phone. Lowest priority number (= highest priority) wins,
+        //      then oldest contact row, for a deterministic pick.
+        //   2. NOT EXISTS against existing CCS rows joined back to contacts
+        //      by phone — skips a phone that is already queued for this job
+        //      from a previous run, even if its contact_id is now different.
+        // ON CONFLICT (contact_id, job_id) DO NOTHING is kept only as a
+        // defensive race-condition fallback. RETURNING drives the
+        // status-history insert below.
+        const { rows: newCcsRows } = await client.query(
           `INSERT INTO campaign_contact_status
            (contact_id, job_id, status, priority, assigned_agent_id, next_attempt_at)
-         SELECT
+         SELECT DISTINCT ON (c.phone_number)
            c.id,
            $1,
            CASE WHEN dn.phone_number IS NOT NULL THEN 'dnc' ELSE 'queued' END,
@@ -388,23 +422,40 @@ router.post(
            WHERE cdg.campaign_id = $3
          ) dn ON dn.phone_number = c.phone_number
          WHERE ccl.campaign_id = $3
-         ON CONFLICT (contact_id, job_id) DO NOTHING`,
+           AND NOT EXISTS (
+             SELECT 1
+               FROM campaign_contact_status ccs
+               JOIN contacts c2 ON c2.id = ccs.contact_id
+              WHERE ccs.job_id = $1
+                AND c2.phone_number = c.phone_number
+           )
+         ORDER BY c.phone_number, c.priority ASC, c.created_at ASC
+         ON CONFLICT (contact_id, job_id) DO NOTHING
+         RETURNING contact_id, status`,
           [job.id, camp.agent_priority_enabled, camp.id],
         );
 
-        // Write status history for all registered contacts
-        await client.query(
-          `INSERT INTO contact_status_history (contact_id, job_id, to_status, trigger_type)
-         SELECT contact_id, job_id, status, 'system'
-         FROM campaign_contact_status WHERE job_id=$1`,
-        [job.id]
-      );
+        // Write status history only for the newly-inserted CCS rows. Rows
+        // that were skipped by ON CONFLICT already have their original
+        // history entry from a prior run.
+        if (newCcsRows.length) {
+          const contactIds = newCcsRows.map((r: any) => r.contact_id);
+          const statuses = newCcsRows.map((r: any) => r.status);
+          await client.query(
+            `INSERT INTO contact_status_history (contact_id, job_id, to_status, trigger_type)
+             SELECT UNNEST($1::uuid[]), $2, UNNEST($3::text[]), 'system'`,
+            [contactIds, job.id, statuses],
+          );
+        }
 
         return {
           campaign_id: camp.id,
           job_id: job.id,
           status: 'active',
           started_at: job.start_time,
+          contacts_registered: newCcsRows.length,
+          contacts_skipped_as_duplicate:
+            countRows[0].cnt - newCcsRows.length,
         };
       });
 

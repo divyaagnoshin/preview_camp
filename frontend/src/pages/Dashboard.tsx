@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { getCampaigns, getJobs } from '../api/client';
@@ -6,14 +6,17 @@ import { Card, CardHeader, StatusBadge, Progress, PageLoader, Table } from '../c
 import { useAuth } from '../hooks/useAuth';
 import { Megaphone, Briefcase, TrendingUp, Users, ArrowRight, Activity } from 'lucide-react';
 
-function KPICard({ label, value, sub, icon: Icon, gradient }: { label: string; value: string | number; sub?: string; icon: typeof Megaphone; gradient: string }) {
+function KPICard({ label, value, sub, icon: Icon, gradient, tint, border }: { label: string; value: string | number; sub?: string; icon: typeof Megaphone; gradient: string; tint: string; border: string }) {
   return (
-    <div className='bg-white border border-[#FFE0C8] rounded-2xl p-5 shadow-[0_2px_16px_rgba(244,82,30,0.06)] hover:shadow-[0_8px_24px_rgba(244,82,30,0.12)] transition-all duration-200 hover:-translate-y-0.5 flex gap-4 items-start'>
+    <div
+      className='rounded-2xl p-5 shadow-[0_2px_16px_rgba(244,82,30,0.06)] hover:shadow-[0_8px_24px_rgba(244,82,30,0.12)] transition-all duration-200 hover:-translate-y-0.5 flex gap-4 items-start border'
+      style={{ background: tint, borderColor: border }}
+    >
       <div className='w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0' style={{ background: gradient }}>
         <Icon className='w-5 h-5 text-white' />
       </div>
       <div className='min-w-0'>
-        <div className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>{value}</div>
+        <div className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{value}</div>
         <div className='text-xs font-medium text-[#7A5C44] mt-0.5'>{label}</div>
         {sub && <div className='text-xs text-[#B89070] mt-1'>{sub}</div>}
       </div>
@@ -37,7 +40,7 @@ export default function DashboardPage() {
       {/* Welcome header */}
       <div className='flex items-center justify-between flex-wrap gap-4'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
             Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'},{' '}
             <span style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               {user?.firstName}
@@ -54,10 +57,22 @@ export default function DashboardPage() {
 
       {/* KPI grid */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4 anim-d1'>
-        <KPICard label='Active Campaigns' value={activeCampaigns} icon={Megaphone} gradient='linear-gradient(135deg,#F4521E,#F5A623)' sub='Currently running' />
-        <KPICard label='Running Jobs' value={activeJobs} icon={Briefcase} gradient='linear-gradient(135deg,#10B981,#059669)' sub='In progress' />
-        <KPICard label='Total Campaigns' value={campaigns?.data?.length || 0} icon={TrendingUp} gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' sub='All time' />
-        <KPICard label='My Role' value={user?.role || ''} icon={Users} gradient='linear-gradient(135deg,#A855F7,#7C3AED)' sub={user?.orgName || ''} />
+        <KPICard label='Active Campaigns' value={activeCampaigns} icon={Megaphone}
+          gradient='linear-gradient(135deg,#F4521E,#F5A623)'
+          tint='linear-gradient(135deg,#FFF4EE,#FFE6D2)' border='#FFD3B5'
+          sub='Currently running' />
+        <KPICard label='Running Jobs' value={activeJobs} icon={Briefcase}
+          gradient='linear-gradient(135deg,#10B981,#059669)'
+          tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0'
+          sub='In progress' />
+        <KPICard label='Total Campaigns' value={campaigns?.data?.length || 0} icon={TrendingUp}
+          gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)'
+          tint='linear-gradient(135deg,#EFF6FF,#DBEAFE)' border='#BFDBFE'
+          sub='All time' />
+        <KPICard label='My Role' value={user?.role || ''} icon={Users}
+          gradient='linear-gradient(135deg,#A855F7,#7C3AED)'
+          tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE'
+          sub={user?.orgName || ''} />
       </div>
 
       {/* Active jobs */}
@@ -105,7 +120,7 @@ export default function DashboardPage() {
             { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
             {
               header: 'Agent Priority', render: (r: any) => r.agent_priority_enabled
-                ? <span className='text-xs font-semibold text-[#F4521E]'>✓ Enabled</span>
+                ? <span className='text-xs font-semibold text-[#F4521E]'>âœ“ Enabled</span>
                 : <span className='text-xs text-[#C4A080]'>Off</span>
             },
           ]}

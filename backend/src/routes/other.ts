@@ -8,10 +8,12 @@ import { AppError } from '../middleware/errorHandler';
 export const dncRouter = Router();
 dncRouter.use(authenticate);
 
+// Groups roll up list_count + total number_count from the nested lists.
 dncRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
       `SELECT dg.*,
+              COUNT(DISTINCT dl.id)::int AS list_count,
               COUNT(DISTINCT dn.id)::int AS number_count,
               COALESCE(
                 ARRAY_AGG(DISTINCT cdg.campaign_id)
@@ -24,6 +26,7 @@ dncRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
                 '{}'
               ) AS campaign_names
        FROM dnc_groups dg
+       LEFT JOIN dnc_lists dl ON dl.dnc_group_id = dg.id
        LEFT JOIN dnc_numbers dn ON dn.dnc_group_id = dg.id
        LEFT JOIN campaign_dnc_groups cdg ON cdg.dnc_group_id = dg.id
        LEFT JOIN campaigns c ON c.id = cdg.campaign_id
@@ -43,18 +46,10 @@ dncRouter.post(
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const {
-        name,
-        description,
-        source = 'import',
-        campaign_id,
-        campaign_ids,
-      } = req.body;
+      const { name, description, campaign_id, campaign_ids } = req.body;
       if (!name) throw new AppError(400, 'name required');
-      // Normalise to a single list. campaign_id stays accepted for backward compat.
-      // The campaign linkage is independent of `source` — the user's chosen
-      // source (import/manual/etc.) is preserved verbatim and only the
-      // campaign_dnc_groups junction is populated.
+      // Source no longer lives on the group — it is set per-list. campaign_id
+      // stays accepted for backward compat; campaign_ids replaces it.
       const linkIds: string[] = Array.isArray(campaign_ids)
         ? campaign_ids.filter(Boolean)
         : campaign_id
@@ -71,9 +66,9 @@ dncRouter.post(
             throw new AppError(404, 'one or more campaigns not found');
         }
         const { rows } = await client.query(
-          `INSERT INTO dnc_groups (org_id, name, description, source, created_by)
-           VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-          [req.user!.orgId, name, description, source, req.user!.userId],
+          `INSERT INTO dnc_groups (org_id, name, description, created_by)
+           VALUES ($1,$2,$3,$4) RETURNING *`,
+          [req.user!.orgId, name, description, req.user!.userId],
         );
         for (const cid of linkIds) {
           await client.query(
@@ -91,93 +86,56 @@ dncRouter.post(
   },
 );
 
-dncRouter.post(
-  '/:id/numbers',
-  requireRole('admin', 'supervisor'),
+// Lists inside a group. number_count is rolled up for each list.
+dncRouter.get(
+  '/:id/lists',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { numbers } = req.body;
-      if (!Array.isArray(numbers) || !numbers.length)
-        throw new AppError(400, 'numbers array required');
-      if (numbers.length > 1000)
-        throw new AppError(400, 'Max 1000 numbers per call');
-
-      let added = 0,
-        duplicates = 0,
-        failed = 0;
-      const phones: string[] = [];
-      const duplicatePhones: string[] = [];
-      for (const n of numbers) {
-        try {
-          const result = await pool.query(
-            `INSERT INTO dnc_numbers (dnc_group_id, phone_number, added_reason, added_by, notes)
-           VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-            [
-              req.params.id,
-              n.phone_number,
-              n.added_reason,
-              req.user!.userId,
-              n.notes,
-            ],
-          );
-          if ((result.rowCount ?? 0) > 0) {
-            added++;
-            if (n.phone_number) phones.push(n.phone_number);
-          } else {
-            duplicates++;
-            if (n.phone_number) duplicatePhones.push(n.phone_number);
-          }
-        } catch {
-          failed++;
-        }
-      }
-
-      // Propagate to campaign_contact_status: for every campaign linked to this
-      // DNC group, flip any active CCS row whose contact phone matches one of
-      // the just-added numbers to status='dnc'. Already-terminal rows
-      // (completed/dnc) are left untouched.
-      let ccs_updated = 0;
-      if (phones.length) {
-        const { rowCount } = await pool.query(
-          `UPDATE campaign_contact_status ccs
-              SET status = 'dnc', updated_at = NOW()
-             FROM contacts c, campaign_jobs cj
-            WHERE ccs.contact_id = c.id
-              AND ccs.job_id = cj.id
-              AND cj.campaign_id IN (
-                SELECT campaign_id FROM campaign_dnc_groups
-                 WHERE dnc_group_id = $1
-              )
-              AND c.phone_number = ANY($2::text[])
-              AND ccs.status NOT IN ('completed', 'dnc')`,
-          [req.params.id, phones],
-        );
-        ccs_updated = rowCount ?? 0;
-      }
-      res.json({
-        added,
-        duplicates,
-        failed,
-        ccs_updated,
-        duplicate_phones: duplicatePhones,
-      });
+      const owner = await pool.query(
+        'SELECT id FROM dnc_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount) throw new AppError(404, 'dnc group not found');
+      const { rows } = await pool.query(
+        `SELECT dl.*, COUNT(dn.id)::int AS number_count
+           FROM dnc_lists dl
+           LEFT JOIN dnc_numbers dn ON dn.dnc_list_id = dl.id
+          WHERE dl.dnc_group_id = $1
+          GROUP BY dl.id
+          ORDER BY dl.created_at DESC`,
+        [req.params.id],
+      );
+      res.json({ data: rows });
     } catch (err) {
       next(err);
     }
   },
 );
 
-dncRouter.delete(
-  '/:id/numbers/:phone',
+dncRouter.post(
+  '/:id/lists',
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const phone = decodeURIComponent(req.params.phone);
-      const { rowCount } = await pool.query(
-        'DELETE FROM dnc_numbers WHERE dnc_group_id=$1 AND phone_number=$2',
-        [req.params.id, phone],
+      const { name, source = 'manual' } = req.body;
+      if (!name) throw new AppError(400, 'name required');
+      const owner = await pool.query(
+        'SELECT id FROM dnc_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
       );
-      res.json({ removed: (rowCount ?? 0) > 0 });
+      if (!owner.rowCount) throw new AppError(404, 'dnc group not found');
+      try {
+        const { rows } = await pool.query(
+          `INSERT INTO dnc_lists (dnc_group_id, name, source, created_by)
+           VALUES ($1,$2,$3,$4) RETURNING *`,
+          [req.params.id, name, source, req.user!.userId],
+        );
+        res.status(201).json(rows[0]);
+      } catch (e: any) {
+        if (e?.code === '23505')
+          throw new AppError(409, 'A list with that name already exists');
+        throw e;
+      }
     } catch (err) {
       next(err);
     }
@@ -185,14 +143,14 @@ dncRouter.delete(
 );
 
 // Edit a DNC group. name/description are always patchable; campaign_ids
-// (when provided) replaces the campaign_dnc_groups linkage and forces source
-// to 'campaign_specific'. Pass campaign_ids:[] to clear the linkage.
+// (when provided) replaces the campaign_dnc_groups linkage. Pass
+// campaign_ids:[] to clear the linkage. Source no longer lives here.
 dncRouter.patch(
   '/:id',
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, description, source, campaign_ids } = req.body;
+      const { name, description, campaign_ids } = req.body;
       const updated = await withTransaction(async (client) => {
         const owner = await client.query(
           'SELECT id FROM dnc_groups WHERE id=$1 AND org_id=$2',
@@ -211,10 +169,6 @@ dncRouter.patch(
           sets.push(`description=$${i++}`);
           vals.push(description);
         }
-        if (typeof source === 'string') {
-          sets.push(`source=$${i++}`);
-          vals.push(source);
-        }
         if (Array.isArray(campaign_ids)) {
           const linkIds: string[] = campaign_ids.filter(Boolean);
           if (linkIds.length) {
@@ -225,8 +179,6 @@ dncRouter.patch(
             if (owners.rowCount !== linkIds.length)
               throw new AppError(404, 'one or more campaigns not found');
           }
-          // Replace junction only — source is left untouched and stays as the
-          // user's original Import / Manual choice.
           await client.query(
             'DELETE FROM campaign_dnc_groups WHERE dnc_group_id=$1',
             [req.params.id],
@@ -284,6 +236,206 @@ dncRouter.delete(
         ]);
       });
       res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── DNC LISTS ─────────────────────────────────────────────────────────
+// Mounted at /v1/dnc-lists. Each list belongs to exactly one dnc_group; the
+// group's org_id is verified on every call.
+export const dncListsRouter = Router();
+dncListsRouter.use(authenticate);
+
+async function loadList(listId: string, orgId: string) {
+  const { rows } = await pool.query(
+    `SELECT dl.*, dg.org_id AS group_org_id
+       FROM dnc_lists dl
+       JOIN dnc_groups dg ON dg.id = dl.dnc_group_id
+      WHERE dl.id = $1`,
+    [listId],
+  );
+  if (!rows[0] || rows[0].group_org_id !== orgId)
+    throw new AppError(404, 'dnc list not found');
+  return rows[0];
+}
+
+dncListsRouter.get(
+  '/:id/numbers',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await loadList(req.params.id, req.user!.orgId);
+      const { rows } = await pool.query(
+        `SELECT * FROM dnc_numbers
+          WHERE dnc_list_id = $1
+          ORDER BY added_at DESC`,
+        [req.params.id],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dncListsRouter.post(
+  '/:id/numbers',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { numbers } = req.body;
+      if (!Array.isArray(numbers) || !numbers.length)
+        throw new AppError(400, 'numbers array required');
+      if (numbers.length > 1000)
+        throw new AppError(400, 'Max 1000 numbers per call');
+      const list = await loadList(req.params.id, req.user!.orgId);
+
+      let added = 0,
+        duplicates = 0,
+        failed = 0;
+      const phones: string[] = [];
+      const duplicatePhones: string[] = [];
+      for (const n of numbers) {
+        try {
+          const result = await pool.query(
+            `INSERT INTO dnc_numbers
+               (dnc_list_id, dnc_group_id, phone_number, added_reason, added_by, notes)
+             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+            [
+              list.id,
+              list.dnc_group_id,
+              n.phone_number,
+              n.added_reason,
+              req.user!.userId,
+              n.notes,
+            ],
+          );
+          if ((result.rowCount ?? 0) > 0) {
+            added++;
+            if (n.phone_number) phones.push(n.phone_number);
+          } else {
+            duplicates++;
+            if (n.phone_number) duplicatePhones.push(n.phone_number);
+          }
+        } catch {
+          failed++;
+        }
+      }
+
+      // Propagate to campaign_contact_status: for every campaign linked to
+      // the list's parent group, flip any active CCS row whose contact phone
+      // matches one of the just-added numbers to status='dnc'.
+      let ccs_updated = 0;
+      if (phones.length) {
+        const { rowCount } = await pool.query(
+          `UPDATE campaign_contact_status ccs
+              SET status = 'dnc', updated_at = NOW()
+             FROM contacts c, campaign_jobs cj
+            WHERE ccs.contact_id = c.id
+              AND ccs.job_id = cj.id
+              AND cj.campaign_id IN (
+                SELECT campaign_id FROM campaign_dnc_groups
+                 WHERE dnc_group_id = $1
+              )
+              AND c.phone_number = ANY($2::text[])
+              AND ccs.status NOT IN ('completed', 'dnc')`,
+          [list.dnc_group_id, phones],
+        );
+        ccs_updated = rowCount ?? 0;
+      }
+      res.json({
+        added,
+        duplicates,
+        failed,
+        ccs_updated,
+        duplicate_phones: duplicatePhones,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dncListsRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, source } = req.body;
+      await loadList(req.params.id, req.user!.orgId);
+      const sets: string[] = [];
+      const vals: any[] = [];
+      let i = 1;
+      if (typeof name === 'string') {
+        sets.push(`name=$${i++}`);
+        vals.push(name);
+      }
+      if (typeof source === 'string') {
+        sets.push(`source=$${i++}`);
+        vals.push(source);
+      }
+      if (!sets.length) {
+        const { rows } = await pool.query(
+          'SELECT * FROM dnc_lists WHERE id=$1',
+          [req.params.id],
+        );
+        return res.json(rows[0]);
+      }
+      sets.push(`updated_at=NOW()`);
+      vals.push(req.params.id);
+      try {
+        const { rows } = await pool.query(
+          `UPDATE dnc_lists SET ${sets.join(', ')} WHERE id=$${i} RETURNING *`,
+          vals,
+        );
+        res.json(rows[0]);
+      } catch (e: any) {
+        if (e?.code === '23505')
+          throw new AppError(409, 'A list with that name already exists');
+        throw e;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dncListsRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await loadList(req.params.id, req.user!.orgId);
+      await pool.query('DELETE FROM dnc_lists WHERE id=$1', [req.params.id]);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── DNC NUMBERS ───────────────────────────────────────────────────────
+// Mounted at /v1/dnc-numbers. Single delete-by-id endpoint used by the
+// list-detail view in the UI.
+export const dncNumbersRouter = Router();
+dncNumbersRouter.use(authenticate);
+
+dncNumbersRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT dn.id
+           FROM dnc_numbers dn
+           JOIN dnc_groups dg ON dg.id = dn.dnc_group_id
+          WHERE dn.id = $1 AND dg.org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!rows[0]) throw new AppError(404, 'dnc number not found');
+      await pool.query('DELETE FROM dnc_numbers WHERE id=$1', [req.params.id]);
+      res.json({ removed: true });
     } catch (err) {
       next(err);
     }
@@ -804,18 +956,40 @@ reportsRouter.get(
   '/campaign/:id',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // One campaign → one campaign_jobs row. Pull it regardless of status
+      // (active / stopped / completed) so the dashboard keeps showing stats
+      // after a Stop instead of going blank.
       const { rows: campRows } = await pool.query(
-        `SELECT c.*, cj.id as job_id FROM campaigns c
-       LEFT JOIN campaign_jobs cj ON cj.campaign_id=c.id AND cj.status IN ('active','completed')
-       WHERE c.id=$1 AND c.org_id=$2 ORDER BY cj.start_time DESC LIMIT 1`,
+        `SELECT c.*, (
+           SELECT cj.id FROM campaign_jobs cj
+            WHERE cj.campaign_id = c.id
+            ORDER BY cj.job_run_number DESC
+            LIMIT 1
+         ) AS job_id
+         FROM campaigns c
+         WHERE c.id=$1 AND c.org_id=$2`,
         [req.params.id, req.user!.orgId],
       );
       if (!campRows[0]) throw new AppError(404, 'Campaign not found');
       const jobId = req.query.job_id || campRows[0].job_id;
 
+      // total_contacts is the raw count across attached lists, duplicates
+      // included. successful_contacts comes from CCS (= unique phones that
+      // actually got queued by the DISTINCT-ON dedup in /campaigns/:id/run).
+      // duplicate_contacts is the difference — phones collapsed because the
+      // same number appeared in multiple lists for this campaign.
+      const { rows: totals } = await pool.query(
+        `SELECT COUNT(c.id)::int AS total_contacts
+           FROM contacts c
+           JOIN campaign_contact_lists ccl
+             ON ccl.contact_list_id = c.contact_list_id
+          WHERE ccl.campaign_id = $1`,
+        [req.params.id],
+      );
+
       const { rows: stats } = await pool.query(
         `SELECT
-         COUNT(*)::int AS total_contacts,
+         COUNT(*)::int AS successful_contacts,
          COUNT(*) FILTER (WHERE ci.dialed_at IS NOT NULL)::int AS attempted,
          COUNT(*) FILTER (WHERE ci.call_status='connected')::int AS connected,
          COUNT(*) FILTER (WHERE ccs.status IN ('completed','dnc','exhausted'))::int AS completed_total,
@@ -838,10 +1012,27 @@ reportsRouter.get(
         [jobId],
       );
 
+      const totalContacts = totals[0]?.total_contacts ?? 0;
+      const successfulContacts = stats[0]?.successful_contacts ?? 0;
+      const duplicateContacts = Math.max(
+        0,
+        totalContacts - successfulContacts,
+      );
+
       res.json({
         campaign_id: req.params.id,
         job_id: jobId,
-        ...stats[0],
+        total_contacts: totalContacts,
+        successful_contacts: successfulContacts,
+        duplicate_contacts: duplicateContacts,
+        attempted: stats[0]?.attempted ?? 0,
+        connected: stats[0]?.connected ?? 0,
+        completed_total: stats[0]?.completed_total ?? 0,
+        dnc: stats[0]?.dnc ?? 0,
+        avg_preview_duration_sec: stats[0]?.avg_preview_duration_sec ?? 0,
+        avg_talk_time_sec: stats[0]?.avg_talk_time_sec ?? 0,
+        avg_wrapup_duration_sec: stats[0]?.avg_wrapup_duration_sec ?? 0,
+        avg_total_handling_sec: stats[0]?.avg_total_handling_sec ?? 0,
         dispositions,
       });
     } catch (err) {

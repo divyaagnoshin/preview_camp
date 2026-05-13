@@ -445,7 +445,9 @@ router.post(
           ],
         );
 
-        // DNC: add to dnc_numbers
+        // DNC: add to dnc_numbers. Numbers live under a list, so we first
+        // resolve (or auto-create) an 'Agent Disposition' list inside the
+        // campaign's linked group and target that list.
         if (code.code === 'DNC') {
           const { rows: dncGroupRows } = await client.query(
             `SELECT dg.id FROM dnc_groups dg
@@ -455,12 +457,21 @@ router.post(
             [interaction.job_id],
           );
           if (dncGroupRows[0]) {
+            const groupId = dncGroupRows[0].id;
+            const { rows: listRows } = await client.query(
+              `INSERT INTO dnc_lists (dnc_group_id, name, source, created_by)
+               VALUES ($1, 'Agent Disposition', 'agent_disposition', $2)
+               ON CONFLICT (dnc_group_id, name) DO UPDATE SET updated_at = NOW()
+               RETURNING id`,
+              [groupId, req.user!.userId],
+            );
+            const listId = listRows[0].id;
             await client.query(
-              `INSERT INTO dnc_numbers (dnc_group_id, phone_number, added_reason, added_by)
-             SELECT $1, c.phone_number, 'agent_marked', $2
-             FROM contacts c WHERE c.id = $3
+              `INSERT INTO dnc_numbers (dnc_list_id, dnc_group_id, phone_number, added_reason, added_by)
+             SELECT $1, $2, c.phone_number, 'agent_marked', $3
+             FROM contacts c WHERE c.id = $4
              ON CONFLICT DO NOTHING`,
-              [dncGroupRows[0].id, req.user!.userId, interaction.contact_id],
+              [listId, groupId, req.user!.userId, interaction.contact_id],
             );
           }
         }

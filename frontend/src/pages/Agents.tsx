@@ -72,7 +72,7 @@ export default function AgentsPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Users</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Users</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             Live session status and team overview
           </p>

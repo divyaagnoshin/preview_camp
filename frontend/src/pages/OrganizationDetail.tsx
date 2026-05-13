@@ -21,7 +21,7 @@ function StatCard({ icon: Icon, label, value, gradient }: {
         <Icon className='w-5 h-5 text-white' />
       </div>
       <div>
-        <div className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>{value}</div>
+        <div className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{value}</div>
         <div className='text-xs text-[#7A5C44] mt-0.5 font-medium'>{label}</div>
       </div>
     </div>
@@ -72,7 +72,7 @@ export default function OrganizationDetailPage() {
             <Building2 className='w-6 h-6 text-white' />
           </div>
           <div>
-            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>{org.name}</h1>
+            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{org.name}</h1>
             {org.description && <p className='text-sm text-[#7A5C44] mt-0.5'>{org.description}</p>}
           </div>
         </div>

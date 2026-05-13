@@ -25,6 +25,7 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.11.3",
+    "pg-copy-streams": "^7.0.0",
     "ssh2-sftp-client": "^12.1.1",
     "uuid": "^9.0.1"
   },
@@ -37,6 +38,7 @@
     "@types/multer": "^1.4.11",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
+    "@types/pg-copy-streams": "^1.2.5",
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/uuid": "^9.0.7",
     "ts-node": "^10.9.2",

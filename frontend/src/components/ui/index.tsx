@@ -72,7 +72,7 @@ export function CardHeader({
   return (
     <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'>
       <div>
-        <h3 className='font-semibold text-[#1A0F00] text-sm' style={{ fontFamily: 'Syne, sans-serif' }}>
+        <h3 className='font-semibold text-[#1A0F00] text-sm' style={{ fontFamily: 'Sora, sans-serif' }}>
           {title}
         </h3>
         {subtitle && <p className='text-xs text-[#7A5C44] mt-0.5'>{subtitle}</p>}
@@ -141,7 +141,7 @@ export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No dat
             {cols.map((c) => (
               <th key={c.header} style={{ width: c.width }}
                 className='text-left text-xs font-semibold text-[#7A5C44] uppercase tracking-wider px-5 py-3'
-                style={{ fontFamily: 'Syne, sans-serif', width: c.width }}>
+                style={{ fontFamily: 'Sora, sans-serif', width: c.width }}>
                 {c.header}
               </th>
             ))}
@@ -190,7 +190,7 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
       <div className={clsx('bg-white rounded-2xl shadow-2xl w-full border border-[#FFE0C8]', widths[size])}
         onClick={(e) => e.stopPropagation()}>
         <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'>
-          <h3 className='font-bold text-[#1A0F00]' style={{ fontFamily: 'Syne, sans-serif' }}>{title}</h3>
+          <h3 className='font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</h3>
           <button onClick={onClose}
             className='p-1.5 rounded-xl hover:bg-orange-50 text-[#7A5C44] hover:text-[#F4521E] transition-colors'>
             <X className='w-4 h-4' />
@@ -243,7 +243,7 @@ export function StatCard({ label, value, sub }: { label: string; value: string |
   return (
     <Card className='p-5'>
       <p className='text-xs text-[#7A5C44] mb-1 font-medium'>{label}</p>
-      <p className='text-2xl font-bold text-[#F4521E]' style={{ fontFamily: 'Syne, sans-serif' }}>{value}</p>
+      <p className='text-2xl font-bold text-[#F4521E]' style={{ fontFamily: 'Sora, sans-serif' }}>{value}</p>
       {sub && <p className='text-xs text-[#7A5C44] mt-1'>{sub}</p>}
     </Card>
   );
@@ -256,7 +256,7 @@ export function EmptyState({ title, description, action }: { title: string; desc
       <div className='w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4'>
         <span className='text-2xl'>📭</span>
       </div>
-      <p className='font-semibold text-[#1A0F00] mb-1' style={{ fontFamily: 'Syne, sans-serif' }}>{title}</p>
+      <p className='font-semibold text-[#1A0F00] mb-1' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</p>
       <p className='text-sm text-[#7A5C44] mb-5'>{description}</p>
       {action}
     </div>

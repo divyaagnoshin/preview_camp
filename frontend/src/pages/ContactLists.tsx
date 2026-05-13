@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect  } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -31,6 +31,7 @@ import {
   PageLoader,
   EmptyState,
   Badge,
+  Progress,
 } from '../components/ui';
 import {
   Plus,
@@ -107,7 +108,7 @@ export function ContactListsPage() {
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Contact Lists</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Contact Lists</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {data?.data?.length || 0} lists total
           </p>
@@ -292,7 +293,16 @@ export function ContactListDetailPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [showAddContact, setShowAddContact] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  // Structured upload state. `phase` drives which UI block renders:
+  //   uploading  → progress bar with live % (browser → server bytes).
+  //   processing → bar locked at 100% while the server parses + inserts.
+  //   done       → green success line with imported/total counts.
+  //   error      → red error line.
+  const [uploadPhase, setUploadPhase] = useState<
+    'idle' | 'uploading' | 'processing' | 'done' | 'error'
+  >('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   // Per-row validation errors returned by the upload endpoint (phone format,
   // duplicates, header mismatch, etc.). Rendered as a collapsible panel so a
   // long error list doesn't blow up the page.
@@ -300,9 +310,13 @@ export function ContactListDetailPage() {
     { row: number; phone: string; error: string }[]
   >([]);
   const [showUploadErrors, setShowUploadErrors] = useState(false);
+
+  const [displayProgress, setDisplayProgress] = useState(0);
   // Add Contact modal mode: 'single' uses the existing form, 'bulk' renders a
   // spreadsheet-style grid for multi-row entry.
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
+
+
   const [contact, setContact] = useState({
     phone_number: '',
     first_name: '',
@@ -525,9 +539,32 @@ export function ContactListDetailPage() {
     queryKey: ['contact-list', id],
     queryFn: () => getContactList(id!),
   });
+
+  useEffect(() => {
+    if (uploadPhase === 'idle') {
+      setDisplayProgress(0);
+      return;
+    }
+    if (uploadPhase === 'done') {
+      setDisplayProgress(100);
+      return;
+    }
+    if (uploadPhase === 'error') return;
+
+    const interval = setInterval(() => {
+      setDisplayProgress((prev) => {
+        if (prev >= 95) return prev;
+        const remaining = 95 - prev;
+        const step = Math.max(0.3, remaining * 0.04);
+        return Math.min(95, prev + step);
+      });
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, [uploadPhase]);
   // Server-side pagination for the Contacts table. Backend caps per_page at
   // 200; 5 keeps the table compact and the API response small.
-  const CONTACTS_PER_PAGE = 5;
+  const CONTACTS_PER_PAGE = 15;
   const [contactsPage, setContactsPage] = useState(1);
   const { data: contacts, isLoading: loadC } = useQuery({
     queryKey: ['contacts', id, contactsPage],
@@ -642,6 +679,7 @@ export function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      closeAddContact();
     },
   });
 
@@ -836,17 +874,31 @@ export function ContactListDetailPage() {
     },
   });
 
+  
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadStatus('Uploading...');
+    setUploadPhase('uploading');
+    setUploadProgress(0);
+    setUploadMessage(null);
     setUploadErrors([]);
     setShowUploadErrors(false);
     try {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('contact_list_id', id!);
-      const result = await uploadCSV(fd);
+      const result = await uploadCSV(fd, (percent) => {
+        // Once the bytes are on the wire we still need the server to parse +
+        // insert. Flip to "processing" the instant the upload hits 100% so
+        // the bar stops moving but stays full instead of looking frozen.
+        if (percent >= 100) {
+          setUploadProgress(100);
+          setUploadPhase('processing');
+        } else {
+          setUploadProgress(percent);
+        }
+      });
       const errs = (result.errors || []) as {
         row: number;
         phone: string;
@@ -854,15 +906,17 @@ export function ContactListDetailPage() {
       }[];
       setUploadErrors(errs);
       setShowUploadErrors(errs.length > 0 && errs.length <= 50);
-      const prefix = result.imported_rows > 0 ? '✓' : '⚠';
-      setUploadStatus(
-        `${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts` +
-          (result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''),
+      setUploadProgress(100);
+      setUploadPhase('done');
+      setUploadMessage(
+        `Imported ${result.imported_rows} of ${result.total_rows} contacts` +
+          (result.failed_rows > 0 ? ` · ${result.failed_rows} failed` : ''),
       );
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
     } catch (err: any) {
-      setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
+      setUploadPhase('error');
+      setUploadMessage(err.response?.data?.error || 'Upload failed');
     }
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -881,7 +935,7 @@ export function ContactListDetailPage() {
           <ArrowLeft className='w-4 h-4 text-gray-500' />
         </button>
         <div className='flex-1'>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>{data.name}</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>{data.name}</h1>
           {data.description && (
             <p className='text-sm text-[#7A5C44] mt-0.5'>{data.description}</p>
           )}
@@ -931,20 +985,102 @@ export function ContactListDetailPage() {
         </div>
       </div>
 
-      {uploadStatus && (
-        <div
-          className={`p-3 rounded-lg text-sm ${
-            uploadStatus.startsWith('✓')
-              ? 'bg-green-50 text-green-700'
-              : uploadStatus.startsWith('⚠')
-                ? 'bg-amber-50 text-amber-700'
-                : 'bg-red-50 text-red-700'
-          }`}
-        >
-          {uploadStatus}
+      {/* Upload status. While bytes are in flight the bar fills 0-100%.
+          Once the upload hits 100% the bar stays full and the label flips to
+          "Processing" until the server returns counts. After that, success
+          or error takes over. Palette follows the app's primary orange
+          (#F4521E) / amber (#F5A623) brand colours. */}
+   {uploadPhase !== 'idle' && (
+  <div style={{ maxWidth: '60%', margin: '16px auto 0' }}>
+    <div
+      className={`rounded-xl border px-4 py-3 transition-colors ${
+        uploadPhase === 'done'
+          ? 'bg-[#FFF1E8] border-[#FFD2B8]'
+          : uploadPhase === 'error'
+            ? 'bg-red-50 border-red-200'
+            : 'bg-[#FFF6EE] border-[#FFE0CC]'
+      }`}
+    >
+      <div className='flex items-center gap-2.5 mb-2.5'>
+        {/* Icon */}
+        {(uploadPhase === 'uploading' || uploadPhase === 'processing') && (
+          <svg className='w-4 h-4 text-[#F4521E] shrink-0 animate-spin' fill='none' viewBox='0 0 24 24'>
+            <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='3' />
+            <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z' />
+          </svg>
+        )}
+        {uploadPhase === 'done' && (
+          <span className='w-4 h-4 rounded-full bg-[#F4521E] flex items-center justify-center shrink-0'>
+            <svg className='w-2.5 h-2.5 text-white' fill='none' viewBox='0 0 12 12'>
+              <path d='M2 6l3 3 5-5' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round' />
+            </svg>
+          </span>
+        )}
+        {uploadPhase === 'error' && (
+          <span className='w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0'>
+            <svg className='w-2.5 h-2.5 text-white' fill='none' viewBox='0 0 12 12'>
+              <path d='M3 3l6 6M9 3l-6 6' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' />
+            </svg>
+          </span>
+        )}
+
+        {/* Label */}
+        <span className={`text-sm font-medium flex-1 ${
+          uploadPhase === 'done'
+            ? 'text-[#9B2D0A]'
+            : uploadPhase === 'error'
+              ? 'text-red-700'
+              : 'text-[#9B2D0A]'
+        }`}>
+          {uploadPhase === 'uploading'
+            ? 'Uploading contacts…'
+            : uploadPhase === 'processing'
+              ? 'Processing contacts…'
+              : uploadMessage}
+        </span>
+
+        {/* Percentage */}
+        {(uploadPhase === 'uploading' || uploadPhase === 'processing') && (
+          <span className='text-xs font-semibold tabular-nums bg-[#FFE0CC] text-[#9B2D0A] px-2 py-0.5 rounded-full'>
+            {Math.floor(displayProgress)}%
+          </span>
+        )}
+
+        {/* Dismiss */}
+        {(uploadPhase === 'done' || uploadPhase === 'error') && (
+          <button
+            onClick={() => { setUploadPhase('idle'); setDisplayProgress(0); }}
+            className='p-0.5 rounded hover:bg-black/10 text-gray-400 hover:text-gray-600'
+            title='Dismiss'
+          >
+            <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 14 14'>
+              <path d='M2 2l10 10M12 2L2 12' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      {uploadPhase !== 'error' && (
+        <div className='h-1.5 w-full rounded-full bg-[#FFE0CC] overflow-hidden'>
+          <div
+            className='h-full rounded-full'
+            style={{
+              width: `${displayProgress}%`,
+              background:
+                uploadPhase === 'done'
+                  ? '#F4521E'
+                  : 'linear-gradient(90deg, #F5A623 0%, #F4521E 100%)',
+              transition: uploadPhase === 'done'
+                ? 'width 0.4s ease, background 0.4s ease'
+                : 'width 0.6s ease-out',
+            }}
+          />
         </div>
       )}
-
+    </div>
+  </div>
+)}
       {uploadErrors.length > 0 && (
         <div className='border border-amber-200 bg-amber-50 rounded-lg text-sm'>
           <button
@@ -1005,17 +1141,17 @@ export function ContactListDetailPage() {
         <StatCard
           label='Total Contacts'
           value={(data.contact_count || 0).toLocaleString()}
-          color='indigo'
+         
         />
         <StatCard
           label='Field Definitions'
           value={data.field_definitions?.length || 0}
-          color='gray'
+         
         />
         <StatCard
           label='Last Updated'
           value={new Date(data.updated_at || data.created_at).toLocaleString()}
-          color='gray'
+          
         />
       </div>
 

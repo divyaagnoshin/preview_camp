@@ -16,6 +16,8 @@ import holidayCalendarsRouter from './routes/holidayCalendars';
 // Agent workspace + session-mutation routes moved to backend-queue service.
 import {
   dncRouter,
+  dncListsRouter,
+  dncNumbersRouter,
   scheduleRouter,
   jobsRouter,
   dispositionRouter,
@@ -28,6 +30,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { startScheduler } from './services/scheduler';
 import { seedTimezones } from './db/seedTimezones';
 import { seedSuperadmin } from './db/seedSuperadmin';
+import { seedFieldLibrary } from './db/seedFieldLibrary';
 
 dotenv.config();
 
@@ -56,6 +59,8 @@ app.use('/v1/field-library', fieldLibraryRouter);
 app.use('/v1/campaigns', campaignsRouter);
 app.use('/v1/holiday-calendars', holidayCalendarsRouter);
 app.use('/v1/dnc-groups', dncRouter);
+app.use('/v1/dnc-lists', dncListsRouter);
+app.use('/v1/dnc-numbers', dncNumbersRouter);
 app.use('/v1/schedule-templates', scheduleRouter);
 app.use('/v1/jobs', jobsRouter);
 app.use('/v1/disposition-codes', dispositionRouter);
@@ -80,6 +85,7 @@ app.listen(PORT, () => {
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();
   seedSuperadmin();
+  seedFieldLibrary();
 });
 
 export default app;

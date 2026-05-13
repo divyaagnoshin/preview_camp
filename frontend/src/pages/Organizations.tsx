@@ -40,7 +40,7 @@ export default function OrganizationsPage() {
           { label: 'Total Users', value: orgs.reduce((s: number, o: Organization) => s + (o.user_count || 0), 0), color: 'from-[#3B82F6] to-[#1D4ED8]' },
         ].map(({ label, value, color }) => (
           <div key={label} className='bg-white rounded-2xl border border-[#FFE0C8] p-5 shadow-[0_2px_16px_rgba(244,82,30,0.06)]'>
-            <div className={`text-2xl font-bold bg-gradient-to-r ${color} bg-clip-text text-transparent`} style={{ fontFamily: 'Syne, sans-serif' }}>{value}</div>
+            <div className={`text-2xl font-bold bg-gradient-to-r ${color} bg-clip-text text-transparent`} style={{ fontFamily: 'Sora, sans-serif' }}>{value}</div>
             <div className='text-xs text-[#7A5C44] mt-1 font-medium'>{label}</div>
           </div>
         ))}

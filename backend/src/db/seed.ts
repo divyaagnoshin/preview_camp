@@ -79,15 +79,22 @@ async function seed() {
       [listId, rajId],
     );
 
-    // DNC group
+    // DNC group + a Default list inside it (source moved to the list layer).
     const dncRes = await client.query(
       `
-      INSERT INTO dnc_groups (org_id, name, source, created_by)
-      VALUES ($1, 'Internal Opt-Outs', 'agent_disposition', $2)
+      INSERT INTO dnc_groups (org_id, name, created_by)
+      VALUES ($1, 'Internal Opt-Outs', $2)
       RETURNING id`,
       [orgId, adminId],
     );
     const dncGroupId = dncRes.rows[0].id;
+
+    await client.query(
+      `
+      INSERT INTO dnc_lists (dnc_group_id, name, source, created_by)
+      VALUES ($1, 'Default', 'agent_disposition', $2)`,
+      [dncGroupId, adminId],
+    );
 
     // Schedule template
     const schedRes = await client.query(

@@ -1,0 +1,1 @@
+ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_contact_list_phone_unique;

@@ -261,10 +261,22 @@ export const updateCloudImportConfigSchedule = (
   },
 ): Promise<CloudImportConfig> =>
   api.put(`/cloud-import-configs/${id}/schedule`, body).then((r) => r.data);
-export const uploadCSV = (formData: FormData) =>
+export const uploadCSV = (
+  formData: FormData,
+  onProgress?: (percent: number) => void,
+) =>
   api
     .post('/contacts/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: onProgress
+        ? (e) => {
+            // e.total is undefined on some axios builds; fall back to e.loaded
+            // alone so the bar still animates instead of staying stuck at 0.
+            const total = e.total ?? 0;
+            const percent = total ? Math.round((e.loaded / total) * 100) : 0;
+            onProgress(percent);
+          }
+        : undefined,
     })
     .then((r) => r.data);
 

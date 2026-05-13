@@ -77,8 +77,13 @@ export default function ContactListAttributesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contact-list-attributes', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+       navigate(`/contact-lists/${id}`);
+      
       setSavedMsg('✓ Attributes saved');
-      setTimeout(() => setSavedMsg(null), 2500);
+      setTimeout(() => {setSavedMsg(null);
+     
+      },
+       2500);
     },
   });
 
@@ -215,7 +220,7 @@ export default function ContactListAttributesPage() {
           <ArrowLeft className='w-4 h-4 text-gray-500' />
         </button>
         <div className='flex-1'>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Syne, sans-serif" }}>Manage Attributes</h1>
+          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Manage Attributes</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {list?.name} · {selectedIds.length} of {data?.data?.length || 0}{' '}
             selected

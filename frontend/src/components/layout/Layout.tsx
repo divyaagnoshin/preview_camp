@@ -124,7 +124,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <Zap className='w-5 h-5 text-white' fill='white' />
         </div>
         <div>
-          <div className='text-[15px] font-bold text-white tracking-wide' style={{ fontFamily: 'Syne, sans-serif' }}>
+          <div className='text-[15px] font-bold text-white tracking-wide' style={{ fontFamily: 'Sora, sans-serif' }}>
             PreviewCamp
           </div>
           <div className='text-[12px] text-[#8A6A50] leading-none mt-0.5'>
@@ -197,7 +197,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <button onClick={() => setMobileOpen(true)} className='p-2 rounded-xl hover:bg-orange-50'>
             <Menu className='w-5 h-5 text-[#5C4030]' />
           </button>
-          <span className='font-bold text-[#1A0F00] text-sm' style={{ fontFamily: 'Syne, sans-serif' }}>PreviewCamp</span>
+          <span className='font-bold text-[#1A0F00] text-sm' style={{ fontFamily: 'Sora, sans-serif' }}>PreviewCamp</span>
           <div className='w-9 h-9 bg-gradient-to-br from-[#F4521E] to-[#F5A623] rounded-full flex items-center justify-center text-xs font-bold text-white'>
             {initials}
           </div>
