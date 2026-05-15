@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import pool, { withTransaction } from '../db/pool';
 import { authenticate, requireRole } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { seedSystemDispositionsForOrg } from '../db/seedSystemDispositions';
 
 // Superadmin-only routes — manage tenant organizations and seed the first
 // admin user for each. All endpoints require the platform-level role.
@@ -43,6 +44,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
        RETURNING id, name, description, created_at, updated_at`,
       [name.trim(), description || null],
     );
+    // Populate the canonical org-wide system dispositions so admins land
+    // on Manage Dispositions with a usable starting set instead of an
+    // empty Available pane.
+    await seedSystemDispositionsForOrg(rows[0].id).catch((err) => {
+      console.error('seedSystemDispositionsForOrg on org create failed:', err);
+    });
     res.status(201).json(rows[0]);
   } catch (err) {
     next(err);
@@ -223,6 +230,46 @@ router.post(
         ],
       );
       res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PATCH /v1/organizations/:id/users/:userId — superadmin edits a user inside
+// the target org. Supports rename, role change, and active-toggle. Email and
+// password aren't editable here (email is the natural key; password changes
+// flow through self-service reset).
+router.patch(
+  '/:id/users/:userId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { first_name, last_name, role, is_active } = req.body || {};
+      if (
+        role !== undefined &&
+        !['admin', 'supervisor', 'agent'].includes(role)
+      )
+        throw new AppError(400, 'invalid role');
+      const { rows } = await pool.query(
+        `UPDATE users SET
+           first_name = COALESCE($1, first_name),
+           last_name = COALESCE($2, last_name),
+           role = COALESCE($3, role),
+           is_active = COALESCE($4, is_active),
+           updated_at = NOW()
+         WHERE id = $5 AND org_id = $6
+         RETURNING id, email, first_name, last_name, role, is_active, created_at`,
+        [
+          first_name || null,
+          last_name || null,
+          role || null,
+          is_active === undefined ? null : is_active,
+          req.params.userId,
+          req.params.id,
+        ],
+      );
+      if (!rows[0]) throw new AppError(404, 'User not found');
+      res.json(rows[0]);
     } catch (err) {
       next(err);
     }

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listOrganizations, createOrganization, updateOrganization, deleteOrganization, Organization } from '../api/client';
-import { Button, Card, CardHeader, EmptyState, Input, Modal, PageLoader, Table, Textarea } from '../components/ui';
+import { Button, Card, CardHeader, EmptyState, Input, Modal, PageLoader, SearchInput, Table, Textarea } from '../components/ui';
 import { Building2, Pencil, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -15,9 +15,18 @@ export default function OrganizationsPage() {
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [editOrg, setEditOrg] = useState<Organization | null>(null);
   const [deleteOrg, setDeleteOrg] = useState<Organization | null>(null);
+  const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({ queryKey: ['organizations'], queryFn: listOrganizations });
-  const orgs = data?.data || [];
+  const orgs: Organization[] = data?.data || [];
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return orgs;
+    return orgs.filter((o) =>
+      o.name?.toLowerCase().includes(q) ||
+      (o.description || '').toLowerCase().includes(q),
+    );
+  }, [orgs, search]);
 
   return (
     <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
@@ -46,14 +55,24 @@ export default function OrganizationsPage() {
         ))}
       </div>
 
+      {/* Search bar */}
+      <div className='flex items-center gap-3 flex-wrap anim-d1'>
+        <SearchInput value={search} onChange={setSearch} placeholder='Search organizations…' />
+      </div>
+
       {/* Table card */}
       <Card className='anim-d2'>
-        <CardHeader title='All organizations' subtitle={`${orgs.length} total`} />
+        <CardHeader
+          title='All organizations'
+          subtitle={search ? `${filtered.length} of ${orgs.length} match` : `${orgs.length} total`}
+        />
         {isLoading ? (
           <PageLoader />
         ) : orgs.length === 0 ? (
           <EmptyState title='No organizations yet' description='Create the first tenant organization to get started.'
             action={<Button icon={<Plus className='w-3.5 h-3.5' />} onClick={() => setCreateOrgOpen(true)}>New organization</Button>} />
+        ) : filtered.length === 0 ? (
+          <EmptyState title='No matches' description={`No organizations match "${search}".`} />
         ) : (
           <Table
             cols={[
@@ -83,14 +102,28 @@ export default function OrganizationsPage() {
               {
                 header: 'Actions', width: '160px',
                 render: (r: Organization) => (
-                  <div className='flex items-center gap-1'>
-                    <Button size='sm' variant='ghost' icon={<Pencil className='w-3.5 h-3.5' />} onClick={() => setEditOrg(r)}>Edit</Button>
-                    <Button size='sm' variant='ghost' icon={<Trash2 className='w-3.5 h-3.5' />} onClick={() => setDeleteOrg(r)} className='text-red-500 hover:bg-red-50'>Delete</Button>
+                  <div className='flex items-center gap-2' onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setEditOrg(r)}
+                      title='Edit organization'
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                    >
+                      <Pencil className='w-3 h-3' />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleteOrg(r)}
+                      title='Delete organization'
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                    >
+                      <Trash2 className='w-3 h-3' />
+                      Delete
+                    </button>
                   </div>
                 ),
               },
             ]}
-            rows={orgs}
+            rows={filtered}
             keyFn={(r: Organization) => r.id}
             onRowClick={(r: Organization) => navigate(`/organizations/${r.id}`)}
             emptyMessage='No organizations'

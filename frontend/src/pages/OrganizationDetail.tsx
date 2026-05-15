@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  getOrganization, updateOrganization, listOrgUsers, createOrgUser, deleteOrgUser,
+  getOrganization, updateOrganization, listOrgUsers, createOrgUser, updateOrgUser, deleteOrgUser,
   Organization, OrgAdmin,
 } from '../api/client';
-import { Badge, Button, Card, CardHeader, Input, Modal, PageLoader, Select, Textarea } from '../components/ui';
+import { Badge, Button, Card, CardHeader, Input, Modal, PageLoader, SearchInput, Select, Textarea } from '../components/ui';
 import {
   ArrowLeft, Building2, Users, ShieldCheck, UserPlus, Pencil,
   CalendarDays, Headphones, Trash2, UserCog, TrendingUp,
@@ -35,7 +35,10 @@ export default function OrganizationDetailPage() {
   const { setOrgContext } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [addUserOpen, setAddUserOpen] = useState(false);
+  const [editUserTarget, setEditUserTarget] = useState<OrgAdmin | null>(null);
   const [deleteUser, setDeleteUser] = useState<OrgAdmin | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
 
   const { data: orgData, isLoading } = useQuery({
     queryKey: ['organization', id],
@@ -54,6 +57,16 @@ export default function OrganizationDetailPage() {
   const supervisorCount = (org as any)?.supervisor_count ?? users.filter((u) => u.role === 'supervisor').length;
   const agentCount = (org as any)?.agent_count ?? users.filter((u) => u.role === 'agent').length;
   const totalUsers = org?.user_count ?? users.length;
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLowerCase();
+    return users.filter((u) => {
+      if (roleFilter && u.role !== roleFilter) return false;
+      if (!q) return true;
+      const name = `${u.first_name || ''} ${u.last_name || ''}`.toLowerCase();
+      return name.includes(q) || (u.email || '').toLowerCase().includes(q);
+    });
+  }, [users, userSearch, roleFilter]);
 
   if (isLoading) return <PageLoader />;
   if (!org) return <div className='p-8 text-sm text-[#7A5C44]'>Organization not found.</div>;
@@ -102,20 +115,35 @@ export default function OrganizationDetailPage() {
       <Card className='anim-d2'>
         <CardHeader
           title='Users'
-          subtitle={`${users.length} member${users.length !== 1 ? 's' : ''}`}
+          subtitle={`${filteredUsers.length} of ${users.length} member${users.length !== 1 ? 's' : ''}`}
           action={
-            <Button size='sm' icon={<UserPlus className='w-3.5 h-3.5' />} onClick={() => setAddUserOpen(true)}>
-              Add user
-            </Button>
+            <div className='flex items-center gap-2 flex-wrap'>
+              <SearchInput value={userSearch} onChange={setUserSearch}
+                placeholder='Search name or email…' />
+              <Select label='' value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
+                options={[
+                  { value: '', label: 'All roles' },
+                  { value: 'admin', label: 'Admin' },
+                  { value: 'supervisor', label: 'Supervisor' },
+                  { value: 'agent', label: 'Agent' },
+                ]} />
+              <Button size='sm' icon={<UserPlus className='w-3.5 h-3.5' />} onClick={() => setAddUserOpen(true)}>
+                Add user
+              </Button>
+            </div>
           }
         />
         {users.length === 0 ? (
           <div className='px-6 py-12 text-center text-sm text-[#7A5C44]'>
             No users yet. Add one to get started.
           </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className='px-6 py-12 text-center text-sm text-[#7A5C44]'>
+            No users match the current filter.
+          </div>
         ) : (
           <div className='divide-y divide-[#FFF0E8]'>
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <div key={u.id} className='flex items-center justify-between px-6 py-4 hover:bg-[#FFFAF7] transition-colors'>
                 <div className='flex items-center gap-3'>
                   <div className='w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0'
@@ -131,10 +159,22 @@ export default function OrganizationDetailPage() {
                   <Badge label={u.role}
                     color={u.role === 'admin' ? 'orange' : u.role === 'supervisor' ? 'purple' : 'green'} />
                   {!u.is_active && <Badge label='disabled' color='red' />}
-                  <Button size='sm' variant='ghost' icon={<Trash2 className='w-3.5 h-3.5' />}
-                    onClick={() => setDeleteUser(u)} className='text-red-500 hover:bg-red-50'>
+                  <button
+                    onClick={() => setEditUserTarget(u)}
+                    title='Edit user'
+                    className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                  >
+                    <Pencil className='w-3 h-3' />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setDeleteUser(u)}
+                    title='Delete user'
+                    className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                  >
+                    <Trash2 className='w-3 h-3' />
                     Delete
-                  </Button>
+                  </button>
                 </div>
               </div>
             ))}
@@ -144,6 +184,7 @@ export default function OrganizationDetailPage() {
 
       {editOpen && <EditOrgModal org={org} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); qc.invalidateQueries({ queryKey: ['organization', id] }); qc.invalidateQueries({ queryKey: ['organizations'] }); }} />}
       {addUserOpen && <CreateUserModal org={org} onClose={() => setAddUserOpen(false)} onCreated={() => { setAddUserOpen(false); qc.invalidateQueries({ queryKey: ['org-users', id] }); qc.invalidateQueries({ queryKey: ['organization', id] }); qc.invalidateQueries({ queryKey: ['organizations'] }); }} />}
+      {editUserTarget && <EditUserModal orgId={org.id} user={editUserTarget} onClose={() => setEditUserTarget(null)} onSaved={() => { setEditUserTarget(null); qc.invalidateQueries({ queryKey: ['org-users', id] }); }} />}
       {deleteUser && <DeleteUserModal orgId={org.id} user={deleteUser} onClose={() => setDeleteUser(null)} onDeleted={() => { setDeleteUser(null); qc.invalidateQueries({ queryKey: ['org-users', id] }); qc.invalidateQueries({ queryKey: ['organization', id] }); qc.invalidateQueries({ queryKey: ['organizations'] }); }} />}
     </div>
   );
@@ -199,6 +240,53 @@ function CreateUserModal({ org, onClose, onCreated }: { org: Organization; onClo
         <div className='flex justify-end gap-2 pt-2'>
           <Button type='button' variant='secondary' onClick={onClose}>Cancel</Button>
           <Button type='submit' loading={m.isPending}>Create user</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditUserModal({ orgId, user, onClose, onSaved }: { orgId: string; user: OrgAdmin; onClose: () => void; onSaved: () => void }) {
+  const [firstName, setFirstName] = useState(user.first_name || '');
+  const [lastName, setLastName] = useState(user.last_name || '');
+  const [role, setRole] = useState<'admin' | 'supervisor' | 'agent'>(
+    (['admin', 'supervisor', 'agent'].includes(user.role)
+      ? (user.role as 'admin' | 'supervisor' | 'agent')
+      : 'agent'),
+  );
+  const [isActive, setIsActive] = useState(!!user.is_active);
+  const [error, setError] = useState('');
+  const m = useMutation({
+    mutationFn: () =>
+      updateOrgUser(orgId, user.id, {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        role,
+        is_active: isActive,
+      }),
+    onSuccess: () => onSaved(),
+    onError: (e: any) => setError(e?.response?.data?.error || 'Failed to update user'),
+  });
+  return (
+    <Modal title={`Edit ${user.first_name} ${user.last_name}`} open={true} onClose={onClose}>
+      <form onSubmit={(e) => { e.preventDefault(); setError(''); m.mutate(); }} className='space-y-3'>
+        <div className='grid grid-cols-2 gap-3'>
+          <Input label='First name' value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus />
+          <Input label='Last name' value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+        </div>
+        <div className='space-y-1'>
+          <label className='block text-xs text-[#7A5C44]'>Email</label>
+          <div className='px-3 py-2 text-sm bg-[#FFFAF7] border border-[#FFE0C8] rounded-lg text-[#7A5C44]'>{user.email}</div>
+        </div>
+        <Select label='Role' value={role} onChange={(e) => setRole(e.target.value as any)} options={[{ value: 'admin', label: 'Admin' }, { value: 'supervisor', label: 'Supervisor' }, { value: 'agent', label: 'Agent' }]} />
+        <label className='flex items-center gap-2 px-3 py-2 border border-[#FFE0C8] rounded-lg cursor-pointer hover:bg-[#FFFAF7] transition'>
+          <input type='checkbox' checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className='rounded text-[#F4521E]' />
+          <span className='text-sm text-[#1A0F00]'>Active — user can sign in</span>
+        </label>
+        {error && <p className='text-xs text-red-500'>{error}</p>}
+        <div className='flex justify-end gap-2 pt-2'>
+          <Button type='button' variant='secondary' onClick={onClose}>Cancel</Button>
+          <Button type='submit' loading={m.isPending} disabled={!firstName.trim() || !lastName.trim()}>Save Changes</Button>
         </div>
       </form>
     </Modal>

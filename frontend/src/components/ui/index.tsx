@@ -1,7 +1,7 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clsx } from 'clsx';
-import { Loader2, X } from 'lucide-react';
+import { ChevronDown, Filter, Loader2, Search, X } from 'lucide-react';
 
 // ── Button ─────────────────────────────────────────────────────────────────
 type BtnVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'amber';
@@ -204,8 +204,10 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
 }
 
 // ── Input / Select / Textarea ─────────────────────────────────────────────
+// Focus ring uses /60 opacity + a 2px border swap so the active field is
+// always clearly distinguishable, even against the off-white surface bg.
 const inputCls =
-  'w-full border border-[#FFD0B0] rounded-xl px-3.5 py-2.5 text-sm bg-white text-[#1A0F00] placeholder-[#B89070] focus:outline-none focus:ring-2 focus:ring-[#F4521E]/30 focus:border-[#F4521E] transition-all disabled:bg-[#FFF4EE] disabled:text-[#7A5C44]';
+  'w-full border-2 border-[#FFD0B0] rounded-xl px-3.5 py-2.5 text-sm bg-white text-[#1A0F00] placeholder-[#B89070] focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890] transition-all disabled:bg-[#FFF4EE] disabled:text-[#7A5C44]';
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement> & { label?: string; error?: string }) {
   const { label, error, ...rest } = props;
@@ -272,5 +274,170 @@ export function Progress({ value }: { value: number; color?: string }) {
         style={{ width: `${Math.min(100, value)}%` }}
       />
     </div>
+  );
+}
+
+// ── Search input ─────────────────────────────────────────────────────────
+// Compact search box with a leading magnifier icon and a clear (X) button
+// when non-empty. Used by every list page to filter table rows client-side.
+export function SearchInput({
+  value,
+  onChange,
+  placeholder = 'Search…',
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={clsx('relative flex-1 min-w-[200px] max-w-sm', className)}>
+      <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
+      <input
+        type='text'
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className='w-full pl-9 pr-9 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-gray-300 transition placeholder:text-gray-400'
+      />
+      {value && (
+        <button
+          type='button'
+          onClick={() => onChange('')}
+          className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
+        >
+          <X className='w-3.5 h-3.5' />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Filter dropdown ──────────────────────────────────────────────────────
+// Pill button that opens a single-select menu. Active state uses an accent
+// color (defaults to indigo) and shows the chosen label inline.
+type FilterColor = 'indigo' | 'amber' | 'green' | 'red' | 'orange' | 'purple';
+const filterColorMap: Record<FilterColor, string> = {
+  indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+  amber: 'bg-amber-50 border-amber-200 text-amber-700',
+  green: 'bg-green-50 border-green-200 text-green-700',
+  red: 'bg-red-50 border-red-200 text-red-700',
+  orange: 'bg-orange-50 border-[#FFD0B0] text-[#F4521E]',
+  purple: 'bg-purple-50 border-purple-200 text-purple-700',
+};
+
+export function FilterDropdown({
+  label,
+  options,
+  value,
+  onChange,
+  color = 'indigo',
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  color?: FilterColor;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+  const isActive = !!value;
+
+  return (
+    <div ref={ref} className='relative'>
+      <button
+        type='button'
+        onClick={() => setOpen((o) => !o)}
+        className={clsx(
+          'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all',
+          isActive
+            ? filterColorMap[color]
+            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50',
+        )}
+      >
+        <Filter className='w-3.5 h-3.5' />
+        <span>{isActive ? selected?.label : label}</span>
+        {isActive ? (
+          <span
+            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+            className='ml-0.5 hover:opacity-70'
+          >
+            <X className='w-3 h-3' />
+          </span>
+        ) : (
+          <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
+        )}
+      </button>
+
+      {open && (
+        <div className='absolute top-full left-0 mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden'>
+          <div className='p-1 max-h-72 overflow-y-auto'>
+            <button
+              type='button'
+              onClick={() => { onChange(''); setOpen(false); }}
+              className='w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 rounded-lg transition'
+            >
+              All {label.toLowerCase()}
+            </button>
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type='button'
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+                className={clsx(
+                  'w-full text-left px-3 py-2 text-sm rounded-lg transition flex items-center justify-between',
+                  value === opt.value
+                    ? 'bg-[#FFF0E8] text-[#F4521E] font-medium'
+                    : 'text-gray-700 hover:bg-gray-50',
+                )}
+              >
+                <span className='truncate'>{opt.label}</span>
+                {value === opt.value && (
+                  <span className='w-1.5 h-1.5 rounded-full bg-[#F4521E] shrink-0 ml-2' />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Active filter pill ───────────────────────────────────────────────────
+export function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className='inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFF0E8] border border-[#FFD0B0] text-[#F4521E] text-xs font-medium'>
+      {label}
+      <button type='button' onClick={onRemove} className='hover:text-[#9B2D0A] transition'>
+        <X className='w-3 h-3' />
+      </button>
+    </span>
+  );
+}
+
+// ── Clear-all-filters button ─────────────────────────────────────────────
+export function ClearFiltersButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      className='flex items-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition font-medium'
+    >
+      <X className='w-3.5 h-3.5' />
+      Clear all
+    </button>
   );
 }

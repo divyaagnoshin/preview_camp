@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AgentSession,
@@ -7,21 +7,27 @@ import {
   deleteAgent,
   listAgents,
   listAgentSessions,
+  updateAgent,
 } from '../api/client';
 import {
   Badge,
   Button,
   Card,
   CardHeader,
+  ClearFiltersButton,
+  EmptyState,
+  FilterDropdown,
+  FilterPill,
   Input,
   Modal,
   PageLoader,
+  SearchInput,
   Select,
   StatusBadge,
   Table,
 } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
-import { Plus, Trash2, UserPlus } from 'lucide-react';
+import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
 
 // Heartbeat is considered stale after this many seconds; matches the backend
 // HEARTBEAT_STALE_SECONDS default so the UI label flips at the same time the
@@ -34,7 +40,11 @@ export default function AgentsPage() {
   const { isAdmin, user } = useAuth();
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AgentUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<AgentUser | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterRole, setFilterRole] = useState('');
+  const [filterActive, setFilterActive] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['agents'],
@@ -57,8 +67,6 @@ export default function AgentsPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  if (isLoading) return <PageLoader />;
-
   const sessionMap: Record<string, AgentSession> = {};
   (sessions?.data || []).forEach((s) => {
     sessionMap[s.agent_id] = s;
@@ -68,13 +76,36 @@ export default function AgentsPage() {
     session: sessionMap[a.id] || null,
   }));
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return agents.filter((a) => {
+      if (q) {
+        const hay = `${a.first_name || ''} ${a.last_name || ''} ${a.email || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (filterRole && a.role !== filterRole) return false;
+      if (filterActive) {
+        const want = filterActive === 'active';
+        if (!!a.is_active !== want) return false;
+      }
+      return true;
+    });
+  }, [agents, search, filterRole, filterActive]);
+
+  if (isLoading) return <PageLoader />;
+
+  const hasActiveFilters = !!(search || filterRole || filterActive);
+  const clearAll = () => { setSearch(''); setFilterRole(''); setFilterActive(''); };
+
   return (
     <div className='p-6 space-y-5'>
       <div className='flex items-center justify-between'>
         <div>
           <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Users</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
-            Live session status and team overview
+            {hasActiveFilters
+              ? `${filtered.length} of ${agents.length} member(s)`
+              : 'Live session status and team overview'}
           </p>
         </div>
         {isAdmin && (
@@ -87,8 +118,53 @@ export default function AgentsPage() {
         )}
       </div>
 
+      {/* Search + filters */}
+      <div className='space-y-3'>
+        <div className='flex items-center gap-3 flex-wrap'>
+          <SearchInput value={search} onChange={setSearch} placeholder='Search by name or email…' />
+          <div className='flex items-center gap-2 flex-wrap'>
+            <FilterDropdown
+              label='Role'
+              value={filterRole}
+              onChange={setFilterRole}
+              color='purple'
+              options={[
+                { value: 'admin', label: 'Admin' },
+                { value: 'supervisor', label: 'Supervisor' },
+                { value: 'agent', label: 'Agent' },
+              ]}
+            />
+            <FilterDropdown
+              label='Status'
+              value={filterActive}
+              onChange={setFilterActive}
+              color='green'
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'disabled', label: 'Disabled' },
+              ]}
+            />
+            {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className='flex items-center gap-2 flex-wrap'>
+            <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
+            {search && <FilterPill label={`Search: "${search}"`} onRemove={() => setSearch('')} />}
+            {filterRole && <FilterPill label={`Role: ${filterRole}`} onRemove={() => setFilterRole('')} />}
+            {filterActive && <FilterPill label={`Status: ${filterActive}`} onRemove={() => setFilterActive('')} />}
+          </div>
+        )}
+      </div>
+
       <Card>
-        <CardHeader title='Team' subtitle={`${agents.length} member(s)`} />
+        <CardHeader title='Team' subtitle={`${filtered.length} member(s)`} />
+        {hasActiveFilters && filtered.length === 0 ? (
+          <EmptyState
+            title='No users match your filters'
+            description='Try adjusting or clearing the filters above.'
+          />
+        ) : (
         <Table
           cols={[
             {
@@ -160,25 +236,35 @@ export default function AgentsPage() {
                       r.id === user?.id ? (
                         <span className='text-xs text-gray-400'>You</span>
                       ) : (
-                        <Button
-                          size='sm'
-                          variant='ghost'
-                          icon={<Trash2 className='w-3.5 h-3.5' />}
-                          onClick={() => setDeleteUser(r)}
-                          className='text-red-600 hover:bg-red-50'
-                        >
-                          Delete
-                        </Button>
+                        <div className='flex items-center gap-1.5'>
+                          <button
+                            onClick={() => setEditUser(r)}
+                            title='Edit user'
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                          >
+                            <Pencil className='w-3 h-3' />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteUser(r)}
+                            title='Delete user'
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                          >
+                            <Trash2 className='w-3 h-3' />
+                            Delete
+                          </button>
+                        </div>
                       ),
-                    width: '120px',
+                    width: '180px',
                   },
                 ]
               : []),
           ]}
-          rows={agents}
+          rows={filtered}
           keyFn={(r) => r.id}
           emptyMessage='No agents found'
         />
+        )}
       </Card>
 
       {createOpen && (
@@ -186,6 +272,17 @@ export default function AgentsPage() {
           onClose={() => setCreateOpen(false)}
           onCreated={() => {
             setCreateOpen(false);
+            qc.invalidateQueries({ queryKey: ['agents'] });
+          }}
+        />
+      )}
+
+      {editUser && (
+        <EditAgentModal
+          target={editUser}
+          onClose={() => setEditUser(null)}
+          onSaved={() => {
+            setEditUser(null);
             qc.invalidateQueries({ queryKey: ['agents'] });
           }}
         />
@@ -346,6 +443,97 @@ function CreateAgentModal({
             icon={<UserPlus className='w-3.5 h-3.5' />}
           >
             Create user
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditAgentModal({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: AgentUser;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [firstName, setFirstName] = useState(target.first_name || '');
+  const [lastName, setLastName] = useState(target.last_name || '');
+  const [isActive, setIsActive] = useState(!!target.is_active);
+  const [error, setError] = useState('');
+
+  const m = useMutation({
+    mutationFn: () =>
+      updateAgent(target.id, {
+        first_name: firstName,
+        last_name: lastName,
+        is_active: isActive,
+      }),
+    onSuccess: () => onSaved(),
+    onError: (e: any) =>
+      setError(e?.response?.data?.error || 'Failed to update user'),
+  });
+
+  return (
+    <Modal title={`Edit ${target.first_name} ${target.last_name}`} open={true} onClose={onClose}>
+      <form
+        className='space-y-4'
+        onSubmit={(e) => {
+          e.preventDefault();
+          setError('');
+          m.mutate();
+        }}
+      >
+        <div className='grid grid-cols-2 gap-3'>
+          <Input
+            label='First name *'
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            required
+          />
+          <Input
+            label='Last name *'
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            required
+          />
+        </div>
+        <div className='space-y-1'>
+          <label className='block text-xs text-gray-500'>Email</label>
+          <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500'>
+            {target.email}
+          </div>
+        </div>
+        <div className='space-y-1'>
+          <label className='block text-xs text-gray-500'>Role</label>
+          <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500 capitalize'>
+            {target.role}
+          </div>
+        </div>
+        <label className='flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition'>
+          <input
+            type='checkbox'
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className='rounded text-indigo-600'
+          />
+          <span className='text-sm text-gray-700'>
+            Active — user can sign in and be assigned to campaigns
+          </span>
+        </label>
+        {error && <p className='text-xs text-red-500'>{error}</p>}
+        <div className='flex justify-end gap-2 pt-2 border-t border-gray-100'>
+          <Button variant='secondary' onClick={onClose} type='button'>
+            Cancel
+          </Button>
+          <Button
+            type='submit'
+            loading={m.isPending}
+            disabled={!firstName.trim() || !lastName.trim()}
+          >
+            Save Changes
           </Button>
         </div>
       </form>

@@ -921,6 +921,142 @@ router.post(
   },
 );
 
+// PATCH /contacts/:id — edit a single contact in-place. System fields map to
+// real columns; everything else goes through validateContact and is merged
+// into the existing custom_fields JSONB (so partial edits don't drop keys).
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const contactId = req.params.id;
+    const existing = await pool.query(
+      `SELECT c.*, cl.org_id
+         FROM contacts c
+         JOIN contact_lists cl ON cl.id = c.contact_list_id
+        WHERE c.id = $1 AND cl.org_id = $2`,
+      [contactId, req.user!.orgId],
+    );
+    if (!existing.rows[0]) throw new AppError(404, 'Contact not found');
+    const prev = existing.rows[0];
+
+    const {
+      phone_number,
+      first_name,
+      last_name,
+      email,
+      timezone,
+      priority,
+      assigned_agent_id,
+      custom_fields,
+    } = req.body;
+
+    if (phone_number !== undefined) {
+      const phoneErr = validatePhoneFormat(phone_number);
+      if (phoneErr) throw new AppError(400, phoneErr);
+    }
+
+    const { errors, custom_fields: cfRaw } = await validateContact(
+      {
+        phone_number: phone_number ?? prev.phone_number,
+        custom_fields: custom_fields ?? {},
+      },
+      prev.contact_list_id,
+      req.user!.orgId,
+    );
+    if (errors.length) throw new AppError(400, errors.join('; '));
+    const { alternate_phone_number, custom_fields: cfNew } =
+      extractAlternatePhone(req.body, cfRaw);
+
+    const mergedCf = { ...(prev.custom_fields || {}), ...cfNew };
+    const finalAltPhone =
+      req.body.alternate_phone_number !== undefined ||
+      (custom_fields && 'alternate_phone_number' in custom_fields)
+        ? alternate_phone_number
+        : prev.alternate_phone_number;
+
+    const { rows } = await pool.query(
+      `UPDATE contacts SET
+         phone_number = COALESCE($1, phone_number),
+         first_name = COALESCE($2, first_name),
+         last_name = COALESCE($3, last_name),
+         email = COALESCE($4, email),
+         timezone = COALESCE($5, timezone),
+         alternate_phone_number = $6,
+         priority = COALESCE($7, priority),
+         assigned_agent_id = $8,
+         custom_fields = $9,
+         updated_at = NOW()
+       WHERE id = $10 RETURNING *`,
+      [
+        phone_number ?? null,
+        first_name ?? null,
+        last_name ?? null,
+        email ?? null,
+        timezone ?? null,
+        finalAltPhone,
+        priority ?? null,
+        assigned_agent_id === undefined
+          ? prev.assigned_agent_id
+          : assigned_agent_id || null,
+        JSON.stringify(mergedCf),
+        contactId,
+      ],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /contacts/:id — remove a single contact (org-scoped via its list).
+// Contacts are referenced from four tables: campaign_contact_status (queue
+// rows), contact_status_history (state transitions), agent_sessions
+// (current_contact_id pointer), and contact_interactions (audit log). We
+// purge the first three inside a transaction since they're operational
+// state. If contact_interactions still hold the row, we fall back to a
+// 409 with a clear message instead of the generic FK error.
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const owned = await pool.query(
+      `SELECT c.id FROM contacts c
+         JOIN contact_lists cl ON cl.id = c.contact_list_id
+        WHERE c.id = $1 AND cl.org_id = $2`,
+      [req.params.id, req.user!.orgId],
+    );
+    if (!owned.rows[0]) throw new AppError(404, 'Contact not found');
+
+    try {
+      await withTransaction(async (client) => {
+        await client.query(
+          `DELETE FROM campaign_contact_status WHERE contact_id = $1`,
+          [req.params.id],
+        );
+        await client.query(
+          `DELETE FROM contact_status_history WHERE contact_id = $1`,
+          [req.params.id],
+        );
+        await client.query(
+          `UPDATE agent_sessions SET current_contact_id = NULL
+             WHERE current_contact_id = $1`,
+          [req.params.id],
+        );
+        await client.query(`DELETE FROM contacts WHERE id = $1`, [
+          req.params.id,
+        ]);
+      });
+      res.status(204).send();
+    } catch (e: any) {
+      if (e?.code === '23503') {
+        throw new AppError(
+          409,
+          'Contact has historical call activity and cannot be deleted',
+        );
+      }
+      throw e;
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /contact-upload-batches/:id
 router.get(
   '/upload-batches/:id',

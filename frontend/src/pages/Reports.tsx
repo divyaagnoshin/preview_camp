@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getCampaigns, getCampaignReport, getInteractions } from '../api/client';
-import { Card, CardHeader, Select, StatCard, Table, StatusBadge, Progress, PageLoader, Badge } from '../components/ui';
+import { Card, CardHeader, Select, StatCard, Table, StatusBadge, Progress, PageLoader, Badge, SearchInput } from '../components/ui';
 import { BarChart2 } from 'lucide-react';
 
 export default function ReportsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState('');
   const [previewFilter, setPreviewFilter] = useState('');
   const [callFilter, setCallFilter] = useState('');
+  const [search, setSearch] = useState('');
 
   const { data: campaigns } = useQuery({ queryKey: ['campaigns'], queryFn: getCampaigns });
   const { data: report, isLoading: loadReport } = useQuery({
@@ -28,6 +29,18 @@ export default function ReportsPage() {
     { value: '', label: 'Select a campaign...' },
     ...(campaigns?.data || []).map((c: any) => ({ value: c.id, label: c.name })),
   ];
+
+  const filteredInteractions = useMemo(() => {
+    const rows = interactions?.data || [];
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r: any) => {
+      const fullName = `${r.first_name || ''} ${r.last_name || ''}`.toLowerCase();
+      const phone = (r.phone_number || '').toLowerCase();
+      const agent = (r.agent_name || '').toLowerCase();
+      return fullName.includes(q) || phone.includes(q) || agent.includes(q);
+    });
+  }, [interactions, search]);
 
   return (
     <div className="p-6 md:p-8 w-full space-y-6 animate-fade-up">
@@ -102,7 +115,9 @@ export default function ReportsPage() {
       <Card>
         <CardHeader title="Interaction Log" subtitle="All agent contact events"
           action={
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <SearchInput value={search} onChange={setSearch}
+                placeholder="Search contact, phone, agent…" />
               <Select label="" value={previewFilter} onChange={e => setPreviewFilter(e.target.value)}
                 options={[{value:'',label:'All actions'},{value:'accepted',label:'Accepted'},{value:'rejected',label:'Rejected'}]} />
               <Select label="" value={callFilter} onChange={e => setCallFilter(e.target.value)}
@@ -128,9 +143,9 @@ export default function ReportsPage() {
                 : <span className="text-gray-400">—</span> },
               { header: 'Given At', render: (r: any) => new Date(r.given_at).toLocaleString() },
             ]}
-            rows={interactions?.data || []}
+            rows={filteredInteractions}
             keyFn={(r: any) => r.interaction_id}
-            emptyMessage="No interactions found"
+            emptyMessage={search ? `No interactions match "${search}"` : 'No interactions found'}
           />
         )}
       </Card>

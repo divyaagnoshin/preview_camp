@@ -416,10 +416,46 @@ dncListsRouter.delete(
 );
 
 // ── DNC NUMBERS ───────────────────────────────────────────────────────
-// Mounted at /v1/dnc-numbers. Single delete-by-id endpoint used by the
-// list-detail view in the UI.
+// Mounted at /v1/dnc-numbers. Edit (phone/reason/notes) + delete-by-id
+// endpoints used by the list-detail view in the UI.
 export const dncNumbersRouter = Router();
 dncNumbersRouter.use(authenticate);
+
+dncNumbersRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows: existing } = await pool.query(
+        `SELECT dn.id
+           FROM dnc_numbers dn
+           JOIN dnc_groups dg ON dg.id = dn.dnc_group_id
+          WHERE dn.id = $1 AND dg.org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!existing[0]) throw new AppError(404, 'dnc number not found');
+
+      const { phone_number, added_reason, notes } = req.body || {};
+      const { rows } = await pool.query(
+        `UPDATE dnc_numbers SET
+           phone_number = COALESCE($1, phone_number),
+           added_reason = COALESCE($2, added_reason),
+           notes = COALESCE($3, notes)
+         WHERE id = $4
+         RETURNING *`,
+        [
+          phone_number ?? null,
+          added_reason ?? null,
+          notes ?? null,
+          req.params.id,
+        ],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 dncNumbersRouter.delete(
   '/:id',
@@ -468,20 +504,25 @@ scheduleRouter.post(
     try {
       const { name, timezone = 'UTC', windows = [] } = req.body;
       if (!name) throw new AppError(400, 'name required');
-      // Windows are optional at create time; they can be added later via the
-      // POST /:id/windows endpoint from the template detail page.
-      // Reject duplicate-day windows in the same payload \u2014 the per-row
-      // POST /:id/windows enforces the same rule, but catching it here keeps
-      // the create flow atomic (no half-written template).
+      // Multiple windows per weekday are allowed; only reject when two
+      // windows on the same day overlap in time (ambiguous dial eligibility).
       if (Array.isArray(windows) && windows.length) {
-        const seenDays = new Set<number>();
+        const byDay = new Map<number, { start: string; end: string }[]>();
         for (const w of windows) {
-          if (seenDays.has(w.day_of_week))
-            throw new AppError(
-              400,
-              `Duplicate window for day ${w.day_of_week}: only one window per weekday allowed.`,
-            );
-          seenDays.add(w.day_of_week);
+          if (!w.start_time || !w.end_time)
+            throw new AppError(400, 'start_time and end_time required');
+          if (w.start_time >= w.end_time)
+            throw new AppError(400, 'end_time must be after start_time');
+          const list = byDay.get(w.day_of_week) || [];
+          for (const ex of list) {
+            if (w.start_time < ex.end && w.end_time > ex.start)
+              throw new AppError(
+                400,
+                `Overlapping windows for day ${w.day_of_week}: ${ex.start}-${ex.end} and ${w.start_time}-${w.end_time}.`,
+              );
+          }
+          list.push({ start: w.start_time, end: w.end_time });
+          byDay.set(w.day_of_week, list);
         }
       }
 
@@ -613,17 +654,21 @@ scheduleRouter.post(
         throw new AppError(400, 'start_time and end_time required');
       if (start_time >= end_time)
         throw new AppError(400, 'end_time must be after start_time');
-      // One window per weekday per template: a duplicate day creates ambiguous
-      // dial-eligibility (which window's start/end wins?), so reject up front.
-      const dup = await pool.query(
-        `SELECT 1 FROM schedule_windows
-          WHERE schedule_template_id = $1 AND day_of_week = $2 LIMIT 1`,
-        [req.params.id, day_of_week],
+      // Multiple windows per weekday are allowed; reject only when the new
+      // slot's time range overlaps an existing window on the same day.
+      const overlap = await pool.query(
+        `SELECT start_time, end_time FROM schedule_windows
+          WHERE schedule_template_id = $1
+            AND day_of_week = $2
+            AND start_time < $4::time
+            AND end_time   > $3::time
+          LIMIT 1`,
+        [req.params.id, day_of_week, start_time, end_time],
       );
-      if (dup.rowCount)
+      if (overlap.rowCount)
         throw new AppError(
           409,
-          'A window already exists for that day. Edit the existing one instead.',
+          `New window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`,
         );
       const { rows } = await pool.query(
         `INSERT INTO schedule_windows (schedule_template_id, day_of_week, start_time, end_time)
@@ -646,20 +691,35 @@ scheduleRouter.patch(
       const { day_of_week, start_time, end_time } = req.body;
       if (day_of_week !== undefined && (day_of_week < 0 || day_of_week > 6))
         throw new AppError(400, 'day_of_week must be 0-6');
-      // If the caller is moving this window to a different weekday, make
-      // sure no sibling window already owns that day.
-      if (day_of_week !== undefined) {
-        const dup = await pool.query(
-          `SELECT 1 FROM schedule_windows
+      // Resolve the final (day, start, end) by merging the patch against
+      // current row state, then reject only when the resulting time range
+      // overlaps a sibling window on the same day.
+      if (day_of_week !== undefined || start_time !== undefined || end_time !== undefined) {
+        const cur = await pool.query(
+          `SELECT day_of_week, start_time, end_time FROM schedule_windows
+            WHERE id=$1 AND schedule_template_id=$2`,
+          [req.params.winId, req.params.id],
+        );
+        if (!cur.rowCount) throw new AppError(404, 'Window not found');
+        const finalDay   = day_of_week ?? cur.rows[0].day_of_week;
+        const finalStart = start_time  ?? cur.rows[0].start_time;
+        const finalEnd   = end_time    ?? cur.rows[0].end_time;
+        if (finalStart >= finalEnd)
+          throw new AppError(400, 'end_time must be after start_time');
+        const overlap = await pool.query(
+          `SELECT start_time, end_time FROM schedule_windows
             WHERE schedule_template_id = $1
               AND day_of_week = $2
-              AND id <> $3 LIMIT 1`,
-          [req.params.id, day_of_week, req.params.winId],
+              AND id <> $3
+              AND start_time < $5::time
+              AND end_time   > $4::time
+            LIMIT 1`,
+          [req.params.id, finalDay, req.params.winId, finalStart, finalEnd],
         );
-        if (dup.rowCount)
+        if (overlap.rowCount)
           throw new AppError(
             409,
-            'A window already exists for that day. Edit the existing one instead.',
+            `Window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`,
           );
       }
       const { rows } = await pool.query(
@@ -923,16 +983,20 @@ dispositionRouter.get(
   '/',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { campaign_id, capability } = req.query;
-      const params: any[] = [req.user!.orgId];
-      let where = 'WHERE (dc.campaign_id IS NULL OR dc.org_id = $1)';
+      const { campaign_id, capability, type } = req.query;
+      const params: any[] = [];
+      let where = '';
       if (campaign_id) {
         params.push(campaign_id);
-        where += ` AND (dc.campaign_id IS NULL OR dc.campaign_id = $${params.length})`;
+        where += `${where ? ' AND ' : 'WHERE '}(dc.campaign_id IS NULL OR dc.campaign_id = $${params.length})`;
       }
       if (capability) {
         params.push(capability);
-        where += ` AND dc.capability = $${params.length}`;
+        where += `${where ? ' AND ' : 'WHERE '}dc.capability = $${params.length}`;
+      }
+      if (type === 'system' || type === 'custom') {
+        params.push(type);
+        where += `${where ? ' AND ' : 'WHERE '}dc.type = $${params.length}`;
       }
 
       const { rows } = await pool.query(
@@ -984,6 +1048,340 @@ dispositionRouter.post(
         ],
       );
       res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// PATCH/DELETE are restricted to custom codes (disposition_group_id IS NOT
+// NULL). System codes — the seeded org-wide entries with both campaign_id
+// and disposition_group_id NULL — are immutable through the API.
+dispositionRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows: existing } = await pool.query(
+        `SELECT id, type FROM disposition_codes WHERE id = $1`,
+        [req.params.id],
+      );
+      if (!existing[0]) throw new AppError(404, 'disposition code not found');
+      if (existing[0].type === 'system')
+        throw new AppError(409, 'system disposition codes cannot be edited');
+
+      const { label, capability, retry_delay_min, notes_required, display_order } =
+        req.body || {};
+      if (capability && !['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
+        throw new AppError(400, 'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE');
+      if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
+        throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
+
+      const { rows } = await pool.query(
+        `UPDATE disposition_codes SET
+           label           = COALESCE($1, label),
+           capability      = COALESCE($2, capability),
+           retry_delay_min = $3,
+           notes_required  = COALESCE($4, notes_required),
+           display_order   = COALESCE($5, display_order)
+         WHERE id = $6 RETURNING *`,
+        [
+          label ?? null,
+          capability ?? null,
+          retry_delay_min ?? null,
+          notes_required ?? null,
+          display_order ?? null,
+          req.params.id,
+        ],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dispositionRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, type FROM disposition_codes WHERE id = $1`,
+        [req.params.id],
+      );
+      if (!rows[0]) throw new AppError(404, 'disposition code not found');
+      if (rows[0].type === 'system')
+        throw new AppError(409, 'system disposition codes cannot be deleted');
+      await pool.query('DELETE FROM disposition_codes WHERE id=$1', [req.params.id]);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── M7b: DISPOSITION GROUPS ───────────────────────────────────────────
+// Mounted at /v1/disposition-groups. Each group is an admin-managed bucket
+// of custom disposition_codes (disposition_group_id = group.id). The
+// seeded org-wide system codes (disposition_group_id IS NULL AND
+// campaign_id IS NULL) are surfaced read-only inside every group view.
+export const dispositionGroupsRouter = Router();
+dispositionGroupsRouter.use(authenticate);
+
+dispositionGroupsRouter.get(
+  '/',
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT dg.*,
+                COUNT(dgc.disposition_code_id)::int AS custom_code_count
+           FROM disposition_groups dg
+           LEFT JOIN disposition_group_codes dgc
+             ON dgc.disposition_group_id = dg.id
+          GROUP BY dg.id
+          ORDER BY dg.created_at DESC`,
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dispositionGroupsRouter.post(
+  '/',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, description } = req.body || {};
+      if (!name) throw new AppError(400, 'name required');
+      const created = await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO disposition_groups (org_id, name, description, created_by)
+           VALUES ($1,$2,$3,$4) RETURNING *`,
+          [req.user!.orgId, name, description || null, req.user!.userId],
+        );
+        // Seed the new group with every system code so it isn't empty out
+        // of the box. Disposition codes are a global shared pool — system
+        // codes are auto-attached regardless of which org owns them. Users
+        // can still remove any of them on the Manage Dispositions screen.
+        await client.query(
+          `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id)
+           SELECT $1, dc.id
+             FROM disposition_codes dc
+            WHERE dc.type = 'system'
+              AND dc.campaign_id IS NULL
+           ON CONFLICT DO NOTHING`,
+          [rows[0].id],
+        );
+        return rows[0];
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dispositionGroupsRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
+      const { name, description } = req.body || {};
+      const { rows } = await pool.query(
+        `UPDATE disposition_groups SET
+           name        = COALESCE($1, name),
+           description = COALESCE($2, description),
+           updated_at  = NOW()
+         WHERE id = $3 RETURNING *`,
+        [name ?? null, description ?? null, req.params.id],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dispositionGroupsRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
+      await pool.query('DELETE FROM disposition_groups WHERE id=$1', [req.params.id]);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Codes attached to this group via disposition_group_codes. The junction is
+// the sole source of truth — system codes only appear here if a user has
+// explicitly added them. `is_system` is still returned so the backend can
+// gate edit/delete on the row's underlying type.
+dispositionGroupsRouter.get(
+  '/:id/codes',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const exists = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1',
+        [req.params.id],
+      );
+      if (!exists.rowCount) throw new AppError(404, 'disposition group not found');
+      const { rows } = await pool.query(
+        `SELECT dc.*,
+                (dc.type = 'system') AS is_system
+           FROM disposition_codes dc
+           JOIN disposition_group_codes dgc ON dgc.disposition_code_id = dc.id
+          WHERE dgc.disposition_group_id = $1
+            AND dc.campaign_id IS NULL
+          ORDER BY dc.display_order, dc.code`,
+        [req.params.id],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Codes that exist in this org but are NOT yet attached to this group.
+// Drives the "Available" pane on the Manage Dispositions screen. Returns
+// both system and custom codes — the UI treats them uniformly.
+dispositionGroupsRouter.get(
+  '/:id/codes/available',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const exists = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!exists.rowCount) throw new AppError(404, 'disposition group not found');
+      const { rows } = await pool.query(
+        `SELECT dc.*,
+                (dc.type = 'system') AS is_system
+           FROM disposition_codes dc
+          WHERE dc.campaign_id IS NULL
+            AND dc.id NOT IN (
+              SELECT disposition_code_id FROM disposition_group_codes
+               WHERE disposition_group_id = $1
+            )
+          ORDER BY dc.display_order, dc.code`,
+        [req.params.id],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Create a new custom disposition (org-wide) and attach it to this group.
+// disposition_group_id stays NULL on the code row — membership lives in the
+// junction so the same code can later be added to other groups.
+dispositionGroupsRouter.post(
+  '/:id/codes',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
+      const { code, label, capability, retry_delay_min, notes_required, display_order } =
+        req.body || {};
+      if (!code || !label || !capability)
+        throw new AppError(400, 'code, label, capability required');
+      if (!['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
+        throw new AppError(400, 'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE');
+      if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
+        throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
+
+      const created = await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO disposition_codes
+             (org_id, campaign_id, disposition_group_id, type, code, label,
+              capability, retry_delay_min, notes_required, display_order)
+           VALUES ($1, NULL, NULL, 'custom', $2, $3, $4, $5, $6, $7) RETURNING *`,
+          [
+            req.user!.orgId,
+            String(code).toUpperCase(),
+            label,
+            capability,
+            retry_delay_min ?? null,
+            notes_required ?? false,
+            display_order ?? 99,
+          ],
+        );
+        await client.query(
+          `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, rows[0].id],
+        );
+        return rows[0];
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Bulk replace the code attachments for this group. `disposition_code_ids`
+// is the full desired list. Accepts both system and custom codes — the
+// junction is the sole source of truth for which codes a group exposes.
+dispositionGroupsRouter.put(
+  '/:id/codes',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
+      const ids: string[] = Array.isArray(req.body?.disposition_code_ids)
+        ? req.body.disposition_code_ids.filter(Boolean)
+        : [];
+
+      await withTransaction(async (client) => {
+        if (ids.length) {
+          const valid = await client.query(
+            `SELECT id FROM disposition_codes
+              WHERE id = ANY($1::uuid[])
+                AND campaign_id IS NULL`,
+            [ids],
+          );
+          if (valid.rowCount !== ids.length)
+            throw new AppError(404, 'one or more disposition codes not found');
+        }
+        await client.query(
+          'DELETE FROM disposition_group_codes WHERE disposition_group_id=$1',
+          [req.params.id],
+        );
+        for (const cid of ids) {
+          await client.query(
+            `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id)
+             VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [req.params.id, cid],
+          );
+        }
+      });
+      res.json({ ok: true, count: ids.length });
     } catch (err) {
       next(err);
     }

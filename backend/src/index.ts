@@ -22,6 +22,7 @@ import {
   scheduleRouter,
   jobsRouter,
   dispositionRouter,
+  dispositionGroupsRouter,
   reportsRouter,
   agentsRouter,
   sessionsRouter,
@@ -33,6 +34,7 @@ import { startEslListener } from './services/eslListener';
 import { seedTimezones } from './db/seedTimezones';
 import { seedSuperadmin } from './db/seedSuperadmin';
 import { seedFieldLibrary } from './db/seedFieldLibrary';
+import { seedSystemDispositions } from './db/seedSystemDispositions';
 
 dotenv.config();
 
@@ -66,6 +68,7 @@ app.use('/v1/dnc-numbers', dncNumbersRouter);
 app.use('/v1/schedule-templates', scheduleRouter);
 app.use('/v1/jobs', jobsRouter);
 app.use('/v1/disposition-codes', dispositionRouter);
+app.use('/v1/disposition-groups', dispositionGroupsRouter);
 app.use('/v1/reports', reportsRouter);
 app.use('/v1/agents', agentsRouter);
 app.use('/v1/sessions', sessionsRouter);
@@ -91,6 +94,7 @@ app.listen(PORT, () => {
   seedTimezones();
   seedSuperadmin();
   seedFieldLibrary();
+  seedSystemDispositions();
 });
 
 export default app;

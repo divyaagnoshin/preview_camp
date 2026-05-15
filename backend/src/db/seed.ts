@@ -145,7 +145,7 @@ async function seed() {
       `
       INSERT INTO campaigns
         (org_id, name, status, schedule_type, max_attempts,
-         attempt_interval_min, auto_dial_delay_sec, caller_id,
+         wrapup_time_sec, auto_dial_delay_sec, caller_id,
          agent_priority_enabled, created_by)
       VALUES ($1, 'Q2 Loan Outreach', 'draft', 'finite', 5, 90, 8, '+18005550100', false, $2)
       RETURNING id`,

@@ -1,25 +1,91 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJobs, getJob, getJobStats, getJobContacts, updateCCS } from '../api/client';
-import { Card, CardHeader, Table, StatusBadge, Button, StatCard, Progress, PageLoader, Modal, Input, Select } from '../components/ui';
+import { Card, CardHeader, Table, StatusBadge, Button, StatCard, Progress, PageLoader, Modal, Input, Select, SearchInput, FilterDropdown, FilterPill, ClearFiltersButton, EmptyState } from '../components/ui';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 // ── Jobs List ─────────────────────────────────────────────
 export function JobsPage() {
   const navigate = useNavigate();
   const { data, isLoading, refetch } = useQuery({ queryKey: ['jobs'], queryFn: () => getJobs() });
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterType, setFilterType] = useState('');
+
+  const allJobs: any[] = data?.data || [];
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allJobs.filter((r) => {
+      if (q && !(r.campaign_name || '').toLowerCase().includes(q)) return false;
+      if (filterStatus && r.status !== filterStatus) return false;
+      if (filterType && r.schedule_type !== filterType) return false;
+      return true;
+    });
+  }, [allJobs, search, filterStatus, filterType]);
+  const hasActiveFilters = !!(search || filterStatus || filterType);
+  const clearAll = () => { setSearch(''); setFilterStatus(''); setFilterType(''); };
+
   if (isLoading) return <PageLoader />;
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#1A0F00]">Jobs</h1>
-          <p className="text-sm text-gray-400 mt-0.5">System-created runtime instances of campaigns</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {hasActiveFilters
+              ? `${filtered.length} of ${allJobs.length} jobs`
+              : 'System-created runtime instances of campaigns'}
+          </p>
         </div>
         <Button variant="secondary" icon={<RefreshCw className="w-4 h-4" />} onClick={() => refetch()}>Refresh</Button>
       </div>
+
+      {/* Search + filters */}
+      <div className='space-y-3'>
+        <div className='flex items-center gap-3 flex-wrap'>
+          <SearchInput value={search} onChange={setSearch} placeholder='Search by campaign name…' />
+          <div className='flex items-center gap-2 flex-wrap'>
+            <FilterDropdown
+              label='Status'
+              value={filterStatus}
+              onChange={setFilterStatus}
+              color='green'
+              options={[
+                { value: 'pending', label: 'Pending' },
+                { value: 'active', label: 'Active' },
+                { value: 'paused', label: 'Paused' },
+                { value: 'completed', label: 'Completed' },
+                { value: 'stopped', label: 'Stopped' },
+              ]}
+            />
+            <FilterDropdown
+              label='Type'
+              value={filterType}
+              onChange={setFilterType}
+              color='indigo'
+              options={[
+                { value: 'finite', label: 'Finite' },
+                { value: 'infinite', label: 'Infinite' },
+              ]}
+            />
+            {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className='flex items-center gap-2 flex-wrap'>
+            <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
+            {search && <FilterPill label={`Campaign: "${search}"`} onRemove={() => setSearch('')} />}
+            {filterStatus && <FilterPill label={`Status: ${filterStatus}`} onRemove={() => setFilterStatus('')} />}
+            {filterType && <FilterPill label={`Type: ${filterType}`} onRemove={() => setFilterType('')} />}
+          </div>
+        )}
+      </div>
+
       <Card>
+        {hasActiveFilters && filtered.length === 0 ? (
+          <EmptyState title='No jobs match your filters' description='Try adjusting or clearing the filters above.' />
+        ) : (
         <Table
           cols={[
             { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
@@ -35,11 +101,12 @@ export function JobsPage() {
             { header: 'Started', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
             { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
           ]}
-          rows={data?.data || []}
+          rows={filtered}
           keyFn={(r: any) => r.id}
           onRowClick={(r: any) => navigate(`/jobs/${r.id}`)}
           emptyMessage="No jobs found"
         />
+        )}
       </Card>
     </div>
   );
@@ -51,6 +118,7 @@ export function JobDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
+  const [contactSearch, setContactSearch] = useState('');
   const [reassignModal, setReassignModal] = useState<any>(null);
   const [newAgent, setNewAgent] = useState('');
   const [newPriority, setNewPriority] = useState('');
@@ -144,18 +212,28 @@ export function JobDetailPage() {
       <Card>
         <CardHeader title="Contact Queue" subtitle="All contacts for this job"
           action={
-            <Select label="" value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              options={[
-                {value:'',label:'All statuses'},
-                {value:'queued',label:'Queued'},
-                {value:'with_agent',label:'With Agent'},
-                {value:'completed',label:'Completed'},
-                {value:'exhausted',label:'Exhausted'},
-                {value:'dnc',label:'DNC'},
-              ]} />
+            <div className='flex items-center gap-2'>
+              <SearchInput value={contactSearch} onChange={setContactSearch} placeholder='Search name or phone…' />
+              <Select label="" value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                options={[
+                  {value:'',label:'All statuses'},
+                  {value:'queued',label:'Queued'},
+                  {value:'with_agent',label:'With Agent'},
+                  {value:'completed',label:'Completed'},
+                  {value:'exhausted',label:'Exhausted'},
+                  {value:'dnc',label:'DNC'},
+                ]} />
+            </div>
           } />
-        {loadC ? <PageLoader /> : (
+        {loadC ? <PageLoader /> : (() => {
+          const q = contactSearch.trim().toLowerCase();
+          const rows = (contacts?.data || []).filter((r: any) => {
+            if (!q) return true;
+            const hay = `${r.first_name || ''} ${r.last_name || ''} ${r.phone_number || ''}`.toLowerCase();
+            return hay.includes(q);
+          });
+          return (
           <Table
             cols={[
               { header: 'Contact', render: (r: any) => (
@@ -177,11 +255,12 @@ export function JobDetailPage() {
                 </Button>
               )},
             ]}
-            rows={contacts?.data || []}
+            rows={rows}
             keyFn={(r: any) => r.id}
             emptyMessage="No contacts match filter"
           />
-        )}
+          );
+        })()}
       </Card>
 
       {/* Reassign modal */}

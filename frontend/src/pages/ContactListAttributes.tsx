@@ -20,6 +20,7 @@ import {
   GripVertical,
   Lock,
   X,
+  AlertCircle,
 } from 'lucide-react';
 
 const CUSTOM_DATA_TYPES = [
@@ -88,12 +89,14 @@ export default function ContactListAttributesPage() {
   });
 
   // Deleting a list-scoped custom field permanently removes its definition.
+  const [deleteCustomTarget, setDeleteCustomTarget] = useState<any | null>(null);
   const deleteCustomMut = useMutation({
     mutationFn: (fid: string) => deleteContactListCustomField(id!, fid),
     onSuccess: (_data, fid) => {
       setSelectedIds((prev) => prev.filter((sid) => sid !== fid));
       qc.invalidateQueries({ queryKey: ['contact-list-attributes', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      setDeleteCustomTarget(null);
     },
   });
 
@@ -170,13 +173,7 @@ export default function ContactListAttributesPage() {
   };
   const deleteCustom = (row: any) => {
     if (!isCustomList(row)) return;
-    if (
-      !window.confirm(
-        `Delete custom field "${row.name}"? This removes the column from this list permanently.`,
-      )
-    )
-      return;
-    deleteCustomMut.mutate(row.id);
+    setDeleteCustomTarget(row);
   };
   // Available pane only shows library rows (custom rows belong to the list).
   const addAll = () =>
@@ -363,21 +360,23 @@ export default function ContactListAttributesPage() {
                       )}
                     </span>
                     {custom ? (
-                      <span className='flex items-center gap-1'>
+                      <span className='flex items-center gap-2'>
                         <button
                           onClick={() => openEdit(r)}
                           title='Edit custom field'
-                          className='text-indigo-500 hover:text-indigo-700 p-1'
+                          className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
                         >
-                          <Pencil className='w-4 h-4' />
+                          <Pencil className='w-3 h-3' />
+                          Edit
                         </button>
                         <button
                           onClick={() => deleteCustom(r)}
                           disabled={deleteCustomMut.isPending}
                           title='Delete custom field'
-                          className='text-red-500 hover:text-red-700 disabled:opacity-40 p-1'
+                          className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition disabled:opacity-40'
                         >
-                          <Trash2 className='w-4 h-4' />
+                          <Trash2 className='w-3 h-3' />
+                          Delete
                         </button>
                       </span>
                     ) : (
@@ -502,9 +501,11 @@ export default function ContactListAttributesPage() {
               </div>
 
               {updateCustomMut.isError && (
-                <div className='p-2 rounded text-xs bg-red-50 text-red-700'>
-                  {(updateCustomMut.error as any)?.response?.data?.error ||
-                    'Update failed'}
+                <div className='flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg'>
+                  <AlertCircle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
+                  <p className='text-xs text-red-700 leading-relaxed'>
+                    Could not save changes. Please try again.
+                  </p>
                 </div>
               )}
             </div>
@@ -519,6 +520,58 @@ export default function ContactListAttributesPage() {
                 onClick={() => updateCustomMut.mutate()}
               >
                 Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCustomTarget && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete Custom Field</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button
+                onClick={() => { setDeleteCustomTarget(null); deleteCustomMut.reset(); }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <div className='p-5 space-y-4'>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete "{deleteCustomTarget.name}"?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1 leading-relaxed'>
+                    This removes the column from this list permanently along with all stored values.
+                  </p>
+                </div>
+              </div>
+              {deleteCustomMut.isError && (
+                <div className='p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700'>
+                  Could not delete this custom field. Please try again.
+                </div>
+              )}
+            </div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button
+                variant='secondary'
+                onClick={() => { setDeleteCustomTarget(null); deleteCustomMut.reset(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteCustomMut.isPending}
+                onClick={() => deleteCustomMut.mutate(deleteCustomTarget.id)}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete Field
               </Button>
             </div>
           </div>

@@ -22,6 +22,8 @@ import {
   MicOff,
   Pause,
   Play,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { useSipPhone, SipTraceEntry } from '../hooks/useSipPhone';
 
@@ -86,6 +88,13 @@ export default function WorkspacePage() {
     answered_at?: string;
     disconnected_at?: string;
   }>({});
+  const [banner, setBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 6000);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
   const fetchTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -183,22 +192,17 @@ export default function WorkspacePage() {
       setPhase('ready');
       fetchNext();
     },
-    onError: (err: any) => {
-      // Surface backend errors (e.g. inactive job, missing session table
-      // constraint) instead of failing silently and leaving the button stuck.
-      alert(
-        `Could not go ready: ${err?.response?.data?.error || err?.message || 'Unknown error'}`,
-      );
+    onError: () => {
+      // Surface a friendly banner instead of failing silently and leaving the
+      // button stuck. Backend reason is intentionally not displayed verbatim.
+      setBanner('Could not go ready. Please try again in a moment.');
     },
   });
 
   const handleAccept = useCallback(() => {
     if (!contact) return;
     if (!phone.registered) {
-      alert(
-        phone.error ||
-          'Softphone is not registered with FreeSWITCH yet — please wait a moment and try again.',
-      );
+      setBanner('Softphone is not connected yet. Please wait a moment and try again.');
       return;
     }
     const now = new Date().toISOString();
@@ -257,15 +261,10 @@ export default function WorkspacePage() {
       setPhase('ready');
       fetchNext();
     },
-    // Surface the backend's reason instead of failing silently \u2014 most
-    // common cause is a CLOSED disposition with notes_required=true and
-    // an empty Notes field (e.g. PROMISE_TO_PAY).
-    onError: (err: any) => {
-      alert(
-        `Could not save disposition: ${
-          err?.response?.data?.error || err?.message || 'Unknown error'
-        }`,
-      );
+    // Surface a friendly banner. Most common cause is a CLOSED disposition
+    // with notes_required=true and an empty Notes field (e.g. PROMISE_TO_PAY).
+    onError: () => {
+      setBanner('Could not save disposition. Please check the form and try again.');
     },
   });
 
@@ -285,6 +284,22 @@ export default function WorkspacePage() {
     !disposeMutation.isPending;
 
   // ── RENDER ─────────────────────────────────────────────────────────
+
+  const bannerToast = banner ? (
+    <div className='fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4'>
+      <div className='flex items-start gap-2.5 p-3 bg-red-50 border border-red-200 rounded-lg shadow-lg'>
+        <AlertTriangle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
+        <p className='text-xs text-red-700 leading-relaxed flex-1'>{banner}</p>
+        <button
+          onClick={() => setBanner(null)}
+          className='p-0.5 text-red-400 hover:text-red-600'
+          title='Dismiss'
+        >
+          <X className='w-3.5 h-3.5' />
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   if (phase === 'idle')
     return (
@@ -312,6 +327,7 @@ export default function WorkspacePage() {
   if (phase === 'selecting')
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
+        {bannerToast}
         <div className='bg-white rounded-xl shadow-sm border border-gray-200 p-8 w-full max-w-md'>
           <h2 className='text-lg font-semibold mb-4 text-gray-900'>
             Select Active Jobs
@@ -365,6 +381,7 @@ export default function WorkspacePage() {
   if (phase === 'ready')
     return (
       <div className='min-h-screen bg-gray-50 flex items-center justify-center'>
+        {bannerToast}
         <div className='text-center'>
           <RefreshCw className='w-10 h-10 text-indigo-400 animate-spin mx-auto mb-4' />
           <p className='text-gray-600 font-medium'>
@@ -422,6 +439,7 @@ export default function WorkspacePage() {
   if ((phase === 'previewing' || phase === 'disposing') && contact)
     return (
       <div className='min-h-screen bg-gray-50 p-4'>
+        {bannerToast}
         <div className='max-w-lg mx-auto'>
           {/* Campaign + attempt */}
           <div className='flex items-center justify-between mb-3'>

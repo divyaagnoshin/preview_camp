@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import {
   Phone, LayoutDashboard, Megaphone, Users, List, ShieldOff, BarChart2,
   LogOut, Menu, X, Briefcase, ChevronDown, CalendarOff, Clock, Building2, Zap,
+  Settings2,
 } from 'lucide-react';
 
 type NavItem = {
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
       { to: '/schedule-templates', icon: Clock, label: 'Schedule Templates', roles: ['admin', 'supervisor', 'superadmin'] },
       { to: '/holiday-calendars', icon: CalendarOff, label: 'Holidays', roles: ['admin', 'supervisor', 'superadmin'] },
       { to: '/dnc', icon: ShieldOff, label: 'DNC', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/dispositions', icon: Settings2, label: 'Dispositions', roles: ['admin', 'supervisor', 'superadmin'] },
     ],
   },
   { to: '/jobs', icon: Briefcase, label: 'Jobs', roles: ['admin', 'supervisor', 'superadmin'] },

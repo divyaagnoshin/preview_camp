@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getFieldLibrary,
@@ -15,6 +15,10 @@ import {
   PageLoader,
   EmptyState,
   Badge,
+  SearchInput,
+  FilterDropdown,
+  FilterPill,
+  ClearFiltersButton,
 } from '../components/ui';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 
@@ -48,6 +52,9 @@ export default function FieldLibraryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingRow, setDeletingRow] = useState<any | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
+  const [search, setSearch] = useState('');
+  const [filterFieldType, setFilterFieldType] = useState('');
+  const [filterDataType, setFilterDataType] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['field-library'],
@@ -100,8 +107,25 @@ export default function FieldLibraryPage() {
 
   const yn = (v: boolean) => (v ? 'Yes' : 'No');
 
+  const rows: any[] = data?.data || [];
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (q) {
+        const hay = `${r.name || ''} ${r.field_key || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (filterFieldType && r.field_type !== filterFieldType) return false;
+      if (filterDataType && r.data_type !== filterDataType) return false;
+      return true;
+    });
+  }, [rows, search, filterFieldType, filterDataType]);
+
   if (isLoading) return <PageLoader />;
-  const rows = data?.data || [];
+
+  const hasActiveFilters = !!(search || filterFieldType || filterDataType);
+  const clearAll = () => { setSearch(''); setFilterFieldType(''); setFilterDataType(''); };
 
   return (
     <div className='p-6 space-y-5'>
@@ -109,8 +133,9 @@ export default function FieldLibraryPage() {
         <div>
           <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Field Library</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
-            Default columns available for CSV upload — predefined fields are
-            shared globally; custom fields are scoped to your org.
+            {hasActiveFilters
+              ? `${filtered.length} of ${rows.length} field(s)`
+              : 'Default columns available for CSV upload — predefined fields are shared globally; custom fields are scoped to your org.'}
           </p>
         </div>
         <Button
@@ -124,12 +149,47 @@ export default function FieldLibraryPage() {
         </Button>
       </div>
 
+      {rows.length > 0 && (
+        <div className='space-y-3'>
+          <div className='flex items-center gap-3 flex-wrap'>
+            <SearchInput value={search} onChange={setSearch} placeholder='Search fields…' />
+            <div className='flex items-center gap-2 flex-wrap'>
+              <FilterDropdown
+                label='Type'
+                value={filterFieldType}
+                onChange={setFilterFieldType}
+                color='indigo'
+                options={FIELD_TYPES.map((t) => ({ value: t, label: t }))}
+              />
+              <FilterDropdown
+                label='Data Type'
+                value={filterDataType}
+                onChange={setFilterDataType}
+                color='amber'
+                options={DATA_TYPES.map((t) => ({ value: t, label: t }))}
+              />
+              {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
+            </div>
+          </div>
+          {hasActiveFilters && (
+            <div className='flex items-center gap-2 flex-wrap'>
+              <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
+              {search && <FilterPill label={`Search: "${search}"`} onRemove={() => setSearch('')} />}
+              {filterFieldType && <FilterPill label={`Type: ${filterFieldType}`} onRemove={() => setFilterFieldType('')} />}
+              {filterDataType && <FilterPill label={`Data: ${filterDataType}`} onRemove={() => setFilterDataType('')} />}
+            </div>
+          )}
+        </div>
+      )}
+
       <Card>
         {rows.length === 0 ? (
           <EmptyState
             title='No fields'
             description='Add a custom field to extend your CSV column dictionary.'
           />
+        ) : hasActiveFilters && filtered.length === 0 ? (
+          <EmptyState title='No matches' description='Try adjusting or clearing the filters above.' />
         ) : (
           <Table
             cols={[
@@ -177,39 +237,37 @@ export default function FieldLibraryPage() {
                 header: 'Actions',
                 render: (r: any) => (
                   <div className='flex items-center gap-2'>
-                    <Button
-                      size='sm'
-                      variant='secondary'
-                      icon={<Pencil className='w-3 h-3' />}
+                    <button
+                      onClick={() => openEdit(r)}
                       disabled={r.org_id === null}
                       title={
                         r.org_id === null
                           ? 'Global predefined fields are immutable'
-                          : ''
+                          : 'Edit field'
                       }
-                      onClick={() => openEdit(r)}
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition disabled:opacity-40 disabled:cursor-not-allowed'
                     >
+                      <Pencil className='w-3 h-3' />
                       Edit
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='danger'
-                      icon={<Trash2 className='w-3 h-3' />}
+                    </button>
+                    <button
+                      onClick={() => setDeletingRow(r)}
                       disabled={r.org_id === null}
                       title={
                         r.org_id === null
                           ? 'Global predefined fields cannot be deleted'
-                          : ''
+                          : 'Delete field'
                       }
-                      onClick={() => setDeletingRow(r)}
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition disabled:opacity-40 disabled:cursor-not-allowed'
                     >
+                      <Trash2 className='w-3 h-3' />
                       Delete
-                    </Button>
+                    </button>
                   </div>
                 ),
               },
             ]}
-            rows={rows}
+            rows={filtered}
             keyFn={(r: any) => r.id}
           />
         )}

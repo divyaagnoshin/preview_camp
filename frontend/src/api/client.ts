@@ -114,6 +114,19 @@ export const createOrgUser = (
   },
 ): Promise<OrgAdmin> =>
   api.post(`/organizations/${orgId}/users`, body).then((r) => r.data);
+export const updateOrgUser = (
+  orgId: string,
+  userId: string,
+  body: {
+    first_name?: string;
+    last_name?: string;
+    role?: 'admin' | 'supervisor' | 'agent';
+    is_active?: boolean;
+  },
+): Promise<OrgAdmin> =>
+  api
+    .patch(`/organizations/${orgId}/users/${userId}`, body)
+    .then((r) => r.data);
 export const deleteOrgUser = (orgId: string, userId: string): Promise<void> =>
   api.delete(`/organizations/${orgId}/users/${userId}`).then((r) => r.data);
 
@@ -191,6 +204,10 @@ export const downloadContactListCsvTemplate = (id: string, name: string) =>
 // ── Contacts ──────────────────────────────────────────────
 export const addContact = (data: any) =>
   api.post('/contacts', data).then((r) => r.data);
+export const updateContact = (id: string, data: any) =>
+  api.patch(`/contacts/${id}`, data).then((r) => r.data);
+export const deleteContact = (id: string) =>
+  api.delete(`/contacts/${id}`).then((r) => r.data);
 export const cloudImportContacts = (
   contactListId: string,
   body:
@@ -417,6 +434,32 @@ export const listTimezones = (): Promise<{ data: string[] }> =>
 // ── Disposition codes ─────────────────────────────────────
 export const getDispositionCodes = (params?: any) =>
   api.get('/disposition-codes', { params }).then((r) => r.data);
+export const updateDispositionCode = (id: string, data: any) =>
+  api.patch(`/disposition-codes/${id}`, data).then((r) => r.data);
+export const deleteDispositionCode = (id: string) =>
+  api.delete(`/disposition-codes/${id}`).then((r) => r.data);
+
+// ── Disposition groups ────────────────────────────────────
+export const listDispositionGroups = () =>
+  api.get('/disposition-groups').then((r) => r.data);
+export const createDispositionGroup = (body: { name: string; description?: string }) =>
+  api.post('/disposition-groups', body).then((r) => r.data);
+export const updateDispositionGroup = (
+  id: string,
+  body: { name?: string; description?: string | null },
+) => api.patch(`/disposition-groups/${id}`, body).then((r) => r.data);
+export const deleteDispositionGroup = (id: string) =>
+  api.delete(`/disposition-groups/${id}`).then((r) => r.data);
+export const listDispositionGroupCodes = (id: string) =>
+  api.get(`/disposition-groups/${id}/codes`).then((r) => r.data);
+export const listAvailableDispositionCodes = (id: string) =>
+  api.get(`/disposition-groups/${id}/codes/available`).then((r) => r.data);
+export const createDispositionGroupCode = (id: string, body: any) =>
+  api.post(`/disposition-groups/${id}/codes`, body).then((r) => r.data);
+export const setDispositionGroupCodes = (id: string, disposition_code_ids: string[]) =>
+  api
+    .put(`/disposition-groups/${id}/codes`, { disposition_code_ids })
+    .then((r) => r.data);
 
 // ── Agent workspace ───────────────────────────────────────
 export const goReady = (jobIds: string[]) =>

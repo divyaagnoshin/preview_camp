@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -9,6 +9,8 @@ import {
   getContactList,
   uploadCSV,
   addContact,
+  updateContact,
+  deleteContact,
   downloadContactListCsvTemplate,
   getContactListAttributes,
   cloudImportContacts,
@@ -32,6 +34,7 @@ import {
   EmptyState,
   Badge,
   Progress,
+  SearchInput,
 } from '../components/ui';
 import {
   Plus,
@@ -47,6 +50,7 @@ import {
   MoreVertical,
   Power,
   PowerOff,
+  AlertCircle,
 } from 'lucide-react';
 
 // ── Contact Lists ─────────────────────────────────────────
@@ -58,11 +62,22 @@ export function ContactListsPage() {
   const [deletingList, setDeletingList] = useState<any | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['contact-lists'],
     queryFn: getContactLists,
   });
+
+  const allLists: any[] = data?.data || [];
+  const filteredLists = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allLists;
+    return allLists.filter((r) =>
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.description || '').toLowerCase().includes(q),
+    );
+  }, [allLists, search]);
 
   const resetForm = () => {
     setShowCreate(false);
@@ -115,7 +130,9 @@ export function ContactListsPage() {
             Contact Lists
           </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
-            {data?.data?.length || 0} lists total
+            {search
+              ? `${filteredLists.length} of ${allLists.length} lists`
+              : `${allLists.length} lists total`}
           </p>
         </div>
         <Button
@@ -126,8 +143,14 @@ export function ContactListsPage() {
         </Button>
       </div>
 
+      {allLists.length > 0 && (
+        <div className='flex items-center gap-3 flex-wrap'>
+          <SearchInput value={search} onChange={setSearch} placeholder='Search lists…' />
+        </div>
+      )}
+
       <Card>
-        {data?.data?.length === 0 ? (
+        {allLists.length === 0 ? (
           <EmptyState
             title='No contact lists'
             description='Create a list and upload contacts to get started.'
@@ -140,6 +163,8 @@ export function ContactListsPage() {
               </Button>
             }
           />
+        ) : filteredLists.length === 0 ? (
+          <EmptyState title='No matches' description={`No lists match "${search}".`} />
         ) : (
           <Table
             cols={[
@@ -174,27 +199,27 @@ export function ContactListsPage() {
                     className='flex items-center gap-2'
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Button
-                      size='sm'
-                      variant='secondary'
-                      icon={<Pencil className='w-3 h-3' />}
+                    <button
                       onClick={() => openEdit(r)}
+                      title='Edit list'
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
                     >
+                      <Pencil className='w-3 h-3' />
                       Edit
-                    </Button>
-                    <Button
-                      size='sm'
-                      variant='danger'
-                      icon={<Trash2 className='w-3 h-3' />}
+                    </button>
+                    <button
                       onClick={() => setDeletingList(r)}
+                      title='Delete list'
+                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
                     >
+                      <Trash2 className='w-3 h-3' />
                       Delete
-                    </Button>
+                    </button>
                   </div>
                 ),
               },
             ]}
-            rows={data?.data || []}
+            rows={filteredLists}
             keyFn={(r: any) => r.id}
             onRowClick={(r: any) => navigate(`/contact-lists/${r.id}`)}
           />
@@ -298,6 +323,11 @@ export function ContactListDetailPage() {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [showAddContact, setShowAddContact] = useState(false);
+  // When non-null, the Add Contact modal switches into Edit mode and submits
+  // PATCH /contacts/:id instead of POST. The row's existing values are seeded
+  // into `contact` and `customFieldValues` by openEditContact().
+  const [editingContact, setEditingContact] = useState<any | null>(null);
+  const [deletingContact, setDeletingContact] = useState<any | null>(null);
   // Structured upload state. `phase` drives which UI block renders:
   //   uploading  → progress bar with live % (browser → server bytes).
   //   processing → bar locked at 100% while the server parses + inserts.
@@ -321,12 +351,14 @@ export function ContactListDetailPage() {
   // spreadsheet-style grid for multi-row entry.
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
 
-  const [contact, setContact] = useState({
+  const [contact, setContact] = useState<Record<string, string>>({
     phone_number: '',
     first_name: '',
     last_name: '',
     email: '',
     timezone: '',
+    alternate_phone_number: '',
+    assigned_agent_id: '',
     priority: '100',
   });
   // Values for selected non-system attributes (system_contact_id, address_*,
@@ -570,6 +602,7 @@ export function ContactListDetailPage() {
   // 200; 5 keeps the table compact and the API response small.
   const CONTACTS_PER_PAGE = 15;
   const [contactsPage, setContactsPage] = useState(1);
+  const [contactSearch, setContactSearch] = useState('');
   const { data: contacts, isLoading: loadC } = useQuery({
     queryKey: ['contacts', id, contactsPage],
     queryFn: () =>
@@ -601,6 +634,22 @@ export function ContactListDetailPage() {
   const customFieldDefs = (attrs?.data || []).filter(
     (r: any) => r.is_selected && !RESERVED_SYSTEM_KEYS.has(r.field_key),
   );
+  // Selected system-column attributes (excluding phone_number, which has its
+  // own dedicated input). These map to real columns on `contacts` — rendered
+  // alongside customFieldDefs but their values land in top-level fields of
+  // the POST /contacts payload rather than custom_fields JSONB.
+  const SYSTEM_KEYS_NO_PHONE = new Set([
+    'first_name',
+    'last_name',
+    'email',
+    'timezone',
+    'alternate_phone_number',
+    'priority',
+    'assigned_agent_id',
+  ]);
+  const selectedSystemDefs = (attrs?.data || []).filter(
+    (r: any) => r.is_selected && SYSTEM_KEYS_NO_PHONE.has(r.field_key),
+  );
 
   // Coerce form value strings into typed values per the attribute's data_type.
   const coerceCustom = (def: any, raw: any) => {
@@ -620,6 +669,7 @@ export function ContactListDetailPage() {
 
   const closeAddContact = () => {
     setShowAddContact(false);
+    setEditingContact(null);
     setAddMode('single');
     setContact({
       phone_number: '',
@@ -627,6 +677,8 @@ export function ContactListDetailPage() {
       last_name: '',
       email: '',
       timezone: '',
+      alternate_phone_number: '',
+      assigned_agent_id: '',
       priority: '100',
     });
     setCustomFieldValues({});
@@ -636,6 +688,28 @@ export function ContactListDetailPage() {
       { phone_number: '' },
     ]);
     setBulkProgress(null);
+  };
+
+  // Seeds the Add Contact modal from a contact row and flips it into edit mode.
+  const openEditContact = (r: any) => {
+    setContact({
+      phone_number: r.phone_number || '',
+      first_name: r.first_name || '',
+      last_name: r.last_name || '',
+      email: r.email || '',
+      timezone: r.timezone || '',
+      alternate_phone_number: r.alternate_phone_number || '',
+      assigned_agent_id: r.assigned_agent_id || '',
+      priority: r.priority !== null && r.priority !== undefined ? String(r.priority) : '100',
+    });
+    const cf: Record<string, any> = {};
+    for (const [k, v] of Object.entries(r.custom_fields || {})) {
+      cf[k] = v === null || v === undefined ? '' : v;
+    }
+    setCustomFieldValues(cf);
+    setAddMode('single');
+    setEditingContact(r);
+    setShowAddContact(true);
   };
 
   // Build a typed custom_fields object for one bulk row.
@@ -662,12 +736,23 @@ export function ContactListDetailPage() {
       const errors: { row: number; error: string }[] = [];
       for (const { row, idx } of candidates) {
         try {
-          await addContact({
+          const payload: any = {
             contact_list_id: id,
             phone_number: String(row.phone_number).trim(),
             priority: 100,
             custom_fields: buildBulkCustomFields(row),
-          });
+          };
+          for (const def of selectedSystemDefs) {
+            const raw = row[def.field_key];
+            if (raw === undefined || raw === '') continue;
+            if (def.field_key === 'priority') {
+              const n = parseInt(String(raw), 10);
+              if (!Number.isNaN(n)) payload.priority = n;
+            } else {
+              payload[def.field_key] = raw;
+            }
+          }
+          await addContact(payload);
           done += 1;
         } catch (e: any) {
           failed += 1;
@@ -694,17 +779,71 @@ export function ContactListDetailPage() {
         const v = coerceCustom(def, customFieldValues[def.field_key]);
         if (v !== undefined) cf[def.field_key] = v;
       }
-      return addContact({
+      const payload: any = {
         contact_list_id: id,
-        ...contact,
-        priority: parseInt(contact.priority),
+        phone_number: contact.phone_number,
+        priority: 100,
         custom_fields: cf,
-      });
+      };
+      for (const def of selectedSystemDefs) {
+        const raw = contact[def.field_key];
+        if (raw === undefined || raw === '') continue;
+        if (def.field_key === 'priority') {
+          const n = parseInt(raw, 10);
+          if (!Number.isNaN(n)) payload.priority = n;
+        } else {
+          payload[def.field_key] = raw;
+        }
+      }
+      return addContact(payload);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
       closeAddContact();
+    },
+  });
+
+  // Edit an existing contact. Builds the same payload shape as addMut but
+  // omits contact_list_id (immutable) and POSTs to PATCH /contacts/:id.
+  const editMut = useMutation({
+    mutationFn: () => {
+      if (!editingContact) return Promise.reject(new Error('no contact'));
+      const cf: Record<string, any> = {};
+      for (const def of customFieldDefs) {
+        const v = coerceCustom(def, customFieldValues[def.field_key]);
+        if (v !== undefined) cf[def.field_key] = v;
+      }
+      const payload: any = {
+        phone_number: contact.phone_number,
+        custom_fields: cf,
+      };
+      for (const def of selectedSystemDefs) {
+        const raw = contact[def.field_key];
+        if (def.field_key === 'priority') {
+          const n = parseInt(raw, 10);
+          if (!Number.isNaN(n)) payload.priority = n;
+        } else if (def.field_key === 'assigned_agent_id') {
+          payload.assigned_agent_id = raw || null;
+        } else {
+          payload[def.field_key] = raw ?? '';
+        }
+      }
+      return updateContact(editingContact.id, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      closeAddContact();
+    },
+  });
+
+  const deleteContactMut = useMutation({
+    mutationFn: (contactId: string) => deleteContact(contactId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      setDeletingContact(null);
     },
   });
 
@@ -806,10 +945,12 @@ export function ContactListDetailPage() {
     },
   });
 
+  const [deleteCfgTarget, setDeleteCfgTarget] = useState<CloudImportConfig | null>(null);
   const deleteCfgMut = useMutation({
     mutationFn: (cfgId: string) => deleteCloudImportConfig(cfgId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
+      setDeleteCfgTarget(null);
     },
   });
 
@@ -1212,7 +1353,18 @@ export function ContactListDetailPage() {
 
       {/* Contacts table */}
       <Card>
-        <CardHeader title={`Contacts (${contacts?.total || 0})`} />
+        <CardHeader
+          title={`Contacts (${contacts?.total || 0})`}
+          action={
+            (contacts?.data?.length || 0) > 0 ? (
+              <SearchInput
+                value={contactSearch}
+                onChange={setContactSearch}
+                placeholder='Search this page…'
+              />
+            ) : undefined
+          }
+        />
         {loadC ? (
           <PageLoader />
         ) : (
@@ -1273,6 +1425,32 @@ export function ContactListDetailPage() {
                 },
               });
             }
+            cols.push({
+              header: 'Actions',
+              render: (r: any) => (
+                <div
+                  className='flex items-center gap-1.5'
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    onClick={() => openEditContact(r)}
+                    title='Edit contact'
+                    className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                  >
+                    <Pencil className='w-3 h-3' />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => setDeletingContact(r)}
+                    title='Delete contact'
+                    className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                  >
+                    <Trash2 className='w-3 h-3' />
+                    Delete
+                  </button>
+                </div>
+              ),
+            });
             const total = contacts?.total || 0;
             const totalPages = Math.max(
               1,
@@ -1281,13 +1459,36 @@ export function ContactListDetailPage() {
             const startIdx =
               total === 0 ? 0 : (contactsPage - 1) * CONTACTS_PER_PAGE + 1;
             const endIdx = Math.min(contactsPage * CONTACTS_PER_PAGE, total);
+            const q = contactSearch.trim().toLowerCase();
+            const pageRows = (contacts?.data || []).filter((r: any) => {
+              if (!q) return true;
+              const hay = [
+                r.phone_number,
+                r.first_name,
+                r.last_name,
+                r.email,
+                r.timezone,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+              if (hay.includes(q)) return true;
+              const cf = r.custom_fields || {};
+              return Object.values(cf).some((v: any) =>
+                String(v ?? '').toLowerCase().includes(q),
+              );
+            });
             return (
               <>
                 <Table
                   cols={cols}
-                  rows={contacts?.data || []}
+                  rows={pageRows}
                   keyFn={(r: any) => r.id}
-                  emptyMessage='No contacts yet — upload a CSV or add manually'
+                  emptyMessage={
+                    q
+                      ? `No contacts on this page match "${contactSearch}"`
+                      : 'No contacts yet — upload a CSV or add manually'
+                  }
                 />
                 {total > 0 && (
                   <div className='flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm'>
@@ -1327,24 +1528,26 @@ export function ContactListDetailPage() {
         )}
       </Card>
 
-      {/* Add contact modal */}
+      {/* Add / Edit contact modal */}
       <Modal
-        title='Add Contact'
+        title={editingContact ? 'Edit Contact' : 'Add Contact'}
         open={showAddContact}
         onClose={closeAddContact}
         size={addMode === 'bulk' ? 'xl' : 'lg'}
       >
-        <div className='mb-4 flex items-center gap-3'>
-          <label className='text-xs text-gray-500'>Mode</label>
-          <select
-            value={addMode}
-            onChange={(e) => setAddMode(e.target.value as 'single' | 'bulk')}
-            className='border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-          >
-            <option value='single'>Single Upload</option>
-            <option value='bulk'>Bulk Upload</option>
-          </select>
-        </div>
+        {!editingContact && (
+          <div className='mb-4 flex items-center gap-3'>
+            <label className='text-xs text-gray-500'>Mode</label>
+            <select
+              value={addMode}
+              onChange={(e) => setAddMode(e.target.value as 'single' | 'bulk')}
+              className='border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+            >
+              <option value='single'>Single Upload</option>
+              <option value='bulk'>Bulk Upload</option>
+            </select>
+          </div>
+        )}
 
         {addMode === 'single' ? (
           <div className='space-y-5 max-h-[70vh] overflow-y-auto pr-1'>
@@ -1356,6 +1559,38 @@ export function ContactListDetailPage() {
               }
               placeholder='+12125550101'
             />
+
+            {selectedSystemDefs.length > 0 && (
+              <section>
+                <div className='grid grid-cols-2 gap-3'>
+                  {selectedSystemDefs.map((def: any) => {
+                    const isNumber = def.field_key === 'priority';
+                    const isEmail = def.field_key === 'email';
+                    return (
+                      <div key={def.id}>
+                        <label className='block text-xs text-gray-500 mb-1'>
+                          {def.name}
+                        </label>
+                        <input
+                          type={
+                            isNumber ? 'number' : isEmail ? 'email' : 'text'
+                          }
+                          value={contact[def.field_key] ?? ''}
+                          onChange={(e) =>
+                            setContact((c) => ({
+                              ...c,
+                              [def.field_key]: e.target.value,
+                            }))
+                          }
+                          placeholder={def.field_key}
+                          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {customFieldDefs.length > 0 && (
               <section>
@@ -1431,6 +1666,7 @@ export function ContactListDetailPage() {
           </div>
         ) : (
           <BulkGrid
+            systemFieldDefs={selectedSystemDefs}
             customFieldDefs={customFieldDefs}
             rows={bulkRows}
             setRows={setBulkRows}
@@ -1447,7 +1683,16 @@ export function ContactListDetailPage() {
           >
             Cancel
           </Button>
-          {addMode === 'single' ? (
+          {editingContact ? (
+            <Button
+              className='flex-1'
+              loading={editMut.isPending}
+              disabled={!contact.phone_number}
+              onClick={() => editMut.mutate()}
+            >
+              Save Changes
+            </Button>
+          ) : addMode === 'single' ? (
             <Button
               className='flex-1'
               loading={addMut.isPending}
@@ -1469,11 +1714,58 @@ export function ContactListDetailPage() {
             </Button>
           )}
         </div>
-        {addMut.isError && addMode === 'single' && (
+        {addMut.isError && addMode === 'single' && !editingContact && (
           <p className='text-xs text-red-500 mt-2'>
             {(addMut.error as any)?.response?.data?.error}
           </p>
         )}
+        {editMut.isError && editingContact && (
+          <p className='text-xs text-red-500 mt-2'>
+            {(editMut.error as any)?.response?.data?.error || 'Update failed'}
+          </p>
+        )}
+      </Modal>
+
+      {/* Delete contact confirmation */}
+      <Modal
+        title='Delete Contact'
+        open={!!deletingContact}
+        onClose={() => setDeletingContact(null)}
+      >
+        <div className='space-y-4'>
+          <p className='text-sm text-gray-600'>
+            Are you sure you want to delete{' '}
+            <span className='font-medium text-gray-900 font-mono'>
+              {deletingContact?.phone_number}
+            </span>
+            ? This action cannot be undone.
+          </p>
+          <div className='flex gap-3'>
+            <Button
+              variant='secondary'
+              className='flex-1'
+              onClick={() => setDeletingContact(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant='danger'
+              className='flex-1'
+              loading={deleteContactMut.isPending}
+              onClick={() =>
+                deletingContact && deleteContactMut.mutate(deletingContact.id)
+              }
+            >
+              Delete Contact
+            </Button>
+          </div>
+          {deleteContactMut.isError && (
+            <p className='text-xs text-red-500'>
+              {(deleteContactMut.error as any)?.response?.data?.error ||
+                'Delete failed'}
+            </p>
+          )}
+        </div>
       </Modal>
 
       {/* Cloud Import — table of saved S3/FTP/GCS profiles. Each row can be
@@ -1710,10 +2002,7 @@ export function ContactListDetailPage() {
                       danger
                       onClick={() => {
                         close();
-                        if (
-                          window.confirm(`Delete cloud connection "${r.name}"?`)
-                        )
-                          deleteCfgMut.mutate(r.id);
+                        setDeleteCfgTarget(r);
                       }}
                     />
                   </div>
@@ -1770,6 +2059,49 @@ export function ContactListDetailPage() {
         onSaveStep1={() => saveCfgMut.mutate()}
         onSaveStep2={() => saveSchedMut.mutate()}
       />
+
+      {deleteCfgTarget && (
+        <Modal
+          open
+          onClose={() => { setDeleteCfgTarget(null); deleteCfgMut.reset(); }}
+          title='Delete Cloud Connection'
+          size='sm'
+        >
+          <div className='space-y-4'>
+            <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+              <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+              <div>
+                <p className='text-sm font-semibold text-red-800'>
+                  Delete "{deleteCfgTarget.name}"?
+                </p>
+                <p className='text-xs text-red-600 mt-1 leading-relaxed'>
+                  The connection settings and import schedule will be removed permanently. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            {deleteCfgMut.isError && (
+              <div className='p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700'>
+                Could not delete this cloud connection. Please try again.
+              </div>
+            )}
+            <div className='flex gap-2 justify-end pt-1'>
+              <Button
+                variant='secondary'
+                onClick={() => { setDeleteCfgTarget(null); deleteCfgMut.reset(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteCfgMut.isPending}
+                onClick={() => deleteCfgMut.mutate(deleteCfgTarget.id)}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete Connection
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -1777,12 +2109,14 @@ export function ContactListDetailPage() {
 // Spreadsheet-style grid for bulk contact entry. Phone is always the first
 // column; remaining columns are derived from the list's selected attributes.
 function BulkGrid({
+  systemFieldDefs = [],
   customFieldDefs,
   rows,
   setRows,
   progress,
   disabled,
 }: {
+  systemFieldDefs?: any[];
   customFieldDefs: any[];
   rows: Record<string, any>[];
   setRows: React.Dispatch<React.SetStateAction<Record<string, any>[]>>;
@@ -1794,6 +2128,9 @@ function BulkGrid({
   } | null;
   disabled: boolean;
 }) {
+  // System columns render before custom-field columns. Both share the same
+  // input/<td> shape so we iterate them as a single ordered list.
+  const allColumns = [...systemFieldDefs, ...customFieldDefs];
   const updateCell = (i: number, key: string, value: any) =>
     setRows((rs) =>
       rs.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)),
@@ -1829,7 +2166,7 @@ function BulkGrid({
             <tr>
               <th className={thCls + ' w-10'}>#</th>
               <th className={thCls + ' min-w-[180px]'}>Phone Number *</th>
-              {customFieldDefs.map((def: any) => (
+              {allColumns.map((def: any) => (
                 <th key={def.id} className={thCls + ' min-w-[160px]'}>
                   <span className='flex items-center gap-1'>
                     {def.name}
@@ -1865,10 +2202,13 @@ function BulkGrid({
                     className={cellCls}
                   />
                 </td>
-                {customFieldDefs.map((def: any) => {
+                {allColumns.map((def: any) => {
                   const t = String(def.data_type).toUpperCase();
                   const isNumber =
-                    t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                    t === 'INTEGER' ||
+                    t === 'LONG' ||
+                    t === 'FLOAT' ||
+                    def.field_key === 'priority';
                   const isDate = t === 'TIMESTAMP';
                   const isBool = t === 'BOOLEAN';
                   if (isBool) {

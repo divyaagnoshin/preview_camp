@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
   schedule_type           TEXT        NOT NULL DEFAULT 'finite', -- finite | infinite
   contact_strategy_id     UUID        REFERENCES contact_strategies(id),
   max_attempts            INT,          -- NULL = unlimited
-  attempt_interval_min    INT         NOT NULL DEFAULT 90,
+  wrapup_time_sec         INT         NOT NULL DEFAULT 90,
   auto_dial_delay_sec     INT         NOT NULL DEFAULT 8,
   caller_id               TEXT,
   start_date              DATE,
@@ -227,19 +227,37 @@ CREATE TABLE IF NOT EXISTS campaign_dnc_groups (
   PRIMARY KEY (campaign_id, dnc_group_id)
 );
 
--- ── DISPOSITION CODES ─────────────────────────────────────
-CREATE TABLE IF NOT EXISTS disposition_codes (
-  id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id          UUID    NOT NULL REFERENCES organizations(id),
-  campaign_id     UUID    REFERENCES campaigns(id), -- NULL = global
-  code            TEXT    NOT NULL,
-  label           TEXT    NOT NULL,
-  capability      TEXT    NOT NULL, -- CLOSED | NEXT_ATTEMPT | RESCHEDULE
-  retry_delay_min INT,
-  notes_required  BOOLEAN NOT NULL DEFAULT FALSE,
-  display_order   INT     NOT NULL DEFAULT 99,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- ── DISPOSITION GROUPS & CODES ────────────────────────────
+-- A disposition_group is an admin-managed bucket of custom codes. The
+-- seeded org-wide system codes live with disposition_group_id IS NULL
+-- AND campaign_id IS NULL; custom codes carry a non-null group id.
+CREATE TABLE IF NOT EXISTS disposition_groups (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id      UUID        NOT NULL REFERENCES organizations(id),
+  name        TEXT        NOT NULL,
+  description TEXT,
+  created_by  UUID        REFERENCES users(id),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS disposition_codes (
+  id                   UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id               UUID    NOT NULL REFERENCES organizations(id),
+  campaign_id          UUID    REFERENCES campaigns(id), -- NULL = global
+  disposition_group_id UUID    REFERENCES disposition_groups(id) ON DELETE CASCADE,
+  code                 TEXT    NOT NULL,
+  label                TEXT    NOT NULL,
+  capability           TEXT    NOT NULL, -- CLOSED | NEXT_ATTEMPT | RESCHEDULE
+  retry_delay_min      INT,
+  notes_required       BOOLEAN NOT NULL DEFAULT FALSE,
+  display_order        INT     NOT NULL DEFAULT 99,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_disposition_codes_group
+  ON disposition_codes(disposition_group_id)
+  WHERE disposition_group_id IS NOT NULL;
 
 -- ── CAMPAIGN JOBS ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS campaign_jobs (

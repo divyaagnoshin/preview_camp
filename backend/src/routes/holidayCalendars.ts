@@ -214,14 +214,14 @@ router.patch(
         is_full_day_block === undefined ? null : !!is_full_day_block;
       const { rows } = await pool.query(
         `UPDATE holiday_dates
-          SET holiday_date      = COALESCE($1, holiday_date),
-              holiday_name      = COALESCE($2, holiday_name),
-              is_full_day_block = COALESCE($3, is_full_day_block),
-              block_start       = CASE WHEN $3 IS TRUE THEN NULL
-                                       WHEN $4 IS NOT NULL THEN $4::time
+          SET holiday_date      = COALESCE($1::date, holiday_date),
+              holiday_name      = COALESCE($2::text, holiday_name),
+              is_full_day_block = COALESCE($3::boolean, is_full_day_block),
+              block_start       = CASE WHEN $3::boolean IS TRUE THEN NULL
+                                       WHEN $4::time IS NOT NULL THEN $4::time
                                        ELSE block_start END,
-              block_end         = CASE WHEN $3 IS TRUE THEN NULL
-                                       WHEN $5 IS NOT NULL THEN $5::time
+              block_end         = CASE WHEN $3::boolean IS TRUE THEN NULL
+                                       WHEN $5::time IS NOT NULL THEN $5::time
                                        ELSE block_end END
         WHERE id = $6 AND calendar_id = $7
         RETURNING id, calendar_id,

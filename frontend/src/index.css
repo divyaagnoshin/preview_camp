@@ -65,3 +65,25 @@ h1, h2, h3, h4, h5, h6 {
   50% { transform: scale(1.5); opacity:0.6; }
 }
 .pulse-dot { animation: pulseDot 2s ease infinite; }
+
+/* Brand-coloured form controls. Native checkboxes/radios pick up the
+   orange accent when checked, and any input/select/textarea that isn't
+   already styled by our <Input/> primitive still gets a visible focus
+   ring so the focused field is never invisible. */
+input[type='checkbox'], input[type='radio'] {
+  accent-color: var(--brand-orange);
+  cursor: pointer;
+}
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--brand-orange);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--brand-orange);
+  box-shadow: 0 0 0 4px rgba(244, 82, 30, 0.25);
+}

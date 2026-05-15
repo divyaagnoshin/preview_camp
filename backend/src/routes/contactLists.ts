@@ -244,18 +244,6 @@ const SYSTEM_PHONE_ATTR = {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Keys that live as real columns on `contacts` and are CHECK-blocked from
-// contact_list_field_definitions (see migration 001).
-const RESERVED_SYSTEM_KEYS = new Set([
-  'phone_number',
-  'first_name',
-  'last_name',
-  'email',
-  'timezone',
-  'assigned_agent_id',
-  'priority',
-]);
-
 // Map our library/custom data_type → contact_list_field_definitions.data_type
 // (the input shape: text | number | date | boolean | url).
 const DATA_TYPE_TO_INPUT_TYPE: Record<string, string> = {
@@ -270,8 +258,12 @@ const DATA_TYPE_TO_INPUT_TYPE: Record<string, string> = {
 };
 
 // Rebuilds contact_list_field_definitions for a given list from the union of
-// attached library fields + list-scoped custom fields. Skips reserved system
-// keys (phone_number, first_name, etc.) which live as real columns on contacts.
+// attached library fields + list-scoped custom fields. phone_number is
+// pre-seeded separately as display_order=1, so it's skipped in the loop to
+// avoid the (contact_list_id, field_key) UNIQUE violation. System keys
+// (first_name, last_name, email, timezone, assigned_agent_id, priority) are
+// included here when selected — downstream ingestion/agent code treats them
+// as real columns on `contacts` instead of custom_fields JSONB.
 // Each row carries data_type (input shape) and field_type (predefined|custom),
 // the latter sourced from whether the row originated in org_field_library
 // (predefined) or contact_list_custom_fields (custom).
@@ -310,7 +302,7 @@ async function syncFieldDefinitions(client: any, listId: string) {
   );
   let pos = 1;
   for (const r of rows) {
-    if (RESERVED_SYSTEM_KEYS.has(r.field_key)) continue;
+    if (r.field_key === 'phone_number') continue;
     pos += 1;
     const inputType =
       DATA_TYPE_TO_INPUT_TYPE[String(r.data_type).toUpperCase()] || 'text';

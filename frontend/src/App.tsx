@@ -21,6 +21,7 @@ import {
   ScheduleTemplateDetailPage,
 } from './pages/ScheduleTemplates';
 import DNCPage from './pages/DNC';
+import DispositionsPage from './pages/Dispositions';
 import AgentsPage from './pages/Agents';
 import ReportsPage from './pages/Reports';
 import OrganizationsPage from './pages/Organizations';
@@ -209,6 +210,16 @@ function AppRoutes() {
           <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <DNCPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/dispositions'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <DispositionsPage />
             </Layout>
           </PrivateRoute>
         }

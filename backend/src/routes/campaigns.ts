@@ -51,7 +51,7 @@ router.post(
         schedule_type = 'finite',
         contact_strategy_id,
         max_attempts,
-        attempt_interval_min = 90,
+        wrapup_time_sec = 90,
         auto_dial_delay_sec = 8,
         caller_id,
         start_date,
@@ -61,6 +61,7 @@ router.post(
         schedule_template_id,
         holiday_calendar_id,
         dnc_group_ids = [],
+        disposition_group_id,
       } = req.body;
 
       if (!name) throw new AppError(400, 'name required');
@@ -77,16 +78,17 @@ router.post(
         const { rows } = await client.query(
           `INSERT INTO campaigns
            (org_id, name, schedule_type, contact_strategy_id, max_attempts,
-            attempt_interval_min, auto_dial_delay_sec, caller_id, start_date, end_date,
-            agent_priority_enabled, schedule_template_id, holiday_calendar_id, dnc_group_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+            wrapup_time_sec, auto_dial_delay_sec, caller_id, start_date, end_date,
+            agent_priority_enabled, schedule_template_id, holiday_calendar_id, dnc_group_id,
+            disposition_group_id, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
           [
             req.user!.orgId,
             name,
             schedule_type,
             contact_strategy_id || null,
             max_attempts || null,
-            attempt_interval_min,
+            wrapup_time_sec,
             auto_dial_delay_sec,
             caller_id || null,
             start_date || null,
@@ -95,6 +97,7 @@ router.post(
             schedule_template_id || null,
             holiday_calendar_id || null,
             dncId || null,
+            disposition_group_id || null,
             req.user!.userId,
           ],
         );
@@ -190,12 +193,13 @@ router.patch(
       const ALLOWED = [
         'name',
         'max_attempts',
-        'attempt_interval_min',
+        'wrapup_time_sec',
         'auto_dial_delay_sec',
         'agent_priority_enabled',
         'schedule_template_id',
         'holiday_calendar_id',
         'dnc_group_id',
+        'disposition_group_id',
         'start_date',
         'end_date',
       ];

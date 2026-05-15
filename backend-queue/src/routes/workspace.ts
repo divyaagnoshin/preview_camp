@@ -494,21 +494,18 @@ router.post(
           ],
         );
 
-        // Get campaign config for max_attempts + retry interval. The
-        // campaign-level attempt_interval_min is the source of truth for
-        // re-dial timing on this campaign; the disposition's
-        // retry_delay_min is used only as a fallback when the campaign
-        // value isn't set (the column is NOT NULL DEFAULT 90, so in
-        // practice the campaign value always wins).
+        // Get campaign config for max_attempts. Re-dial timing now comes
+        // from the disposition's retry_delay_min (the campaign's old
+        // attempt_interval_min has been repurposed as wrapup_time_sec — a
+        // post-call wrap-up window for the agent, not a redial cool-off).
         const { rows: campRows } = await client.query(
-          `SELECT c.max_attempts, c.attempt_interval_min FROM campaigns c
+          `SELECT c.max_attempts FROM campaigns c
          JOIN campaign_jobs cj ON cj.campaign_id = c.id
          WHERE cj.id = $1`,
           [interaction.job_id],
         );
         const maxAttempts = campRows[0]?.max_attempts;
-        const retryMinutes =
-          campRows[0]?.attempt_interval_min ?? code.retry_delay_min ?? 90;
+        const retryMinutes = code.retry_delay_min ?? 90;
 
         // Get current attempts_made
         const { rows: ccsRows } = await client.query(

@@ -16,7 +16,7 @@ import {
   PageLoader,
   Progress,
 } from '../components/ui';
-import { Play, Square, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Play, Square, ArrowLeft, CheckCircle, ExternalLink, ShieldOff } from 'lucide-react';
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -108,8 +108,8 @@ export default function CampaignDetailPage() {
           color='indigo'
         />
         <StatCard
-          label='Retry Interval'
-          value={`${campaign.attempt_interval_min}m`}
+          label='Wrap-up Time'
+          value={`${campaign.wrapup_time_sec}s`}
           color='gray'
         />
         <StatCard
@@ -216,18 +216,22 @@ export default function CampaignDetailPage() {
       <Card>
         <CardHeader title='Contact Lists' />
         <div className='p-5 space-y-2'>
+          {campaign.contact_lists?.length === 0 && (
+            <p className='text-sm text-gray-400'>No contact lists attached.</p>
+          )}
           {campaign.contact_lists?.map((l: any) => (
             <div
               key={l.id}
-              className='flex items-center gap-3 p-3 bg-gray-50 rounded-lg'
+              className='flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-transparent hover:border-gray-200 transition group'
             >
-              <CheckCircle className='w-4 h-4 text-green-500' />
-              <span className='text-sm text-gray-900'>{l.name}</span>
+              <CheckCircle className='w-4 h-4 text-green-500 shrink-0' />
+              <span className='text-sm font-medium text-gray-900 flex-1'>{l.name}</span>
               <button
                 onClick={() => navigate(`/contact-lists/${l.id}`)}
-                className='ml-auto text-xs text-[#F4521E] hover:underline font-semibold'
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-semibold transition'
               >
-                View →
+                <ExternalLink className='w-3.5 h-3.5' />
+                View Contacts
               </button>
             </div>
           ))}
@@ -235,24 +239,35 @@ export default function CampaignDetailPage() {
       </Card>
 
       {/* DNC groups */}
-      {campaign.dnc_groups?.length > 0 && (
-        <Card>
-          <CardHeader
-            title='DNC Groups'
-            subtitle='Suppression lists applied to this campaign'
-          />
-          <div className='p-5 space-y-2'>
-            {campaign.dnc_groups.map((g: any) => (
-              <div
-                key={g.id}
-                className='text-sm text-gray-700 bg-red-50 px-3 py-2 rounded-lg'
+      <Card>
+        <CardHeader
+          title='DNC Groups'
+          subtitle='Suppression lists applied to this campaign'
+        />
+        <div className='p-5 space-y-2'>
+          {(!campaign.dnc_groups || campaign.dnc_groups.length === 0) && (
+            <p className='text-sm text-gray-400'>No DNC groups attached.</p>
+          )}
+          {campaign.dnc_groups?.map((g: any) => (
+            <div
+              key={g.id}
+              className='flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition'
+            >
+              <ShieldOff className='w-4 h-4 text-red-500 shrink-0' />
+              <span className='text-sm font-medium text-red-800 flex-1'>{g.name}</span>
+              <button
+                onClick={() => navigate('/dnc', { state: { group: g } })}
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 text-xs font-semibold transition'
               >
-                🚫 {g.name}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+                <ExternalLink className='w-3.5 h-3.5' />
+                View Group
+              </button>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+
     </div>
   );
 }
