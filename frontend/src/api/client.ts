@@ -206,8 +206,20 @@ export const addContact = (data: any) =>
   api.post('/contacts', data).then((r) => r.data);
 export const updateContact = (id: string, data: any) =>
   api.patch(`/contacts/${id}`, data).then((r) => r.data);
-export const deleteContact = (id: string) =>
-  api.delete(`/contacts/${id}`).then((r) => r.data);
+// List-scoped delete — keeps URLs hierarchical and reuses the list's org
+// ownership check on the backend.
+export const getContacts = (listId: string, params?: any) =>
+  api.get(`/contact-lists/${listId}/contacts`, { params }).then((r) => r.data);
+export const deleteContact = (listId: string, contactId: string) =>
+  api
+    .delete(`/contact-lists/${listId}/contacts/${contactId}`)
+    .then((r) => r.data);
+export const deleteAllContacts = (listId: string) =>
+  api.delete(`/contact-lists/${listId}/contacts`).then((r) => r.data);
+export const deleteContactsBulk = (listId: string, ids: string[]) =>
+  api
+    .post(`/contact-lists/${listId}/contacts/bulk-delete`, { ids })
+    .then((r) => r.data);
 export const cloudImportContacts = (
   contactListId: string,
   body:
@@ -431,6 +443,29 @@ export const deleteScheduleWindow = (
 export const listTimezones = (): Promise<{ data: string[] }> =>
   api.get('/timezones').then((r) => r.data);
 
+// ── System Configuration (per-org singleton) ──────────────
+export interface SystemConfig {
+  org_id: string;
+  inject_poll_minutes: number;
+  last_injected_at: string | null;
+  time_guard_enabled: boolean;
+  // Keyed by day_of_week ("0"–"6"). A day's absence means no windows are
+  // permitted on that day while the guard is on.
+  time_guard_windows: Record<string, { start: string; end: string }>;
+  created_at: string;
+  updated_at: string;
+}
+export const getSystemConfig = (): Promise<SystemConfig> =>
+  api.get('/system-config').then((r) => r.data);
+export const updateSystemConfig = (
+  body: Partial<{
+    inject_poll_minutes: number;
+    time_guard_enabled: boolean;
+    time_guard_windows: Record<string, { start: string; end: string }>;
+  }>,
+): Promise<SystemConfig> =>
+  api.patch('/system-config', body).then((r) => r.data);
+
 // ── Disposition codes ─────────────────────────────────────
 export const getDispositionCodes = (params?: any) =>
   api.get('/disposition-codes', { params }).then((r) => r.data);
@@ -460,38 +495,6 @@ export const setDispositionGroupCodes = (id: string, disposition_code_ids: strin
   api
     .put(`/disposition-groups/${id}/codes`, { disposition_code_ids })
     .then((r) => r.data);
-
-// ── Agent workspace ───────────────────────────────────────
-export const goReady = (jobIds: string[]) =>
-  api
-    .patch('/sessions/ready', { selected_job_ids: jobIds })
-    .then((r) => r.data);
-// Possible shapes:
-//   • a contact card (object with interaction_id, etc.)
-//   • { exhausted: true, breakdown } — all CCS rows on selected jobs are
-//     in terminal state, polling further is pointless
-//   • null — nothing dispatchable right now (cool-off / locked), poll again
-export const getNextContact = () =>
-  api
-    .get('/workspace/next-contact')
-    .then((r) => r.data)
-    .catch((e) => {
-      if (e.response?.status === 204) return null;
-      throw e;
-    });
-export const rejectContact = (interactionId: string, reason: string) =>
-  api
-    .post('/workspace/reject', {
-      interaction_id: interactionId,
-      rejection_reason: reason,
-    })
-    .then((r) => r.data);
-export const saveDisposition = (data: any) =>
-  api.post('/workspace/disposition', data).then((r) => r.data);
-export const sendHeartbeat = () =>
-  api.post('/sessions/heartbeat', {}).then((r) => r.data);
-export const goOffline = () =>
-  api.patch('/sessions/offline', {}).then((r) => r.data);
 
 // ── Agents (admin management) ─────────────────────────────
 export interface AgentUser {
@@ -565,3 +568,12 @@ export const getAgentReport = (id: string, params?: any) =>
   api.get(`/reports/agent/${id}`, { params }).then((r) => r.data);
 export const getInteractions = (params?: any) =>
   api.get('/reports/interactions', { params }).then((r) => r.data);
+
+
+export const deleteAllDncNumbers = (listId: string) =>
+  api.delete(`/dnc-lists/${listId}/numbers`).then((r) => r.data);
+
+export const deleteDncNumbersBulk = (listId: string, ids: string[]) =>
+  api
+    .post(`/dnc-lists/${listId}/numbers/bulk-delete`, { ids })
+    .then((r) => r.data);

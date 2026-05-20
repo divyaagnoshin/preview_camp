@@ -129,9 +129,9 @@ export default function FieldLibraryPage() {
 
   return (
     <div className='p-6 space-y-5'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Field Library</h1>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>Field Library</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {hasActiveFilters
               ? `${filtered.length} of ${rows.length} field(s)`
@@ -151,7 +151,7 @@ export default function FieldLibraryPage() {
 
       {rows.length > 0 && (
         <div className='space-y-3'>
-          <div className='flex items-center gap-3 flex-wrap'>
+          <div className='filter-bar'>
             <SearchInput value={search} onChange={setSearch} placeholder='Search fields…' />
             <div className='flex items-center gap-2 flex-wrap'>
               <FilterDropdown

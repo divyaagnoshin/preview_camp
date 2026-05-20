@@ -112,9 +112,9 @@ function GroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
 
   return (
     <div className='p-6 space-y-5'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             Disposition Management
           </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
@@ -351,7 +351,7 @@ function CodesView({
             <span>/</span>
             <span className='text-gray-600 font-medium'>{group.name}</span>
           </div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             {group.name}
           </h1>
           {group.description && <p className='text-sm text-[#7A5C44] mt-0.5'>{group.description}</p>}

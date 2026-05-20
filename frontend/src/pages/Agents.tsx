@@ -99,9 +99,9 @@ export default function AgentsPage() {
 
   return (
     <div className='p-6 space-y-5'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>Users</h1>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>Users</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {hasActiveFilters
               ? `${filtered.length} of ${agents.length} member(s)`
@@ -120,7 +120,7 @@ export default function AgentsPage() {
 
       {/* Search + filters */}
       <div className='space-y-3'>
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search by name or email…' />
           <div className='flex items-center gap-2 flex-wrap'>
             <FilterDropdown
@@ -168,21 +168,39 @@ export default function AgentsPage() {
         <Table
           cols={[
             {
-              header: 'Agent',
-              render: (r: Row) => (
-                <div className='flex items-center gap-3'>
-                  <div className='w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-xs font-bold text-indigo-700'>
-                    {r.first_name?.[0]}
-                    {r.last_name?.[0]}
-                  </div>
-                  <div>
-                    <div className='font-medium text-gray-900'>
-                      {r.first_name} {r.last_name}
+              header: 'User',
+              render: (r: Row) => {
+                const initials = `${r.first_name?.[0] || ''}${r.last_name?.[0] || ''}`;
+                const gradients = [
+                  'linear-gradient(135deg,#E8470A,#F59E0B)',
+                  'linear-gradient(135deg,#8B5CF6,#7C3AED)',
+                  'linear-gradient(135deg,#10B981,#059669)',
+                  'linear-gradient(135deg,#3B82F6,#1D4ED8)',
+                  'linear-gradient(135deg,#F59E0B,#D97706)',
+                  'linear-gradient(135deg,#06B6D4,#0891B2)',
+                ];
+                const grad = gradients[(r.first_name?.charCodeAt(0) || 0) % gradients.length];
+                const gmailLink = r.email ? `https://mail.google.com/mail/u/0/#search/${r.email}` : null;
+                return (
+                  <div className='flex items-center gap-3'>
+                    <div className='w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md flex-shrink-0' style={{ background: grad }}>
+                      {initials}
                     </div>
-                    <div className='text-xs text-gray-400'>{r.email}</div>
+                    <div>
+                      <div className='font-semibold text-[#0F1117]'>{r.first_name} {r.last_name}</div>
+                      {r.email && gmailLink ? (
+                        <a href={gmailLink} target='_blank' rel='noopener noreferrer'
+                          className='text-xs text-[#E8470A] hover:underline flex items-center gap-1'
+                          onClick={e => e.stopPropagation()}>
+                          ✉ {r.email}
+                        </a>
+                      ) : (
+                        <div className='text-xs text-[#9CA3AF]'>{r.email}</div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ),
+                );
+              },
             },
             {
               header: 'Role',

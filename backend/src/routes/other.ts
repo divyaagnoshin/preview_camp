@@ -357,6 +357,54 @@ dncListsRouter.post(
   },
 );
 
+// DELETE /v1/dnc-lists/:id/numbers
+// Deletes ALL numbers from a DNC list (list shell is preserved).
+// Mirrors deleteAllContacts on the contact-list side.
+dncListsRouter.delete(
+  '/:id/numbers',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const list = await loadList(req.params.id, req.user!.orgId);
+      const { rowCount } = await pool.query(
+        'DELETE FROM dnc_numbers WHERE dnc_list_id = $1',
+        [list.id],
+      );
+      // Refresh cached counts on the parent group
+      res.json({ deleted: rowCount ?? 0 });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+ 
+// POST /v1/dnc-lists/:id/numbers/bulk-delete
+// Deletes a specific set of DNC number IDs from this list.
+// Mirrors deleteContactsBulk on the contact-list side.
+dncListsRouter.post(
+  '/:id/numbers/bulk-delete',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const list = await loadList(req.params.id, req.user!.orgId);
+      const ids: string[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter(Boolean)
+        : [];
+      if (!ids.length) throw new AppError(400, 'ids array required');
+      if (ids.length > 1000) throw new AppError(400, 'Max 1000 ids per call');
+ 
+      // Only delete numbers that actually belong to this list (security check)
+      const { rowCount } = await pool.query(
+        'DELETE FROM dnc_numbers WHERE id = ANY($1::uuid[]) AND dnc_list_id = $2',
+        [ids, list.id],
+      );
+      res.json({ deleted: rowCount ?? 0 });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 dncListsRouter.patch(
   '/:id',
   requireRole('admin', 'supervisor'),
@@ -513,6 +561,7 @@ scheduleRouter.post(
             throw new AppError(400, 'start_time and end_time required');
           if (w.start_time >= w.end_time)
             throw new AppError(400, 'end_time must be after start_time');
+          await assertWithinTimeGuard(req.user!.orgId, w.day_of_week, w.start_time, w.end_time);
           const list = byDay.get(w.day_of_week) || [];
           for (const ex of list) {
             if (w.start_time < ex.end && w.end_time > ex.start)
@@ -588,6 +637,35 @@ async function assertTemplateOwned(id: string, orgId: string) {
   if (!r.rowCount) throw new AppError(404, 'Template not found');
 }
 
+// Time Guard — restricts each schedule_window to the org-wide permitted
+// hours configured in system_config.time_guard_windows. Days absent from
+// the JSONB blob are blocked entirely when the guard is on. HH:MM:SS time
+// values from the DB are sliced to HH:MM so string comparison stays
+// lexicographic-safe against the JSONB "HH:MM" entries.
+async function assertWithinTimeGuard(orgId: string, dayOfWeek: number, start: string, end: string) {
+  const { rows } = await pool.query(
+    `SELECT time_guard_enabled, time_guard_windows FROM system_config WHERE org_id = $1`,
+    [orgId],
+  );
+  const cfg = rows[0];
+  if (!cfg || !cfg.time_guard_enabled) return;
+  const allowed = cfg.time_guard_windows?.[String(dayOfWeek)];
+  if (!allowed)
+    throw new AppError(
+      409,
+      `Time Guard blocks new windows on day ${dayOfWeek}. Enable this day in System Configuration first.`,
+    );
+  const s = String(start).slice(0, 5);
+  const e = String(end).slice(0, 5);
+  const aStart = String(allowed.start).slice(0, 5);
+  const aEnd = String(allowed.end).slice(0, 5);
+  if (s < aStart || e > aEnd)
+    throw new AppError(
+      409,
+      `Time Guard for day ${dayOfWeek} allows only ${aStart}–${aEnd}. Adjust the slot or update System Configuration.`,
+    );
+}
+
 scheduleRouter.patch(
   '/:id',
   requireRole('admin', 'supervisor'),
@@ -654,6 +732,7 @@ scheduleRouter.post(
         throw new AppError(400, 'start_time and end_time required');
       if (start_time >= end_time)
         throw new AppError(400, 'end_time must be after start_time');
+      await assertWithinTimeGuard(req.user!.orgId, day_of_week, start_time, end_time);
       // Multiple windows per weekday are allowed; reject only when the new
       // slot's time range overlaps an existing window on the same day.
       const overlap = await pool.query(
@@ -706,6 +785,7 @@ scheduleRouter.patch(
         const finalEnd   = end_time    ?? cur.rows[0].end_time;
         if (finalStart >= finalEnd)
           throw new AppError(400, 'end_time must be after start_time');
+        await assertWithinTimeGuard(req.user!.orgId, finalDay, finalStart, finalEnd);
         const overlap = await pool.query(
           `SELECT start_time, end_time FROM schedule_windows
             WHERE schedule_template_id = $1
@@ -1156,33 +1236,21 @@ dispositionGroupsRouter.post(
     try {
       const { name, description } = req.body || {};
       if (!name) throw new AppError(400, 'name required');
-      const created = await withTransaction(async (client) => {
-        const { rows } = await client.query(
-          `INSERT INTO disposition_groups (org_id, name, description, created_by)
-           VALUES ($1,$2,$3,$4) RETURNING *`,
-          [req.user!.orgId, name, description || null, req.user!.userId],
-        );
-        // Seed the new group with every system code so it isn't empty out
-        // of the box. Disposition codes are a global shared pool — system
-        // codes are auto-attached regardless of which org owns them. Users
-        // can still remove any of them on the Manage Dispositions screen.
-        await client.query(
-          `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id)
-           SELECT $1, dc.id
-             FROM disposition_codes dc
-            WHERE dc.type = 'system'
-              AND dc.campaign_id IS NULL
-           ON CONFLICT DO NOTHING`,
-          [rows[0].id],
-        );
-        return rows[0];
-      });
-      res.status(201).json(created);
+      
+      // No transaction needed since it's just one insert now
+      const { rows } = await pool.query(
+        `INSERT INTO disposition_groups (org_id, name, description, created_by)
+         VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.user!.orgId, name, description || null, req.user!.userId],
+      );
+      
+      res.status(201).json(rows[0]);
     } catch (err) {
       next(err);
     }
   },
 );
+
 
 dispositionGroupsRouter.patch(
   '/:id',

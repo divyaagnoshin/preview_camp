@@ -246,11 +246,9 @@ export default function LoginPage() {
       const role   = stored ? (JSON.parse(stored).role as string) : '';
       // Role-based landing page:
       //   superadmin → /organizations (cross-tenant management)
-      //   agent      → /workspace     (call-handling UI)
       //   admin / supervisor / anything else → /dashboard
       const dest =
         role === 'superadmin' ? '/organizations'
-        : role === 'agent'    ? '/workspace'
         :                       '/dashboard';
       navigate(dest);
     } catch (err: any) {

@@ -4,15 +4,15 @@
   "private": true,
   "workspaces": [
     "backend",
-    "backend-queue",
+    "backend-injector",
     "frontend"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,queue,frontend -c blue,magenta,green \"npm run dev --workspace=backend\" \"npm run dev --workspace=backend-queue\" \"npm run dev --workspace=frontend\"",
+    "dev": "concurrently -n backend,injector,frontend -c blue,yellow,green \"npm run dev --workspace=backend\" \"npm run dev --workspace=backend-injector\" \"npm run dev --workspace=frontend\"",
     "dev:backend": "npm run dev --workspace=backend",
-    "dev:queue": "npm run dev --workspace=backend-queue",
+    "dev:injector": "npm run dev --workspace=backend-injector",
     "dev:frontend": "npm run dev --workspace=frontend",
-    "build": "npm run build --workspace=backend && npm run build --workspace=backend-queue && npm run build --workspace=frontend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=backend-injector && npm run build --workspace=frontend",
     "db:migrate": "npm run migrate --workspace=backend",
     "db:seed": "npm run seed --workspace=backend"
   },

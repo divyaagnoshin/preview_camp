@@ -142,6 +142,206 @@ function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }
   );
 }
 
+// ─── Searchable dropdown component ───────────────────────────────────────────
+// ─── Searchable dropdown component ───────────────────────────────────────────
+function SearchableDropdown({
+  label,
+  placeholder = 'Search…',
+  options,
+  value,
+  onChange,
+  noneLabel = '— None —',
+}: {
+  label: string;
+  placeholder?: string;
+  options: { value: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  noneLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all = [{ value: '', label: noneLabel }, ...options];
+    if (!q) return all;
+    return all.filter((o) => o.label.toLowerCase().includes(q));
+  }, [query, options, noneLabel]);
+
+  const selected = options.find((o) => o.value === value);
+  const display = open ? query : (selected?.label ?? '');
+
+  return (
+    <div ref={ref} className='relative'>
+      <label className='block text-xs text-gray-500 mb-1'>{label}</label>
+      <div className='relative'>
+        <input
+          type='text'
+          value={display}
+          onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => { setQuery(''); setOpen(true); }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={selected ? selected.label : placeholder}
+          className='w-full border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder:text-gray-400'
+        />
+        <ChevronDown className='w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none' />
+      </div>
+
+      {open && (
+        <div className='absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden'>
+          <div className='max-h-52 overflow-y-auto p-1'>
+            {filtered.length === 0 ? (
+              <p className='px-3 py-2 text-xs text-gray-400'>No results found</p>
+            ) : (
+              filtered.map((opt) => (
+                <button
+                  key={opt.value}
+                  type='button'
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(opt.value);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm rounded-lg transition flex items-center justify-between ${
+                    value === opt.value
+                      ? 'bg-indigo-50 text-indigo-700 font-medium'
+                      : opt.value === ''
+                      ? 'text-gray-400 hover:bg-gray-50'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className='truncate'>{opt.label}</span>
+                  {value === opt.value && opt.value !== '' && (
+                    <span className='w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0 ml-2' />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Searchable multi-select (checkbox list with search) ─────────────────────
+function SearchableMultiSelect({
+  label,
+  placeholder = 'Search…',
+  items,
+  selectedIds,
+  onChange,
+  renderItem,
+  emptyText = 'No items found.',
+  selectedCountLabel = (n: number) => `${n} selected`,
+}: {
+  label: string;
+  placeholder?: string;
+  items: { id: string; label: string; sub?: string }[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  renderItem?: (item: { id: string; label: string; sub?: string }) => React.ReactNode;
+  emptyText?: string;
+  selectedCountLabel?: (n: number) => string;
+}) {
+  const [query, setQuery] = useState('');
+
+  const filtered = items.filter((it) =>
+    it.label.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const toggle = (id: string, checked: boolean) => {
+    onChange(checked ? [...selectedIds, id] : selectedIds.filter((x) => x !== id));
+  };
+
+  const selectedItems = items.filter((it) => selectedIds.includes(it.id));
+
+  return (
+    <div>
+      <label className='block text-xs text-gray-500 mb-1'>{label}</label>
+
+      {/* Search input */}
+      <div className='relative mb-1.5'>
+        <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none' />
+        <input
+          type='text'
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          className='w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder:text-gray-400'
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
+          >
+            <X className='w-3.5 h-3.5' />
+          </button>
+        )}
+      </div>
+
+      {/* Checkbox list */}
+      <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-52 overflow-y-auto bg-white'>
+        {items.length === 0 ? (
+          <p className='text-xs text-gray-400 p-3'>{emptyText}</p>
+        ) : filtered.length === 0 ? (
+          <p className='text-xs text-gray-400 p-3'>No results for "{query}"</p>
+        ) : (
+          filtered.map((it) => (
+            <label
+              key={it.id}
+              className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${
+                selectedIds.includes(it.id) ? 'bg-indigo-50' : 'hover:bg-gray-50'
+              }`}
+            >
+              <input
+                type='checkbox'
+                checked={selectedIds.includes(it.id)}
+                onChange={(e) => toggle(it.id, e.target.checked)}
+                className='w-4 h-4 text-indigo-600 rounded flex-shrink-0'
+              />
+              {renderItem ? renderItem(it) : (
+                <div className='min-w-0'>
+                  <div className='text-sm font-medium text-gray-900 truncate'>{it.label}</div>
+                  {it.sub && <div className='text-xs text-gray-400'>{it.sub}</div>}
+                </div>
+              )}
+            </label>
+          ))
+        )}
+      </div>
+
+      {/* Selected tags + count */}
+      {selectedItems.length > 0 ? (
+        <div className='mt-2 space-y-1.5'>
+          <p className='text-xs text-indigo-600 font-medium'>{selectedCountLabel(selectedItems.length)}</p>
+          <div className='flex flex-wrap gap-1.5'>
+            {selectedItems.map((it) => (
+              <span
+                key={it.id}
+                className='inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium'
+              >
+                {it.label}
+                <button
+                  onClick={() => toggle(it.id, false)}
+                  className='hover:text-indigo-900 transition ml-0.5'
+                >
+                  <X className='w-3 h-3' />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className='text-xs text-gray-400 mt-1.5'>None selected</p>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function CampaignsPage() {
   const navigate = useNavigate();
@@ -298,15 +498,22 @@ export default function CampaignsPage() {
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Validate max attempts: integer between 1 and 20
+  const maxAttemptsValid =
+    form.max_attempts === '' ||
+    (/^\d+$/.test(form.max_attempts) &&
+      parseInt(form.max_attempts) >= 1 &&
+      parseInt(form.max_attempts) <= 20);
+
   if (isLoading) return <PageLoader />;
 
   return (
     <div className='p-6 space-y-5'>
 
       {/* ── Page header ─────────────────────────────────────────────────── */}
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             Campaigns
           </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
@@ -322,16 +529,17 @@ export default function CampaignsPage() {
 
       {/* ── Search + Filters bar ─────────────────────────────────────────── */}
       <div className='space-y-3'>
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           {/* Search input */}
           <div className='relative flex-1 min-w-[200px] max-w-sm'>
-            <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
+            <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none' style={{ color: '#F4521E' }} />
             <input
               type='text'
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder='Search campaigns…'
-              className='w-full pl-9 pr-9 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder:text-gray-400'
+              className='w-full pl-9 pr-9 py-2.5 text-sm rounded-xl transition placeholder:text-[#C09070]'
+              style={{ border: '2px solid #FFD0B0', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', color: '#1A0F00' }}
             />
             {search && (
               <button
@@ -367,7 +575,7 @@ export default function CampaignsPage() {
                 { value: 'infinite', label: 'Infinite' },
               ]}
             />
-            <FilterDropdown
+            {/* <FilterDropdown
               label='Max Attempts'
               value={filterMaxAttempts}
               onChange={setFilterMaxAttempts}
@@ -382,7 +590,7 @@ export default function CampaignsPage() {
                 { value: '15', label: '15 attempts' },
                 { value: '20', label: '20 attempts' },
               ]}
-            />
+            /> */}
             <FilterDropdown
               label='Agent Priority'
               value={filterAgentPriority}
@@ -474,14 +682,29 @@ export default function CampaignsPage() {
             cols={[
               {
                 header: 'Name',
-                render: (r: any) => (
-                  <div>
-                    <div className='font-medium text-gray-900'>{r.name}</div>
-                    {r.agent_priority_enabled && (
-                      <span className='text-xs text-indigo-500'>Agent priority</span>
-                    )}
-                  </div>
-                ),
+                render: (r: any, idx?: number) => {
+                  const colors = [
+                    { bg: 'linear-gradient(135deg,#FFF4EE,#FFE6D2)', dot: '#E8470A', border: '#FFD3B5' },
+                    { bg: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', dot: '#3B82F6', border: '#BFDBFE' },
+                    { bg: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', dot: '#8B5CF6', border: '#DDD6FE' },
+                    { bg: 'linear-gradient(135deg,#ECFDF5,#D1FAE5)', dot: '#10B981', border: '#A7F3D0' },
+                  ];
+                  const c = colors[(idx || 0) % colors.length];
+                  return (
+                    <div className='flex items-center gap-3'>
+                      <div className='w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 font-bold text-xs'
+                        style={{ background: c.bg, color: c.dot, border: `1px solid ${c.border}` }}>
+                        {r.name?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        <div className='font-semibold text-[#0F1117]'>{r.name}</div>
+                        {r.agent_priority_enabled && (
+                          <span className='text-[10px] font-bold text-[#E8470A] bg-orange-50 px-1.5 py-0.5 rounded-full border border-orange-100'>⚡ Agent priority</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                },
               },
               {
                 header: 'Type',
@@ -526,7 +749,6 @@ export default function CampaignsPage() {
                         className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
                       >
                         <Pencil className='w-3 h-3' />
-                       
                       </button>
                     ) : (
                       <span className='inline-block w-[58px] h-[26px]' />
@@ -538,12 +760,10 @@ export default function CampaignsPage() {
                         className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
                       >
                         <Trash2 className='w-3 h-3' />
-                       
                       </button>
                     ) : (
                       <span className='inline-block w-[70px] h-[26px]' />
                     )}
-                    {/* Highlighted View button */}
                     <button
                       onClick={() => navigate(`/campaigns/${r.id}`)}
                       title='View details'
@@ -595,6 +815,7 @@ export default function CampaignsPage() {
             ))}
           </div>
 
+          {/* ── Step 1: Details ── */}
           {step === 1 && (
             <>
               <Input
@@ -613,21 +834,27 @@ export default function CampaignsPage() {
                     { value: 'infinite', label: 'Infinite (runs until stopped)' },
                   ]}
                 />
-                <Select
-                  label='Max Attempts'
-                  value={form.max_attempts}
-                  onChange={(e) => set('max_attempts', e.target.value)}
-                  options={[
-                    { value: 'infinite', label: 'Infinite (no limit)' },
-                    { value: '1', label: '1 attempt' },
-                    { value: '2', label: '2 attempts' },
-                    { value: '3', label: '3 attempts' },
-                    { value: '5', label: '5 attempts' },
-                    { value: '10', label: '10 attempts' },
-                    { value: '15', label: '15 attempts' },
-                    { value: '20', label: '20 attempts' },
-                  ]}
-                />
+                {/* ── CHANGED: free-text number input instead of dropdown ── */}
+                <div>
+                  <label className='block text-xs text-gray-500 mb-1'>Max Attempts</label>
+                  <input
+                    type='number'
+                    min={1}
+                    max={20}
+                    value={form.max_attempts}
+                    onChange={(e) => set('max_attempts', e.target.value)}
+                    placeholder='1 – 20'
+                    className={`w-full px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition ${
+                      !maxAttemptsValid ? 'border-red-300 focus:ring-red-400' : 'border-gray-200'
+                    }`}
+                  />
+                  {!maxAttemptsValid && (
+                    <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
+                  )}
+                  {maxAttemptsValid && (
+                    <p className='text-xs text-gray-400 mt-1'>Enter a value between 1 and 20</p>
+                  )}
+                </div>
               </div>
               <div className='grid grid-cols-2 gap-3'>
                 <Input
@@ -651,45 +878,41 @@ export default function CampaignsPage() {
               />
               <div className='flex gap-3 pt-2'>
                 <Button variant='secondary' className='flex-1' onClick={closeCreate}>Cancel</Button>
-                <Button className='flex-1' disabled={!form.name} onClick={() => setStep(2)}>Next</Button>
+                <Button
+                  className='flex-1'
+                  disabled={!form.name || !maxAttemptsValid || form.max_attempts === ''}
+                  onClick={() => setStep(2)}
+                >
+                  Next
+                </Button>
               </div>
             </>
           )}
 
+          {/* ── Step 2: Contacts ── */}
           {step === 2 && (
             <>
               <div>
-                <label className='block text-xs text-gray-500 mb-1'>Contact Lists *</label>
-                <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto'>
-                  {lists?.data?.length === 0 && (
-                    <p className='text-xs text-gray-400 p-3'>No contact lists. Create one first.</p>
-                  )}
-                  {lists?.data?.map((l: any) => (
-                    <label key={l.id} className='flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 cursor-pointer'>
-                      <input
-                        type='checkbox'
-                        value={l.id}
-                        checked={form.contact_list_ids.includes(l.id)}
-                        onChange={(e) =>
-                          set('contact_list_ids', e.target.checked
-                            ? [...form.contact_list_ids, l.id]
-                            : form.contact_list_ids.filter((x: string) => x !== l.id))
-                        }
-                        className='w-4 h-4 text-indigo-600 rounded'
-                      />
-                      <div>
-                        <div className='text-sm font-medium text-gray-900'>{l.name}</div>
-                        <div className='text-xs text-gray-400'>{l.contact_count} contacts</div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <SearchableMultiSelect
+                  label='Contact Lists *'
+                  placeholder='Search contact lists…'
+                  emptyText='No contact lists. Create one first.'
+                  selectedCountLabel={(n) => `${n} list${n !== 1 ? 's' : ''} selected`}
+                  items={(lists?.data || []).map((l: any) => ({
+                    id: l.id,
+                    label: l.name,
+                    sub: `${l.contact_count ?? 0} contacts`,
+                  }))}
+                  selectedIds={form.contact_list_ids}
+                  onChange={(ids) => set('contact_list_ids', ids)}
+                />
                 {editingId && (
                   <p className='text-xs text-gray-400 mt-1'>
                     Changing lists affects only future job runs; in-progress contacts on the current job are unaffected.
                   </p>
                 )}
               </div>
+              {/* Per-campaign inject poll has moved to System Configuration. */}
               <label className='flex items-center gap-3 cursor-pointer'>
                 <input
                   type='checkbox'
@@ -709,6 +932,7 @@ export default function CampaignsPage() {
             </>
           )}
 
+          {/* ── Step 3: Schedule ── */}
           {step === 3 && (
             <>
               <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
@@ -717,30 +941,33 @@ export default function CampaignsPage() {
                   <Input label='End Date' type='date' value={form.end_date} onChange={(e) => set('end_date', e.target.value)} />
                 )}
               </div>
-              <Select
+
+              {/* ── CHANGED: Searchable dropdown for Schedule Template ── */}
+              <SearchableDropdown
                 label='Schedule Template'
+                placeholder='Search templates…'
                 value={form.schedule_template_id}
-                onChange={(e) => set('schedule_template_id', e.target.value)}
-                options={[
-                  { value: '', label: '— None —' },
-                  ...(templates?.data || []).map((t: any) => ({
-                    value: t.id,
-                    label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
-                  })),
-                ]}
+                onChange={(v) => set('schedule_template_id', v)}
+                noneLabel='— None —'
+                options={(templates?.data || []).map((t: any) => ({
+                  value: t.id,
+                  label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
+                }))}
               />
-              <Select
+
+              {/* ── CHANGED: Searchable dropdown for Holiday Calendar ── */}
+              <SearchableDropdown
                 label='Holiday Calendar'
+                placeholder='Search calendars…'
                 value={form.holiday_calendar_id}
-                onChange={(e) => set('holiday_calendar_id', e.target.value)}
-                options={[
-                  { value: '', label: '— None —' },
-                  ...(calendars?.data || []).map((c: any) => ({
-                    value: c.id,
-                    label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
-                  })),
-                ]}
+                onChange={(v) => set('holiday_calendar_id', v)}
+                noneLabel='— None —'
+                options={(calendars?.data || []).map((c: any) => ({
+                  value: c.id,
+                  label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
+                }))}
               />
+
               <div className='flex gap-3 pt-2'>
                 <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(2)}>Back</Button>
                 <Button className='flex-1' onClick={() => setStep(4)}>Next</Button>
@@ -748,39 +975,23 @@ export default function CampaignsPage() {
             </>
           )}
 
+          {/* ── Step 4: DNC ── */}
           {step === 4 && (
             <>
               <div>
-                <label className='block text-xs text-gray-500 mb-1'>DNC Groups</label>
-                <div className='border border-gray-200 rounded-lg max-h-48 overflow-y-auto p-2 space-y-1 bg-white'>
-                  {(dncGroups?.data || []).length === 0 ? (
-                    <p className='text-xs text-gray-400 px-1 py-1'>No DNC groups yet.</p>
-                  ) : (
-                    (dncGroups?.data || []).map((g: any) => {
-                      const checked = form.dnc_group_ids.includes(g.id);
-                      return (
-                        <label key={g.id} className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'>
-                          <input
-                            type='checkbox'
-                            checked={checked}
-                            onChange={(e) =>
-                              set('dnc_group_ids', e.target.checked
-                                ? [...form.dnc_group_ids, g.id]
-                                : form.dnc_group_ids.filter((id) => id !== g.id))
-                            }
-                            className='rounded border-gray-300'
-                          />
-                          <span className='truncate'>{g.name}</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-                <p className='text-xs text-gray-400 mt-1'>
-                  {form.dnc_group_ids.length
-                    ? `${form.dnc_group_ids.length} selected`
-                    : 'None selected — campaign will not suppress any numbers.'}
-                </p>
+                <SearchableMultiSelect
+                  label='DNC Groups'
+                  placeholder='Search DNC groups…'
+                  emptyText='No DNC groups yet.'
+                  selectedCountLabel={(n) => `${n} group${n !== 1 ? 's' : ''} selected — numbers in these lists will be suppressed`}
+                  items={(dncGroups?.data || []).map((g: any) => ({
+                    id: g.id,
+                    label: g.name,
+                  }))}
+                  selectedIds={form.dnc_group_ids}
+                  onChange={(ids) => set('dnc_group_ids', ids)}
+                />
+               
               </div>
               <div className='flex gap-3 pt-2'>
                 <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(3)}>Back</Button>
@@ -789,63 +1000,32 @@ export default function CampaignsPage() {
             </>
           )}
 
+          {/* ── Step 5: Dispositions ── */}
           {step === 5 && (
             <>
-              <div>
-                <label className='block text-xs text-gray-500 mb-1'>Disposition Group</label>
-                <div className='border border-gray-200 rounded-lg max-h-64 overflow-y-auto p-2 space-y-1 bg-white'>
-                  {(dispositionGroups?.data || []).length === 0 ? (
-                    <p className='text-xs text-gray-400 px-1 py-1'>
-                      No disposition groups yet. Create one in the Dispositions page.
-                    </p>
-                  ) : (
-                    <>
-                      <label className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'>
-                        <input
-                          type='radio'
-                          name='disposition_group'
-                          checked={!form.disposition_group_id}
-                          onChange={() => set('disposition_group_id', '')}
-                          className='border-gray-300'
-                        />
-                        <span className='text-gray-500 italic'>— None (system codes only) —</span>
-                      </label>
-                      {(dispositionGroups?.data || []).map((g: any) => {
-                        const checked = form.disposition_group_id === g.id;
-                        return (
-                          <label key={g.id} className='flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5'>
-                            <input
-                              type='radio'
-                              name='disposition_group'
-                              checked={checked}
-                              onChange={() => set('disposition_group_id', g.id)}
-                              className='border-gray-300'
-                            />
-                            <div className='flex-1 min-w-0'>
-                              <div className='flex items-center gap-2'>
-                                <span className='truncate font-medium text-gray-900'>{g.name}</span>
-                               {/*  {g.custom_code_count != null && (
-                                  <span className='text-xs text-indigo-600'>
-                                    {g.custom_code_count} custom
-                                  </span>
-                                )} */}
-                              </div>
-                              {g.description && (
-                                <div className='text-xs text-gray-500 truncate'>{g.description}</div>
-                              )}
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </>
-                  )}
-                </div>
-                <p className='text-xs text-gray-400 mt-1'>
-                  {form.disposition_group_id
-                    ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
-                    : 'Agents will see only the org-wide system dispositions.'}
+              {/* ── CHANGED: Searchable dropdown instead of radio list ── */}
+              <SearchableDropdown
+                label='Disposition Group'
+                placeholder='Search disposition groups…'
+                value={form.disposition_group_id}
+                onChange={(v) => set('disposition_group_id', v)}
+                noneLabel='— None (system codes only) —'
+                options={(dispositionGroups?.data || []).map((g: any) => ({
+                  value: g.id,
+                  label: g.name + (g.description ? ` — ${g.description}` : ''),
+                }))}
+              />
+              {(dispositionGroups?.data || []).length === 0 && (
+                <p className='text-xs text-gray-400 -mt-2'>
+                  No disposition groups yet. Create one in the Dispositions page.
                 </p>
-              </div>
+              )}
+              <p className='text-xs text-gray-400'>
+                {form.disposition_group_id
+                  ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
+                  : 'Agents will see only the org-wide system dispositions.'}
+              </p>
+
               <div className='flex gap-3 pt-2'>
                 <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(4)}>Back</Button>
                 <Button

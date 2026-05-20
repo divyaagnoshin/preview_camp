@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import pool from '../db/pool';
+import pool, { withTransaction } from '../db/pool';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
@@ -185,25 +185,40 @@ router.get(
   '/:id/contacts',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Accept page/per_page or page/page_size, plus optional search across
+      // phone_number / first_name / last_name / email.
       const page = parseInt(req.query.page as string) || 1;
       const perPage = Math.min(
-        parseInt(req.query.per_page as string) || 50,
+        parseInt(
+          (req.query.per_page as string) || (req.query.page_size as string),
+        ) || 50,
         200,
       );
       const offset = (page - 1) * perPage;
+      const search = String(req.query.search || '').trim();
+      const searchClause = search ? `AND (
+        c.phone_number ILIKE $4 OR c.first_name ILIKE $4
+        OR c.last_name ILIKE $4 OR c.email ILIKE $4)` : '';
+      const params: any[] = [req.params.id, perPage, offset];
+      if (search) params.push(`%${search}%`);
 
       const { rows } = await pool.query(
         `SELECT c.*, u.first_name || ' ' || u.last_name AS assigned_agent_name
        FROM contacts c
        LEFT JOIN users u ON u.id = c.assigned_agent_id
-       WHERE c.contact_list_id = $1
+       WHERE c.contact_list_id = $1 ${searchClause}
        ORDER BY c.priority ASC, c.created_at ASC
        LIMIT $2 OFFSET $3`,
-        [req.params.id, perPage, offset],
+        params,
       );
+      const countParams: any[] = [req.params.id];
+      if (search) countParams.push(`%${search}%`);
       const total = await pool.query(
-        'SELECT COUNT(*)::int FROM contacts WHERE contact_list_id = $1',
-        [req.params.id],
+        `SELECT COUNT(*)::int FROM contacts c
+          WHERE c.contact_list_id = $1
+          ${search ? `AND (c.phone_number ILIKE $2 OR c.first_name ILIKE $2
+                          OR c.last_name ILIKE $2 OR c.email ILIKE $2)` : ''}`,
+        countParams,
       );
       res.json({
         data: rows,
@@ -211,6 +226,140 @@ router.get(
         page,
         per_page: perPage,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Shared purger — wipes operational state referencing the supplied contacts
+// then deletes them. Mirrors DELETE /contacts/:id semantics so dropping one
+// contact through the list-scoped route behaves identically. Returns the
+// number of `contacts` rows deleted.
+async function purgeContacts(listId: string, contactIds: string[]): Promise<number> {
+  if (!contactIds.length) return 0;
+  let deleted = 0;
+  await withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM campaign_contact_status WHERE contact_id = ANY($1::uuid[])`,
+      [contactIds],
+    );
+    await client.query(
+      `DELETE FROM contact_status_history WHERE contact_id = ANY($1::uuid[])`,
+      [contactIds],
+    );
+    await client.query(
+      `UPDATE agent_sessions SET current_contact_id = NULL
+         WHERE current_contact_id = ANY($1::uuid[])`,
+      [contactIds],
+    );
+    const { rowCount } = await client.query(
+      `DELETE FROM contacts WHERE id = ANY($1::uuid[]) AND contact_list_id = $2`,
+      [contactIds, listId],
+    );
+    deleted = rowCount || 0;
+  });
+  return deleted;
+}
+
+// DELETE /contact-lists/:id/contacts/:contactId — remove a single contact.
+// List-scoped sibling of DELETE /contacts/:id so the UI can keep paths
+// list-relative. Org ownership is verified via the parent list.
+router.delete(
+  '/:id/contacts/:contactId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owned = await pool.query(
+        `SELECT c.id FROM contacts c
+           JOIN contact_lists cl ON cl.id = c.contact_list_id
+          WHERE c.id = $1 AND cl.id = $2 AND cl.org_id = $3`,
+        [req.params.contactId, req.params.id, req.user!.orgId],
+      );
+      if (!owned.rows[0]) throw new AppError(404, 'Contact not found');
+      try {
+        await purgeContacts(req.params.id, [req.params.contactId]);
+        res.status(204).send();
+      } catch (e: any) {
+        if (e?.code === '23503')
+          throw new AppError(409, 'Contact has historical call activity and cannot be deleted');
+        throw e;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// DELETE /contact-lists/:id/contacts — wipe every contact in the list. The
+// list shell itself stays. Blocked when an active job references the list
+// to avoid yanking rows out from under a live dialer.
+router.delete(
+  '/:id/contacts',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const list = await pool.query(
+        `SELECT id FROM contact_lists WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
+      const active = await pool.query(
+        `SELECT 1 FROM campaign_contact_lists ccl
+           JOIN campaign_jobs cj ON cj.campaign_id = ccl.campaign_id
+          WHERE ccl.contact_list_id = $1 AND cj.status = 'active' LIMIT 1`,
+        [req.params.id],
+      );
+      if (active.rows.length)
+        throw new AppError(409, 'Cannot wipe contacts while a job is active');
+      const ids = await pool.query(
+        `SELECT id FROM contacts WHERE contact_list_id = $1`,
+        [req.params.id],
+      );
+      const contactIds = ids.rows.map((r: any) => r.id);
+      try {
+        const deleted = await purgeContacts(req.params.id, contactIds);
+        res.json({ deleted });
+      } catch (e: any) {
+        if (e?.code === '23503')
+          throw new AppError(409, 'Some contacts have historical call activity and cannot be deleted');
+        throw e;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /contact-lists/:id/contacts/bulk-delete — wipe the supplied ids only.
+// POST (not DELETE) because we need a body, and not every HTTP client/proxy
+// stack supports bodies on DELETE. Body: { ids: string[] }.
+router.post(
+  '/:id/contacts/bulk-delete',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawIds: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      const ids = rawIds.filter((s) => typeof s === 'string' && UUID_RE.test(s));
+      if (!ids.length) throw new AppError(400, 'ids array required');
+      const list = await pool.query(
+        `SELECT id FROM contact_lists WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
+      const active = await pool.query(
+        `SELECT 1 FROM campaign_contact_lists ccl
+           JOIN campaign_jobs cj ON cj.campaign_id = ccl.campaign_id
+          WHERE ccl.contact_list_id = $1 AND cj.status = 'active' LIMIT 1`,
+        [req.params.id],
+      );
+      if (active.rows.length)
+        throw new AppError(409, 'Cannot delete contacts while a job is active');
+      try {
+        const deleted = await purgeContacts(req.params.id, ids);
+        res.json({ deleted });
+      } catch (e: any) {
+        if (e?.code === '23503')
+          throw new AppError(409, 'Some contacts have historical call activity and cannot be deleted');
+        throw e;
+      }
     } catch (err) {
       next(err);
     }

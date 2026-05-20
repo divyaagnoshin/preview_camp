@@ -16,7 +16,7 @@ import {
   PageLoader,
   Progress,
 } from '../components/ui';
-import { Play, Square, ArrowLeft, CheckCircle, ExternalLink, ShieldOff } from 'lucide-react';
+import { Play, Square, ArrowLeft, CheckCircle, ExternalLink, ShieldOff, Users, TrendingUp, Phone, XCircle, Clock } from 'lucide-react';
 
 export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -58,7 +58,7 @@ export default function CampaignDetailPage() {
         </button>
         <div className='flex-1'>
           <div className='flex items-center gap-2'>
-            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: "Sora, sans-serif" }}>{campaign.name}</h1>
+            <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>{campaign.name}</h1>
             <StatusBadge status={campaign.status} />
           </div>
           <p className='text-sm text-[#7A5C44] mt-0.5 capitalize'>
@@ -102,26 +102,10 @@ export default function CampaignDetailPage() {
 
       {/* Config cards */}
       <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-        <StatCard
-          label='Max Attempts'
-          value={campaign.max_attempts || '∞'}
-          color='indigo'
-        />
-        <StatCard
-          label='Wrap-up Time'
-          value={`${campaign.wrapup_time_sec}s`}
-          color='gray'
-        />
-        <StatCard
-          label='Auto-dial Delay'
-          value={`${campaign.auto_dial_delay_sec}s`}
-          color='gray'
-        />
-        <StatCard
-          label='Caller ID'
-          value={campaign.caller_id || '—'}
-          color='gray'
-        />
+        <StatCard label='Max Attempts' value={campaign.max_attempts || '∞'} color='indigo' />
+        <StatCard label='Wrap-up Time' value={`${campaign.wrapup_time_sec}s`} color='amber' />
+        <StatCard label='Auto-dial Delay' value={`${campaign.auto_dial_delay_sec}s`} color='cyan' />
+        <StatCard label='Caller ID' value={campaign.caller_id || '—'} color='gray' />
       </div>
 
       {/* Report stats */}
@@ -129,63 +113,34 @@ export default function CampaignDetailPage() {
         <>
           {/* Contact accounting: raw list count vs unique queued vs collapsed dupes */}
           <div className='grid grid-cols-2 lg:grid-cols-3 gap-4'>
-            <StatCard
-              label='Total Contacts'
-              value={report.total_contacts || 0}
-              color='gray'
-            />
-            <StatCard
-              label='Successful Contacts'
-              value={report.successful_contacts || 0}
-              color='green'
-            />
-            <StatCard
-              label='Duplicate Contacts'
-              value={report.duplicate_contacts || 0}
-              color='orange'
-            />
+            <StatCard label='Total Contacts' value={report.total_contacts || 0} icon={Users}
+              gradient='linear-gradient(135deg,#6B7280,#4B5563)' tint='linear-gradient(135deg,#F9FAFB,#F3F4F6)' border='#E5E7EB' textColor='#374151'/>
+            <StatCard label='Successful Contacts' value={report.successful_contacts || 0} icon={CheckCircle}
+              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/>
+            <StatCard label='Duplicate Contacts' value={report.duplicate_contacts || 0} icon={XCircle}
+              gradient='linear-gradient(135deg,#F59E0B,#D97706)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E'/>
           </div>
 
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-            <StatCard
-              label='Attempted'
-              value={report.attempted || 0}
-              color='indigo'
-            />
-            <StatCard
-              label='Connected'
-              value={report.connected || 0}
-              color='green'
-            />
-            <StatCard
-              label='Completed'
-              value={report.completed_total || 0}
-              color='blue'
-            />
-            <StatCard label='DNC' value={report.dnc || 0} color='red' />
+            <StatCard label='Attempted' value={report.attempted || 0} icon={Phone}
+              gradient='linear-gradient(135deg,#8B5CF6,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6'/>
+            <StatCard label='Connected' value={report.connected || 0} icon={CheckCircle}
+              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/>
+            <StatCard label='Completed' value={report.completed_total || 0} icon={TrendingUp}
+              gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' tint='linear-gradient(135deg,#EFF6FF,#DBEAFE)' border='#BFDBFE' textColor='#1E40AF'/>
+            <StatCard label='DNC' value={report.dnc || 0} icon={XCircle}
+              gradient='linear-gradient(135deg,#EF4444,#DC2626)' tint='linear-gradient(135deg,#FEF2F2,#FEE2E2)' border='#FECACA' textColor='#991B1B'/>
           </div>
 
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-            <StatCard
-              label='Avg Preview Time'
-              value={`${report.avg_preview_duration_sec || 0}s`}
-              color='gray'
-            />
-            <StatCard
-              label='Avg Talk Time'
-              value={`${report.avg_talk_time_sec || 0}s`}
-              color='gray'
-            />
-            <StatCard
-              label='Avg Wrap-up'
-              value={`${report.avg_wrapup_duration_sec || 0}s`}
-              color='gray'
-            />
-            <StatCard
-              label='Avg Total Handle'
-              value={`${report.avg_total_handling_sec || 0}s`}
-              color='gray'
-            />
+            <StatCard label='Avg Preview Time' value={`${report.avg_preview_duration_sec || 0}s`} icon={Clock}
+              gradient='linear-gradient(135deg,#E8470A,#F59E0B)' tint='linear-gradient(135deg,#FFF4EE,#FFE6D2)' border='#FFD3B5' textColor='#C43A06'/>
+            <StatCard label='Avg Talk Time' value={`${report.avg_talk_time_sec || 0}s`} icon={Phone}
+              gradient='linear-gradient(135deg,#F59E0B,#EAB308)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E'/>
+            <StatCard label='Avg Wrap-up' value={`${report.avg_wrapup_duration_sec || 0}s`} icon={Clock}
+              gradient='linear-gradient(135deg,#06B6D4,#0891B2)' tint='linear-gradient(135deg,#ECFEFF,#CFFAFE)' border='#A5F3FC' textColor='#164E63'/>
+            <StatCard label='Avg Total Handle' value={`${report.avg_total_handling_sec || 0}s`} icon={TrendingUp}
+              gradient='linear-gradient(135deg,#A855F7,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6'/>
           </div>
 
           {/* Disposition breakdown */}
@@ -222,7 +177,7 @@ export default function CampaignDetailPage() {
           {campaign.contact_lists?.map((l: any) => (
             <div
               key={l.id}
-              className='flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-transparent hover:border-gray-200 transition group'
+              className='contactlist-inner-card flex items-center gap-3'
             >
               <CheckCircle className='w-4 h-4 text-green-500 shrink-0' />
               <span className='text-sm font-medium text-gray-900 flex-1'>{l.name}</span>
@@ -251,7 +206,7 @@ export default function CampaignDetailPage() {
           {campaign.dnc_groups?.map((g: any) => (
             <div
               key={g.id}
-              className='flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition'
+              className='dnc-inner-card flex items-center gap-3'
             >
               <ShieldOff className='w-4 h-4 text-red-500 shrink-0' />
               <span className='text-sm font-medium text-red-800 flex-1'>{g.name}</span>

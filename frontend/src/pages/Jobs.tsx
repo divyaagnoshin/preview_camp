@@ -43,7 +43,7 @@ export function JobsPage() {
 
       {/* Search + filters */}
       <div className='space-y-3'>
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search by campaign name…' />
           <div className='flex items-center gap-2 flex-wrap'>
             <FilterDropdown
@@ -53,6 +53,7 @@ export function JobsPage() {
               color='green'
               options={[
                 { value: 'pending', label: 'Pending' },
+                { value: 'preparing', label: 'Preparing' },
                 { value: 'active', label: 'Active' },
                 { value: 'paused', label: 'Paused' },
                 { value: 'completed', label: 'Completed' },

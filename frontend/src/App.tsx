@@ -5,11 +5,11 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import Layout from './components/layout/Layout';
 import LoginPage from './pages/Login';
 import DashboardPage from './pages/Dashboard';
-import WorkspacePage from './pages/Workspace';
 import CampaignsPage from './pages/Campaigns';
 import CampaignDetailPage from './pages/CampaignDetail';
 import { JobsPage, JobDetailPage } from './pages/Jobs';
-import { ContactListsPage, ContactListDetailPage } from './pages/ContactLists';
+import ContactListsPage from './pages/ContactLists';
+import ContactListDetailPage from './pages/Contactlistdetailpage';
 import ContactListAttributesPage from './pages/ContactListAttributes';
 import ContactListAttributesNewPage from './pages/ContactListAttributesNew';
 import {
@@ -24,6 +24,7 @@ import DNCPage from './pages/DNC';
 import DispositionsPage from './pages/Dispositions';
 import AgentsPage from './pages/Agents';
 import ReportsPage from './pages/Reports';
+import SystemConfigurationPage from './pages/SystemConfiguration';
 import OrganizationsPage from './pages/Organizations';
 import OrganizationDetailPage from './pages/OrganizationDetail';
 
@@ -43,7 +44,6 @@ function PrivateRoute({
   if (roles && user && !roles.includes(user.role)) {
     const fallback =
       user.role === 'superadmin' ? '/organizations'
-      : user.role === 'agent'    ? '/workspace'
       : '/dashboard';
     return <Navigate to={fallback} replace />;
   }
@@ -70,16 +70,6 @@ function AppRoutes() {
           <PrivateRoute>
             <Layout>
               <DashboardPage />
-            </Layout>
-          </PrivateRoute>
-        }
-      />
-      <Route
-        path='/workspace'
-        element={
-          <PrivateRoute>
-            <Layout>
-              <WorkspacePage />
             </Layout>
           </PrivateRoute>
         }
@@ -240,6 +230,16 @@ function AppRoutes() {
           <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/system-configuration'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <SystemConfigurationPage />
             </Layout>
           </PrivateRoute>
         }

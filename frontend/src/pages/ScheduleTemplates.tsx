@@ -11,8 +11,10 @@ import {
   updateScheduleWindow,
   deleteScheduleWindow,
   listTimezones,
+  getSystemConfig,
   type ScheduleTemplate,
   type ScheduleWindow,
+  type SystemConfig,
 } from '../api/client';
 import {
   Card,
@@ -37,6 +39,7 @@ import {
   CalendarDays,
   AlertCircle,
   AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -64,6 +67,13 @@ const toMinutes = (t: string) => {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + (m || 0);
 };
+
+// ── Teal clock icon — no background, icon only ──
+function ScheduleRowIcon() {
+  return (
+    <Clock className='w-4 h-4 flex-shrink-0' style={{ color: '#0F766E' }} />
+  );
+}
 
 // ── List page ────────────────────────────────────────────────
 export function ScheduleTemplatesPage() {
@@ -102,9 +112,9 @@ export function ScheduleTemplatesPage() {
 
   return (
     <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-gray-900'>Schedule Templates</h1>
+          <h1 className='text-2xl font-bold page-heading'>Schedule Templates</h1>
           <p className='text-sm text-gray-500 mt-1'>
             {search
               ? `${filtered.length} of ${rows.length} template(s)`
@@ -117,7 +127,7 @@ export function ScheduleTemplatesPage() {
       </div>
 
       {rows.length > 0 && (
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search templates or timezones…' />
         </div>
       )}
@@ -143,7 +153,12 @@ export function ScheduleTemplatesPage() {
             cols={[
               {
                 header: 'Name',
-                render: (r) => <span className='font-medium text-gray-900'>{r.name}</span>,
+                render: (r) => (
+                  <div className='flex items-center gap-2.5'>
+                    <ScheduleRowIcon />
+                    <span className='font-medium text-gray-900'>{r.name}</span>
+                  </div>
+                ),
               },
               {
                 header: 'Timezone',
@@ -158,13 +173,6 @@ export function ScheduleTemplatesPage() {
                 width: '110px',
                 render: (r) => (
                   <div className='flex items-center gap-1' onClick={(e) => e.stopPropagation()}>
-                    {/* <button
-                      title='Manage Windows'
-                      onClick={() => navigate(`/schedule-templates/${r.id}`)}
-                      className='p-1.5 rounded hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors'
-                    >
-                      <Clock className='w-4 h-4' />
-                    </button> */}
                     <button
                       title='Edit template'
                       onClick={() => setEditTarget(r)}
@@ -264,7 +272,7 @@ function TemplateEditor({
           label='Name'
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder='e.g. Mon-Fri 9-5 ET'
+          placeholder='e.g. Mon-Fri 9-5'
           autoFocus
         />
         <TimezonePicker label='Timezone (IANA)' value={timezone} onChange={setTimezone} />
@@ -324,9 +332,9 @@ export function ScheduleTemplateDetailPage() {
         >
           <ArrowLeft className='w-4 h-4' /> Back to templates
         </button>
-        <div className='flex items-center justify-between'>
-          <div>
-            <h1 className='text-2xl font-bold text-gray-900'>{tmpl.name}</h1>
+        <div className='page-header-bar'>
+        <div>
+          <h1 className='text-2xl font-bold page-heading'>{tmpl.name}</h1>
             <p className='text-sm text-gray-500 mt-1'>
               Timezone: <span className='font-medium text-gray-700'>{tmpl.timezone}</span>
               {typeof tmpl.campaigns_using === 'number' && tmpl.campaigns_using > 0 && (
@@ -451,15 +459,30 @@ export function ScheduleTemplateDetailPage() {
 // ── Types ─────────────────────────────────────────────────────
 type TimeSlot = { start: string; end: string };
 
+// ── Time Guard helpers ────────────────────────────────────────
+type GuardWindow = { start: string; end: string } | null | undefined;
+
+function guardForDay(cfg: SystemConfig | undefined, day: number): GuardWindow {
+  if (!cfg || !cfg.time_guard_enabled) return undefined;
+  const w = cfg.time_guard_windows?.[String(day)];
+  return w ? { start: toHHMM(w.start), end: toHHMM(w.end) } : null;
+}
+
 // ── Slot validation ───────────────────────────────────────────
 function getSlotError(
   slot: TimeSlot,
   allSlotsForDay: TimeSlot[],
   myIdx: number,
   savedWindowsForDay: { start: string; end: string }[],
+  guard?: GuardWindow,
 ): string | null {
   if (!slot.start || !slot.end) return 'Start and end times are required.';
   if (slot.start >= slot.end) return 'End time must be after start time.';
+
+  if (guard === null)
+    return 'Time Guard blocks new windows on this day.';
+  if (guard && (slot.start < guard.start || slot.end > guard.end))
+    return `Outside Time Guard window (${guard.start}–${guard.end}).`;
 
   const slotStart = toMinutes(slot.start);
   const slotEnd = toMinutes(slot.end);
@@ -497,6 +520,12 @@ function WindowEditor({
   const qc = useQueryClient();
   const isEdit = !!target;
 
+  const { data: systemConfig } = useQuery<SystemConfig>({
+    queryKey: ['system-config'],
+    queryFn: getSystemConfig,
+    staleTime: 60 * 1000,
+  });
+
   // Edit mode state
   const [editDay, setEditDay] = useState<number>(target?.day_of_week ?? 1);
   const [editStart, setEditStart] = useState(toHHMM(target?.start_time || '09:00'));
@@ -508,7 +537,6 @@ function WindowEditor({
   const [daySlots, setDaySlots] = useState<Record<number, TimeSlot[]>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Saved windows lookup per day
   const savedByDay = useMemo(() => {
     const map: Record<number, { start: string; end: string }[]> = {};
     existingWindows.forEach((w) => {
@@ -585,13 +613,14 @@ function WindowEditor({
     addedDays.forEach((d) => {
       const slots = daySlots[d] || [];
       const saved = savedByDay[d] || [];
+      const guard = guardForDay(systemConfig, d);
       slots.forEach((s, i) => {
-        const err = getSlotError(s, slots, i, saved);
+        const err = getSlotError(s, slots, i, saved, guard);
         if (err) errs.push({ day: d, idx: i, msg: err });
       });
     });
     return errs;
-  }, [addedDays, daySlots, savedByDay]);
+  }, [addedDays, daySlots, savedByDay, systemConfig]);
 
   const isValid = allErrors.length === 0 && allSlots.length > 0;
   const totalSlotCount = allSlots.length;
@@ -627,6 +656,11 @@ function WindowEditor({
   // ── Edit mode UI ──────────────────────────────────────────
   if (isEdit) {
     const savedForEditDay = savedByDay[editDay] || [];
+    const editGuard = guardForDay(systemConfig, editDay);
+    const editOutsideGuard =
+      editStart < editEnd &&
+      ((editGuard === null) ||
+        (!!editGuard && (editStart < editGuard.start || editEnd > editGuard.end)));
     const editOverlapsSaved =
       editStart < editEnd &&
       savedForEditDay.some((saved) => {
@@ -636,7 +670,7 @@ function WindowEditor({
         const eEnd = toMinutes(editEnd);
         return eStart < sEnd && eEnd > sStart;
       });
-    const valid = editStart < editEnd && !editOverlapsSaved;
+    const valid = editStart < editEnd && !editOverlapsSaved && !editOutsideGuard;
 
     return (
       <Modal open onClose={onClose} title='Edit Window'>
@@ -674,6 +708,20 @@ function WindowEditor({
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+          {editGuard && (
+            <div className='flex items-center gap-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-2'>
+              <ShieldAlert className='w-3.5 h-3.5 flex-shrink-0' />
+              Time Guard: windows on {DAY_NAMES[editDay]} must fall within{' '}
+              <span className='font-mono font-semibold'>{editGuard.start}–{editGuard.end}</span>.
+            </div>
+          )}
+          {editGuard === null && (
+            <div className='flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5'>
+              <AlertCircle className='w-3.5 h-3.5 flex-shrink-0' />
+              Time Guard blocks new windows on {DAY_NAMES[editDay]}.
             </div>
           )}
 
@@ -727,477 +775,471 @@ function WindowEditor({
   }
 
   // ── Add mode UI ───────────────────────────────────────────
- // ── Add mode UI ───────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────
-// STEP 1 — Add this constant near the top of the file,
-//           right after DAY_SHORT definition:
-// ─────────────────────────────────────────────────────────────
+  const DAY_COLORS: Record<number, {
+    badge: string;
+    badgeText: string;
+    cardBg: string;
+    headerBg: string;
+    bodyBg: string;
+    border: string;
+    slotBg: string;
+    pillBg: string;
+    pillText: string;
+    accentText: string;
+  }> = {
+    1: {
+      badge: '#F59E0B', badgeText: '#FFFFFF',
+      cardBg: '#FFFBEB', headerBg: '#FEF3C7', bodyBg: '#FFFDF5',
+      border: '#FCD34D', slotBg: '#FFFBEB',
+      pillBg: '#FEF3C7', pillText: '#92400E', accentText: '#92400E',
+    },
+    2: {
+      badge: '#0EA5E9', badgeText: '#FFFFFF',
+      cardBg: '#F0F9FF', headerBg: '#E0F2FE', bodyBg: '#F7FCFF',
+      border: '#7DD3FC', slotBg: '#F0F9FF',
+      pillBg: '#E0F2FE', pillText: '#0369A1', accentText: '#0369A1',
+    },
+    3: {
+      badge: '#8B5CF6', badgeText: '#FFFFFF',
+      cardBg: '#F5F3FF', headerBg: '#EDE9FE', bodyBg: '#FAFAFF',
+      border: '#C4B5FD', slotBg: '#F5F3FF',
+      pillBg: '#EDE9FE', pillText: '#5B21B6', accentText: '#5B21B6',
+    },
+    4: {
+      badge: '#10B981', badgeText: '#FFFFFF',
+      cardBg: '#ECFDF5', headerBg: '#D1FAE5', bodyBg: '#F5FFFE',
+      border: '#6EE7B7', slotBg: '#ECFDF5',
+      pillBg: '#D1FAE5', pillText: '#065F46', accentText: '#065F46',
+    },
+    5: {
+      badge: '#F43F5E', badgeText: '#FFFFFF',
+      cardBg: '#FFF1F2', headerBg: '#FFE4E6', bodyBg: '#FFF8F9',
+      border: '#FDA4AF', slotBg: '#FFF1F2',
+      pillBg: '#FFE4E6', pillText: '#9F1239', accentText: '#9F1239',
+    },
+    6: {
+      badge: '#F97316', badgeText: '#FFFFFF',
+      cardBg: '#FFF7ED', headerBg: '#FFEDD5', bodyBg: '#FFFAF5',
+      border: '#FDC9A0', slotBg: '#FFF7ED',
+      pillBg: '#FFEDD5', pillText: '#9A3412', accentText: '#9A3412',
+    },
+    0: {
+      badge: '#D946EF', badgeText: '#FFFFFF',
+      cardBg: '#FDF4FF', headerBg: '#FAE8FF', bodyBg: '#FEF9FF',
+      border: '#E879F9', slotBg: '#FDF4FF',
+      pillBg: '#FAE8FF', pillText: '#86198F', accentText: '#86198F',
+    },
+  };
 
-const DAY_COLORS: Record<number, {
-  badge: string;       // badge background (solid)
-  badgeText: string;   // badge text
-  cardBg: string;      // collapsed card bg
-  headerBg: string;    // open card header bg
-  bodyBg: string;      // open card body bg
-  border: string;      // card border
-  slotBg: string;      // time input background
-  pillBg: string;      // "N slots" pill bg
-  pillText: string;    // "N slots" pill text
-  accentText: string;  // day name when open
-}> = {
-  1: { // Monday — amber
-    badge: '#F59E0B', badgeText: '#FFFFFF',
-    cardBg: '#FFFBEB', headerBg: '#FEF3C7', bodyBg: '#FFFDF5',
-    border: '#FCD34D', slotBg: '#FFFBEB',
-    pillBg: '#FEF3C7', pillText: '#92400E', accentText: '#92400E',
-  },
-  2: { // Tuesday — sky blue
-    badge: '#0EA5E9', badgeText: '#FFFFFF',
-    cardBg: '#F0F9FF', headerBg: '#E0F2FE', bodyBg: '#F7FCFF',
-    border: '#7DD3FC', slotBg: '#F0F9FF',
-    pillBg: '#E0F2FE', pillText: '#0369A1', accentText: '#0369A1',
-  },
-  3: { // Wednesday — violet
-    badge: '#8B5CF6', badgeText: '#FFFFFF',
-    cardBg: '#F5F3FF', headerBg: '#EDE9FE', bodyBg: '#FAFAFF',
-    border: '#C4B5FD', slotBg: '#F5F3FF',
-    pillBg: '#EDE9FE', pillText: '#5B21B6', accentText: '#5B21B6',
-  },
-  4: { // Thursday — emerald
-    badge: '#10B981', badgeText: '#FFFFFF',
-    cardBg: '#ECFDF5', headerBg: '#D1FAE5', bodyBg: '#F5FFFE',
-    border: '#6EE7B7', slotBg: '#ECFDF5',
-    pillBg: '#D1FAE5', pillText: '#065F46', accentText: '#065F46',
-  },
-  5: { // Friday — rose
-    badge: '#F43F5E', badgeText: '#FFFFFF',
-    cardBg: '#FFF1F2', headerBg: '#FFE4E6', bodyBg: '#FFF8F9',
-    border: '#FDA4AF', slotBg: '#FFF1F2',
-    pillBg: '#FFE4E6', pillText: '#9F1239', accentText: '#9F1239',
-  },
-  6: { // Saturday — orange
-    badge: '#F97316', badgeText: '#FFFFFF',
-    cardBg: '#FFF7ED', headerBg: '#FFEDD5', bodyBg: '#FFFAF5',
-    border: '#FDC9A0', slotBg: '#FFF7ED',
-    pillBg: '#FFEDD5', pillText: '#9A3412', accentText: '#9A3412',
-  },
-  0: { // Sunday — pink/fuchsia
-    badge: '#D946EF', badgeText: '#FFFFFF',
-    cardBg: '#FDF4FF', headerBg: '#FAE8FF', bodyBg: '#FEF9FF',
-    border: '#E879F9', slotBg: '#FDF4FF',
-    pillBg: '#FAE8FF', pillText: '#86198F', accentText: '#86198F',
-  },
-};
-
-
-// ─────────────────────────────────────────────────────────────
-// STEP 2 — Replace the entire "Add mode UI" return block
-//           in WindowEditor with this:
-// ─────────────────────────────────────────────────────────────
-
-return (
-  <Modal open={true} onClose={onClose} title='Add Schedule Windows' size='lg'>
-    <div
-      className='flex flex-col rounded-2xl'
-      style={{
-        height: '62vh',
-        maxHeight: '620px',
-        background: '#FFF8F5',
-      }}
-    >
-
-      {/* ── Day selector row ── */}
+  return (
+    <Modal open={true} onClose={onClose} title='Add Schedule Windows' size='lg'>
       <div
-        className='flex items-center gap-3 mb-4 pb-4 px-1'
-        style={{ borderBottom: '1px solid #F0E6DF' }}
+        className='flex flex-col rounded-2xl'
+        style={{
+          height: '62vh',
+          maxHeight: '620px',
+          background: '#FFF8F5',
+        }}
       >
-        <CalendarDays className='w-4 h-4 flex-shrink-0' style={{ color: '#C4704A' }} />
-        <label className='text-sm font-semibold whitespace-nowrap' style={{ color: '#7A4030' }}>
-          Add day
-        </label>
-        <select
-          value=''
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val !== '') handleAddDay(parseInt(val, 10));
-            (e.target as HTMLSelectElement).value = '';
-          }}
-          className='flex-1 rounded-xl px-3 py-2.5 text-sm cursor-pointer focus:outline-none transition-all duration-150'
-          style={{
-            color: '#5C3522',
-            background: '#FFFFFF',
-            border: '1px solid #E8C9B8',
-            boxShadow: '0 1px 3px rgba(180,90,50,0.08)',
-          }}
+
+        {/* ── Day selector row ── */}
+        <div
+          className='flex items-center gap-3 mb-4 pb-4 px-1'
+          style={{ borderBottom: '1px solid #F0E6DF' }}
         >
-          <option value=''>
-            {availableDays.length === 0 ? '✓ All 7 days added' : 'Select a day to add…'}
-          </option>
-          {availableDays.map((d) => (
-            <option key={d} value={d}>{DAY_NAMES[d]}</option>
-          ))}
-        </select>
-      </div>
+          <CalendarDays className='w-4 h-4 flex-shrink-0' style={{ color: '#C4704A' }} />
+          <label className='text-sm font-semibold whitespace-nowrap' style={{ color: '#7A4030' }}>
+            Add day
+          </label>
+          <select
+            value=''
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val !== '') handleAddDay(parseInt(val, 10));
+              (e.target as HTMLSelectElement).value = '';
+            }}
+            className='flex-1 rounded-xl px-3 py-2.5 text-sm cursor-pointer focus:outline-none transition-all duration-150'
+            style={{
+              color: '#5C3522',
+              background: '#FFFFFF',
+              border: '1px solid #E8C9B8',
+              boxShadow: '0 1px 3px rgba(180,90,50,0.08)',
+            }}
+          >
+            <option value=''>
+              {availableDays.length === 0 ? '✓ All 7 days added' : 'Select a day to add…'}
+            </option>
+            {availableDays.map((d) => (
+              <option key={d} value={d}>{DAY_NAMES[d]}</option>
+            ))}
+          </select>
+        </div>
 
-      {/* ── Scrollable content ── */}
-      <div
-        className='flex-1 overflow-y-auto pr-1'
-        style={{ scrollbarWidth: 'thin', scrollbarColor: '#E8C9B8 transparent' }}
-      >
-        <div className='flex flex-col gap-2.5 pb-4'>
+        {/* ── Scrollable content ── */}
+        <div
+          className='flex-1 overflow-y-auto pr-1'
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#E8C9B8 transparent' }}
+        >
+          <div className='flex flex-col gap-2.5 pb-4'>
 
-          {addedDays.length === 0 ? (
-            <div className='flex flex-col items-center justify-center py-16 gap-4 text-center select-none'>
-              <div
-                className='w-16 h-16 rounded-3xl flex items-center justify-center'
-                style={{ background: '#FFF0E8', border: '1.5px dashed #E8C9B8' }}
-              >
-                <CalendarDays className='w-7 h-7' style={{ color: '#C4704A' }} />
-              </div>
-              <div>
-                <p className='text-sm font-semibold' style={{ color: '#7A4030' }}>
-                  No days added yet
-                </p>
-                <p className='text-xs mt-1 leading-relaxed max-w-xs' style={{ color: '#B08070' }}>
-                  Pick a day from the dropdown above to start building your schedule.
-                </p>
-              </div>
-            </div>
-          ) : (
-            addedDays.map((d) => {
-              const slots = daySlots[d] || [{ start: '09:00', end: '17:00' }];
-              const isOpen = openDays.has(d);
-              const saved = savedByDay[d] || [];
-              const C = DAY_COLORS[d];
-
-              const errCount = slots.filter((s, i) =>
-                getSlotError(s, slots, i, saved),
-              ).length;
-              const hasErrors = errCount > 0;
-
-              return (
+            {addedDays.length === 0 ? (
+              <div className='flex flex-col items-center justify-center py-16 gap-4 text-center select-none'>
                 <div
-                  key={d}
-                  className='rounded-2xl overflow-hidden transition-all duration-200'
-                  style={{
-                    border: `1.5px solid ${hasErrors ? '#FCA5A5' : C.border}`,
-                    background: C.cardBg,
-                    boxShadow: isOpen
-                      ? `0 3px 14px ${C.badge}22`
-                      : '0 1px 4px rgba(0,0,0,0.05)',
-                  }}
+                  className='w-16 h-16 rounded-3xl flex items-center justify-center'
+                  style={{ background: '#FFF0E8', border: '1.5px dashed #E8C9B8' }}
                 >
+                  <CalendarDays className='w-7 h-7' style={{ color: '#C4704A' }} />
+                </div>
+                <div>
+                  <p className='text-sm font-semibold' style={{ color: '#7A4030' }}>
+                    No days added yet
+                  </p>
+                  <p className='text-xs mt-1 leading-relaxed max-w-xs' style={{ color: '#B08070' }}>
+                    Pick a day from the dropdown above to start building your schedule.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              addedDays.map((d) => {
+                const slots = daySlots[d] || [{ start: '09:00', end: '17:00' }];
+                const isOpen = openDays.has(d);
+                const saved = savedByDay[d] || [];
+                const guard = guardForDay(systemConfig, d);
+                const C = DAY_COLORS[d];
 
-                  {/* ── Header ── */}
+                const errCount = slots.filter((s, i) =>
+                  getSlotError(s, slots, i, saved, guard),
+                ).length;
+                const hasErrors = errCount > 0;
+
+                return (
                   <div
-                    onClick={() => toggleOpen(d)}
-                    className='flex items-center justify-between px-4 py-3 cursor-pointer select-none transition-all duration-150'
+                    key={d}
+                    className='rounded-2xl overflow-hidden transition-all duration-200'
                     style={{
-                      background: hasErrors ? '#FEF2F2' : isOpen ? C.headerBg : C.cardBg,
+                      border: `1.5px solid ${hasErrors ? '#FCA5A5' : C.border}`,
+                      background: C.cardBg,
+                      boxShadow: isOpen
+                        ? `0 3px 14px ${C.badge}22`
+                        : '0 1px 4px rgba(0,0,0,0.05)',
                     }}
                   >
-                    {/* Left */}
-                    <div className='flex items-center gap-3 min-w-0'>
 
-                      {/* Day badge — always colored, never grey */}
-                      <span
-                        className='inline-flex items-center justify-center w-11 h-7 rounded-lg text-[11px] font-bold tracking-wider flex-shrink-0'
-                        style={{
-                          background: hasErrors ? '#EF4444' : C.badge,
-                          color: C.badgeText,
-                        }}
-                      >
-                        {DAY_SHORT[d]}
-                      </span>
-
-                      <div className='min-w-0'>
+                    {/* ── Header ── */}
+                    <div
+                      onClick={() => toggleOpen(d)}
+                      className='flex items-center justify-between px-4 py-3 cursor-pointer select-none transition-all duration-150'
+                      style={{
+                        background: hasErrors ? '#FEF2F2' : isOpen ? C.headerBg : C.cardBg,
+                      }}
+                    >
+                      <div className='flex items-center gap-3 min-w-0'>
                         <span
-                          className='text-[13px] font-semibold'
+                          className='inline-flex items-center justify-center w-11 h-7 rounded-lg text-[11px] font-bold tracking-wider flex-shrink-0'
                           style={{
-                            color: hasErrors ? '#B91C1C' : isOpen ? C.accentText : '#1F2937',
+                            background: hasErrors ? '#EF4444' : C.badge,
+                            color: C.badgeText,
                           }}
                         >
-                          {DAY_NAMES[d]}
+                          {DAY_SHORT[d]}
                         </span>
 
-                        {!isOpen && (
-                          <div className='flex items-center gap-1.5 mt-1 flex-wrap'>
-                            {slots.slice(0, 3).map((s, i) => (
-                              <span
-                                key={i}
-                                className='text-[10px] font-mono rounded px-1.5 py-px'
-                                style={{
-                                  color: C.accentText,
-                                  background: C.pillBg,
-                                  border: `1px solid ${C.border}`,
-                                }}
-                              >
-                                {s.start}–{s.end}
-                              </span>
-                            ))}
-                            {slots.length > 3 && (
-                              <span className='text-[10px]' style={{ color: C.pillText }}>
-                                +{slots.length - 3}
-                              </span>
-                            )}
-                          </div>
+                        <div className='min-w-0'>
+                          <span
+                            className='text-[13px] font-semibold'
+                            style={{
+                              color: hasErrors ? '#B91C1C' : isOpen ? C.accentText : '#1F2937',
+                            }}
+                          >
+                            {DAY_NAMES[d]}
+                          </span>
+
+                          {!isOpen && (
+                            <div className='flex items-center gap-1.5 mt-1 flex-wrap'>
+                              {slots.slice(0, 3).map((s, i) => (
+                                <span
+                                  key={i}
+                                  className='text-[10px] font-mono rounded px-1.5 py-px'
+                                  style={{
+                                    color: C.accentText,
+                                    background: C.pillBg,
+                                    border: `1px solid ${C.border}`,
+                                  }}
+                                >
+                                  {s.start}–{s.end}
+                                </span>
+                              ))}
+                              {slots.length > 3 && (
+                                <span className='text-[10px]' style={{ color: C.pillText }}>
+                                  +{slots.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {hasErrors && (
+                          <span
+                            className='inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 flex-shrink-0'
+                            style={{ color: '#DC2626', background: '#FEE2E2' }}
+                          >
+                            <AlertTriangle className='w-3 h-3' />
+                            {errCount} error{errCount !== 1 ? 's' : ''}
+                          </span>
                         )}
                       </div>
 
-                      {hasErrors && (
+                      <div className='flex items-center gap-2 flex-shrink-0'>
                         <span
-                          className='inline-flex items-center gap-1 text-[11px] font-semibold rounded-full px-2 py-0.5 flex-shrink-0'
-                          style={{ color: '#DC2626', background: '#FEE2E2' }}
+                          className='text-[11px] font-semibold rounded-full px-2.5 py-0.5'
+                          style={{
+                            background: hasErrors ? '#FEE2E2' : C.pillBg,
+                            color: hasErrors ? '#DC2626' : C.pillText,
+                          }}
                         >
-                          <AlertTriangle className='w-3 h-3' />
-                          {errCount} error{errCount !== 1 ? 's' : ''}
+                          {slots.length} slot{slots.length !== 1 ? 's' : ''}
                         </span>
-                      )}
-                    </div>
 
-                    {/* Right */}
-                    <div className='flex items-center gap-2 flex-shrink-0'>
-                      <span
-                        className='text-[11px] font-semibold rounded-full px-2.5 py-0.5'
-                        style={{
-                          background: hasErrors ? '#FEE2E2' : C.pillBg,
-                          color: hasErrors ? '#DC2626' : C.pillText,
-                        }}
-                      >
-                        {slots.length} slot{slots.length !== 1 ? 's' : ''}
-                      </span>
-
-                      <button
-                        title={`Remove ${DAY_NAMES[d]}`}
-                        onClick={(e) => { e.stopPropagation(); handleRemoveDay(d); }}
-                        className='w-7 h-7 flex items-center justify-center rounded-lg transition-colors'
-                        style={{ color: '#9CA3AF' }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.color = '#EF4444';
-                          (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2';
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF';
-                          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                        }}
-                      >
-                        <X className='w-3.5 h-3.5' />
-                      </button>
-
-                      <ChevronDown
-                        className='w-4 h-4 transition-transform duration-200 flex-shrink-0'
-                        style={{
-                          color: hasErrors ? '#F87171' : isOpen ? C.badge : '#9CA3AF',
-                          transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* ── Body ── */}
-                  {isOpen && (
-                    <div
-                      className='px-4 pt-4 pb-5'
-                      style={{
-                        background: C.bodyBg,
-                        borderTop: `1px solid ${C.border}`,
-                      }}
-                    >
-                      {/* Existing saved windows */}
-                      {saved.length > 0 && (
-                        <div
-                          className='flex items-start gap-2.5 rounded-xl px-3 py-2.5 mb-3'
-                          style={{ background: C.pillBg, border: `1px solid ${C.border}` }}
+                        <button
+                          title={`Remove ${DAY_NAMES[d]}`}
+                          onClick={(e) => { e.stopPropagation(); handleRemoveDay(d); }}
+                          className='w-7 h-7 flex items-center justify-center rounded-lg transition-colors'
+                          style={{ color: '#9CA3AF' }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.color = '#EF4444';
+                            (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2';
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF';
+                            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                          }}
                         >
-                          <Clock className='w-3.5 h-3.5 flex-shrink-0 mt-0.5' style={{ color: C.badge }} />
-                          <div>
-                            <p className='text-[11px] font-semibold mb-1.5' style={{ color: C.accentText }}>
-                              Already saved on {DAY_NAMES[d]}
-                            </p>
-                            <div className='flex flex-wrap gap-1.5'>
-                              {saved.map((w, i) => (
-                                <span
-                                  key={i}
-                                  className='text-[11px] font-mono rounded-lg px-2 py-0.5'
-                                  style={{
-                                    color: C.accentText,
-                                    background: '#FFFFFF',
-                                    border: `1px solid ${C.border}`,
-                                  }}
-                                >
-                                  {toHHMM(w.start)} – {toHHMM(w.end)}
-                                </span>
-                              ))}
+                          <X className='w-3.5 h-3.5' />
+                        </button>
+
+                        <ChevronDown
+                          className='w-4 h-4 transition-transform duration-200 flex-shrink-0'
+                          style={{
+                            color: hasErrors ? '#F87171' : isOpen ? C.badge : '#9CA3AF',
+                            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* ── Body ── */}
+                    {isOpen && (
+                      <div
+                        className='px-4 pt-4 pb-5'
+                        style={{
+                          background: C.bodyBg,
+                          borderTop: `1px solid ${C.border}`,
+                        }}
+                      >
+                        {saved.length > 0 && (
+                          <div
+                            className='flex items-start gap-2.5 rounded-xl px-3 py-2.5 mb-3'
+                            style={{ background: C.pillBg, border: `1px solid ${C.border}` }}
+                          >
+                            <Clock className='w-3.5 h-3.5 flex-shrink-0 mt-0.5' style={{ color: C.badge }} />
+                            <div>
+                              <p className='text-[11px] font-semibold mb-1.5' style={{ color: C.accentText }}>
+                                Already saved on {DAY_NAMES[d]}
+                              </p>
+                              <div className='flex flex-wrap gap-1.5'>
+                                {saved.map((w, i) => (
+                                  <span
+                                    key={i}
+                                    className='text-[11px] font-mono rounded-lg px-2 py-0.5'
+                                    style={{
+                                      color: C.accentText,
+                                      background: '#FFFFFF',
+                                      border: `1px solid ${C.border}`,
+                                    }}
+                                  >
+                                    {toHHMM(w.start)} – {toHHMM(w.end)}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           </div>
+                        )}
+
+                        {guard && (
+                          <div className='flex items-center gap-2 rounded-xl px-3 py-2 mb-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-100'>
+                            <ShieldAlert className='w-3.5 h-3.5 flex-shrink-0' />
+                            Time Guard permits{' '}
+                            <span className='font-mono font-semibold'>{guard.start}–{guard.end}</span>{' '}
+                            on {DAY_NAMES[d]}.
+                          </div>
+                        )}
+                        {guard === null && (
+                          <div className='flex items-center gap-2 rounded-xl px-3 py-2 mb-3 text-[11px] text-red-700 bg-red-50 border border-red-100'>
+                            <AlertCircle className='w-3.5 h-3.5 flex-shrink-0' />
+                            Time Guard blocks new windows on {DAY_NAMES[d]}.
+                          </div>
+                        )}
+
+                        <div className='grid gap-2 mb-2 px-1' style={{ gridTemplateColumns: '1fr 1fr 32px' }}>
+                          <span className='text-[10px] font-bold uppercase tracking-widest' style={{ color: C.pillText }}>
+                            Start time
+                          </span>
+                          <span className='text-[10px] font-bold uppercase tracking-widest' style={{ color: C.pillText }}>
+                            End time
+                          </span>
+                          <span />
                         </div>
-                      )}
 
-                      {/* Labels */}
-                      <div className='grid gap-2 mb-2 px-1' style={{ gridTemplateColumns: '1fr 1fr 32px' }}>
-                        <span className='text-[10px] font-bold uppercase tracking-widest' style={{ color: C.pillText }}>
-                          Start time
-                        </span>
-                        <span className='text-[10px] font-bold uppercase tracking-widest' style={{ color: C.pillText }}>
-                          End time
-                        </span>
-                        <span />
-                      </div>
+                        <div className='flex flex-col gap-2'>
+                          {slots.map((slot, idx) => {
+                            const err = getSlotError(slot, slots, idx, saved, guard);
 
-                      {/* Slots */}
-                      <div className='flex flex-col gap-2'>
-                        {slots.map((slot, idx) => {
-                          const err = getSlotError(slot, slots, idx, saved);
-
-                          return (
-                            <div key={idx}>
-                              <div
-                                className='grid gap-2 items-center rounded-xl px-2.5 py-2 transition-all duration-150'
-                                style={{
-                                  gridTemplateColumns: '1fr 1fr 32px',
-                                  background: err ? '#FEF2F2' : '#FFFFFF',
-                                  border: `1px solid ${err ? '#FCA5A5' : C.border}`,
-                                  boxShadow: `0 1px 3px ${C.badge}18`,
-                                }}
-                              >
-                                <input
-                                  type='time'
-                                  value={slot.start}
-                                  onChange={(e) => updateSlot(d, idx, { start: e.target.value })}
-                                  className='w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition-colors'
+                            return (
+                              <div key={idx}>
+                                <div
+                                  className='grid gap-2 items-center rounded-xl px-2.5 py-2 transition-all duration-150'
                                   style={{
-                                    background: C.slotBg,
-                                    border: `1px solid ${C.border}`,
-                                    color: '#111827',
-                                  }}
-                                  onFocus={(e) => {
-                                    e.target.style.borderColor = C.badge;
-                                    e.target.style.boxShadow = `0 0 0 2px ${C.badge}30`;
-                                  }}
-                                  onBlur={(e) => {
-                                    e.target.style.borderColor = C.border;
-                                    e.target.style.boxShadow = 'none';
-                                  }}
-                                />
-                                <input
-                                  type='time'
-                                  value={slot.end}
-                                  onChange={(e) => updateSlot(d, idx, { end: e.target.value })}
-                                  className='w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition-colors'
-                                  style={{
-                                    background: C.slotBg,
-                                    border: `1px solid ${C.border}`,
-                                    color: '#111827',
-                                  }}
-                                  onFocus={(e) => {
-                                    e.target.style.borderColor = C.badge;
-                                    e.target.style.boxShadow = `0 0 0 2px ${C.badge}30`;
-                                  }}
-                                  onBlur={(e) => {
-                                    e.target.style.borderColor = C.border;
-                                    e.target.style.boxShadow = 'none';
-                                  }}
-                                />
-                                <button
-                                  type='button'
-                                  title='Remove slot'
-                                  onClick={() => removeSlot(d, idx)}
-                                  disabled={slots.length === 1}
-                                  className='w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-20 disabled:cursor-not-allowed'
-                                  style={{ color: '#9CA3AF' }}
-                                  onMouseEnter={(e) => {
-                                    if (slots.length > 1) {
-                                      (e.currentTarget as HTMLButtonElement).style.color = '#EF4444';
-                                      (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2';
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF';
-                                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                    gridTemplateColumns: '1fr 1fr 32px',
+                                    background: err ? '#FEF2F2' : '#FFFFFF',
+                                    border: `1px solid ${err ? '#FCA5A5' : C.border}`,
+                                    boxShadow: `0 1px 3px ${C.badge}18`,
                                   }}
                                 >
-                                  <X className='w-3.5 h-3.5' />
-                                </button>
-                              </div>
-
-                              {err && (
-                                <div className='flex items-center gap-1.5 text-[11px] font-medium mt-1 px-1' style={{ color: '#DC2626' }}>
-                                  <AlertCircle className='w-3 h-3 flex-shrink-0' />
-                                  {err}
+                                  <input
+                                    type='time'
+                                    value={slot.start}
+                                    onChange={(e) => updateSlot(d, idx, { start: e.target.value })}
+                                    className='w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition-colors'
+                                    style={{
+                                      background: C.slotBg,
+                                      border: `1px solid ${C.border}`,
+                                      color: '#111827',
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = C.badge;
+                                      e.target.style.boxShadow = `0 0 0 2px ${C.badge}30`;
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = C.border;
+                                      e.target.style.boxShadow = 'none';
+                                    }}
+                                  />
+                                  <input
+                                    type='time'
+                                    value={slot.end}
+                                    onChange={(e) => updateSlot(d, idx, { end: e.target.value })}
+                                    className='w-full rounded-lg px-3 py-2 text-sm font-mono focus:outline-none transition-colors'
+                                    style={{
+                                      background: C.slotBg,
+                                      border: `1px solid ${C.border}`,
+                                      color: '#111827',
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = C.badge;
+                                      e.target.style.boxShadow = `0 0 0 2px ${C.badge}30`;
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = C.border;
+                                      e.target.style.boxShadow = 'none';
+                                    }}
+                                  />
+                                  <button
+                                    type='button'
+                                    title='Remove slot'
+                                    onClick={() => removeSlot(d, idx)}
+                                    disabled={slots.length === 1}
+                                    className='w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-20 disabled:cursor-not-allowed'
+                                    style={{ color: '#9CA3AF' }}
+                                    onMouseEnter={(e) => {
+                                      if (slots.length > 1) {
+                                        (e.currentTarget as HTMLButtonElement).style.color = '#EF4444';
+                                        (e.currentTarget as HTMLButtonElement).style.background = '#FEF2F2';
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF';
+                                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                                    }}
+                                  >
+                                    <X className='w-3.5 h-3.5' />
+                                  </button>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
+
+                                {err && (
+                                  <div className='flex items-center gap-1.5 text-[11px] font-medium mt-1 px-1' style={{ color: '#DC2626' }}>
+                                    <AlertCircle className='w-3 h-3 flex-shrink-0' />
+                                    {err}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          type='button'
+                          onClick={() => addSlot(d)}
+                          className='mt-3 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150'
+                          style={{
+                            color: C.accentText,
+                            border: `1px dashed ${C.badge}`,
+                            background: 'transparent',
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.background = C.pillBg;
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                          }}
+                        >
+                          <Plus className='w-3.5 h-3.5' />
+                          Add another slot
+                        </button>
                       </div>
-
-                      {/* Add slot */}
-                      <button
-                        type='button'
-                        onClick={() => addSlot(d)}
-                        className='mt-3 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-150'
-                        style={{
-                          color: C.accentText,
-                          border: `1px dashed ${C.badge}`,
-                          background: 'transparent',
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background = C.pillBg;
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                        }}
-                      >
-                        <Plus className='w-3.5 h-3.5' />
-                        Add another slot
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* ── API Error ── */}
-      {submitError && (
-        <div
-          className='mt-3 flex items-start gap-2.5 px-3.5 py-3 rounded-xl'
-          style={{ background: '#FFF1F2', border: '1px solid #FECACA' }}
-        >
-          <AlertCircle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
-          <p className='text-xs font-medium text-red-700'>{submitError}</p>
-        </div>
-      )}
-
-      {/* ── Footer ── */}
-      <div
-        className='sticky bottom-0 flex items-center justify-between pt-4 pb-1 mt-auto'
-        style={{ background: '#FFF8F5', borderTop: '1px solid #F0E0D0' }}
-      >
-        <div className='flex items-center gap-2 text-xs' style={{ color: '#B08070' }}>
-          <CalendarDays className='w-3.5 h-3.5' style={{ color: '#C4B0A8' }} />
-          <span>
-            {totalSlotCount > 0
-              ? `${totalSlotCount} slot${totalSlotCount !== 1 ? 's' : ''} across ${addedDays.length} day${addedDays.length !== 1 ? 's' : ''}`
-              : 'No slots configured yet'}
-          </span>
-        </div>
-        <div className='flex gap-2'>
-          <Button variant='secondary' onClick={onClose}>Cancel</Button>
-          <Button
-            loading={mut.isPending}
-            disabled={!isValid}
-            onClick={() => { setSubmitError(null); mut.mutate(); }}
+        {submitError && (
+          <div
+            className='mt-3 flex items-start gap-2.5 px-3.5 py-3 rounded-xl'
+            style={{ background: '#FFF1F2', border: '1px solid #FECACA' }}
           >
-            {totalSlotCount <= 1 ? 'Add Window' : `Add ${totalSlotCount} Windows`}
-          </Button>
+            <AlertCircle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
+            <p className='text-xs font-medium text-red-700'>{submitError}</p>
+          </div>
+        )}
+
+        <div
+          className='sticky bottom-0 flex items-center justify-between pt-4 pb-1 mt-auto'
+          style={{ background: '#FFF8F5', borderTop: '1px solid #F0E0D0' }}
+        >
+          <div className='flex items-center gap-2 text-xs' style={{ color: '#B08070' }}>
+            <CalendarDays className='w-3.5 h-3.5' style={{ color: '#C4B0A8' }} />
+            <span>
+              {totalSlotCount > 0
+                ? `${totalSlotCount} slot${totalSlotCount !== 1 ? 's' : ''} across ${addedDays.length} day${addedDays.length !== 1 ? 's' : ''}`
+                : 'No slots configured yet'}
+            </span>
+          </div>
+          <div className='flex gap-2'>
+            <Button variant='secondary' onClick={onClose}>Cancel</Button>
+            <Button
+              loading={mut.isPending}
+              disabled={!isValid}
+              onClick={() => { setSubmitError(null); mut.mutate(); }}
+            >
+              {totalSlotCount <= 1 ? 'Add Window' : `Add ${totalSlotCount} Windows`}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
-  </Modal>
-);
+    </Modal>
+  );
 }
 
 // ── TimezonePicker ────────────────────────────────────────────

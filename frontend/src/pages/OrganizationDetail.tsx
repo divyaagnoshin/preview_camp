@@ -85,7 +85,7 @@ export default function OrganizationDetailPage() {
             <Building2 className='w-6 h-6 text-white' />
           </div>
           <div>
-            <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{org.name}</h1>
+            <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>{org.name}</h1>
             {org.description && <p className='text-sm text-[#7A5C44] mt-0.5'>{org.description}</p>}
           </div>
         </div>

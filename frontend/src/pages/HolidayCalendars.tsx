@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -39,6 +39,8 @@ import {
   AlertTriangle,
   CalendarX,
   CalendarDays,
+  Check,
+  ChevronDown,
 } from 'lucide-react';
 
 // ── Country options ──────────────────────────────────────────
@@ -56,6 +58,92 @@ const COUNTRY_OPTIONS = [
 ];
 const flagFor = (code: string | null) =>
   COUNTRY_OPTIONS.find((c) => c.value === code)?.label ?? code ?? ' ';
+
+// ── Amber CalendarX icon — no background, icon only ──
+function HolidayRowIcon() {
+  return (
+    <CalendarX className='w-4 h-4 flex-shrink-0' style={{ color: '#D97706' }} />
+  );
+}
+
+// ── CountryPicker ────────────────────────────────────────────
+function CountryPicker({
+  label,
+  value,
+  onChange,
+}: {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return COUNTRY_OPTIONS.filter(
+      (c) => !q || c.label.toLowerCase().includes(q) || c.value.toLowerCase().includes(q),
+    );
+  }, [query]);
+
+  const selected = COUNTRY_OPTIONS.find((c) => c.value === value);
+  const display = open ? query : (selected?.label ?? '');
+
+  return (
+    <div ref={wrapRef} className='relative'>
+      {label && (
+        <label className='block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2'>
+          {label}
+        </label>
+      )}
+      <div className='relative'>
+        <input
+          value={display}
+          onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => { setQuery(''); setOpen(true); }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder='Search country…'
+          className='w-full border border-gray-200 rounded-xl pl-3 pr-8 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-violet-400 bg-white transition-colors'
+        />
+        <ChevronDown className='w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none' />
+      </div>
+      {open && (
+        <div className='absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-white border border-gray-200 rounded-xl shadow-lg'>
+          {filtered.length === 0 ? (
+            <div className='px-3 py-3 text-xs text-gray-400 text-center'>No matches found</div>
+          ) : (
+            filtered.map((c) => (
+              <button
+                key={c.value}
+                type='button'
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(c.value);
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className='w-full text-left px-3 py-2 text-sm hover:bg-violet-50 flex items-center justify-between transition-colors'
+              >
+                <span className='text-gray-700'>{c.label}</span>
+                {c.value === value && <Check className='w-3.5 h-3.5 text-violet-600' />}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Shared ConfirmDeleteModal ────────────────────────────────
 function ConfirmDeleteModal({
@@ -81,7 +169,6 @@ function ConfirmDeleteModal({
   return (
     <Modal open onClose={onClose} title=''>
       <div className='space-y-5'>
-        {/* Icon + heading */}
         <div className='flex flex-col items-center text-center pt-2 pb-1'>
           <div className='w-14 h-14 rounded-2xl bg-red-50 border-2 border-red-100 flex items-center justify-center mb-4'>
             <Trash2 className='w-6 h-6 text-red-500' />
@@ -90,7 +177,6 @@ function ConfirmDeleteModal({
           <p className='text-sm text-gray-500 mt-1.5 max-w-xs leading-relaxed'>{description}</p>
         </div>
 
-        {/* Warning banner */}
         <div className='flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl'>
           <AlertTriangle className='w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5' />
           <p className='text-xs text-amber-700 leading-relaxed'>
@@ -105,7 +191,6 @@ function ConfirmDeleteModal({
           </div>
         )}
 
-        {/* Actions */}
         <div className='flex gap-3 pt-1'>
           <Button variant='secondary' onClick={onClose} className='flex-1'>
             Cancel
@@ -173,9 +258,9 @@ export function HolidayCalendarsPage() {
 
   return (
     <div className='p-6 md:p-8 w-full space-y-6 animate-fade-up'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-gray-900'>Holidays</h1>
+          <h1 className='text-2xl font-bold page-heading'>Holidays</h1>
           <p className='text-sm text-gray-500 mt-1'>
             {hasActiveFilters
               ? `${filtered.length} of ${rows.length} calendar(s)`
@@ -189,7 +274,7 @@ export function HolidayCalendarsPage() {
 
       {rows.length > 0 && (
         <div className='space-y-3'>
-          <div className='flex items-center gap-3 flex-wrap'>
+          <div className='filter-bar'>
             <SearchInput value={search} onChange={setSearch} placeholder='Search calendars…' />
             <div className='flex items-center gap-2 flex-wrap'>
               <FilterDropdown label='Country' value={filterCountry} onChange={setFilterCountry} color='indigo' options={countryOpts} />
@@ -227,7 +312,12 @@ export function HolidayCalendarsPage() {
             cols={[
               {
                 header: 'Name',
-                render: (r) => <span className='font-medium text-gray-900'>{r.name}</span>,
+                render: (r) => (
+                  <div className='flex items-center gap-2.5'>
+                    <HolidayRowIcon />
+                    <span className='font-medium text-gray-900'>{r.name}</span>
+                  </div>
+                ),
               },
               {
                 header: 'Country',
@@ -235,7 +325,7 @@ export function HolidayCalendarsPage() {
               },
               {
                 header: 'Holidays',
-                render: (r) => <span className='font-medium text-indigo-600'>{r.holiday_count ?? 0}</span>,
+                render: (r) => <span className='schedule-pill'>{r.holiday_count ?? 0}</span>,
               },
               {
                 header: 'Used by',
@@ -328,7 +418,7 @@ function CalendarEditor({
     <Modal open title={isEdit ? 'Edit Calendar' : 'New Holiday Calendar'} onClose={onClose}>
       <div className='space-y-4'>
         <Input label='Name' placeholder='e.g. US Federal 2026' value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        <Select label='Country (optional)' value={country ?? ''} onChange={(e) => setCountry(e.target.value)} options={COUNTRY_OPTIONS} />
+        <CountryPicker label='Country (optional)' value={country ?? ''} onChange={setCountry} />
         {mut.isError && (
           <div className='flex items-start gap-2.5 p-3 bg-red-50 border border-red-200 rounded-lg'>
             <AlertTriangle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
@@ -414,7 +504,6 @@ export function HolidayCalendarDetailPage() {
     (grouped[key] ||= []).push(r);
   });
 
-  // Build delete modal description
   const deleteDesc = deleteTarget
     ? `"${deleteTarget.holiday_name || 'Unnamed holiday'}" on ${String(deleteTarget.holiday_date).slice(0, 10)} will be permanently removed.`
     : '';
@@ -431,7 +520,7 @@ export function HolidayCalendarDetailPage() {
             <ArrowLeft className='w-4 h-4' />
           </button>
           <div>
-            <h1 className='text-2xl font-bold text-gray-900'>{cal.name}</h1>
+            <h1 className='text-2xl font-bold page-heading'>{cal.name}</h1>
             <p className='text-sm text-gray-500 mt-1'>{flagFor(cal.country_code)}</p>
           </div>
         </div>
@@ -448,13 +537,13 @@ export function HolidayCalendarDetailPage() {
       </div>
 
       <div className='grid grid-cols-3 gap-4'>
-        <StatCard label='Total in Year' value={rows.length} />
-        <StatCard label='Full-Day Blocks' value={fullDayCount} />
-        <StatCard label='Time-Range Blocks' value={blockCount} />
+        <StatCard label='Total in Year' value={rows.length} color='orange' />
+        <StatCard label='Full-Day Blocks' value={fullDayCount} color='red' />
+        <StatCard label='Time-Range Blocks' value={blockCount} color='amber' />
       </div>
 
       {rows.length > 0 && (
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search holidays by name or date (YYYY-MM-DD)…' />
           {search && <FilterPill label={`Name/Date: "${search}"`} onRemove={() => setSearch('')} />}
         </div>
@@ -536,7 +625,7 @@ function HolidayRow({
 }) {
   const day = parseDateOnly(date.holiday_date);
   return (
-    <div className='flex items-center justify-between gap-4 px-3 py-2.5 rounded-lg border border-gray-100 hover:bg-gray-50'>
+    <div className='holiday-card flex items-center justify-between gap-4'>
       <div className='flex items-center gap-4 min-w-0'>
         <div className='text-center w-12 shrink-0'>
           <p className='text-xs text-gray-400 uppercase'>

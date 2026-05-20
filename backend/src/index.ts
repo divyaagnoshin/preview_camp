@@ -14,6 +14,7 @@ import fieldLibraryRouter from './routes/fieldLibrary';
 import campaignsRouter from './routes/campaigns';
 import holidayCalendarsRouter from './routes/holidayCalendars';
 import telephonyRouter from './routes/telephony';
+import systemConfigRouter from './routes/systemConfig';
 // Agent workspace + session-mutation routes moved to backend-queue service.
 import {
   dncRouter,
@@ -74,6 +75,7 @@ app.use('/v1/agents', agentsRouter);
 app.use('/v1/sessions', sessionsRouter);
 app.use('/v1/timezones', timezonesRouter);
 app.use('/v1/telephony', telephonyRouter);
+app.use('/v1/system-config', systemConfigRouter);
 // /v1/workspace/* and the mutating /v1/sessions/{ready,heartbeat,offline}
 // endpoints are served by the backend-queue service (see ../backend-queue).
 

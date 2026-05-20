@@ -106,7 +106,7 @@ export function Badge({ label, color = 'gray' }: { label: string; color?: BadgeC
 }
 
 const statusColors: Record<string, BadgeColor> = {
-  draft: 'gray', active: 'green', completed: 'blue', stopped: 'red',
+  draft: 'gray', preparing: 'yellow', active: 'green', completed: 'blue', stopped: 'red',
   inactive: 'red', queued: 'yellow', with_agent: 'indigo', exhausted: 'orange',
   dnc: 'red', available: 'green', offline: 'gray', processing: 'yellow',
   done: 'green', CLOSED: 'blue', NEXT_ATTEMPT: 'yellow', RESCHEDULE: 'purple',
@@ -130,18 +130,17 @@ export function PageLoader() {
 }
 
 // ── Table ───────────────────────────────────────────────────────────────────
-interface Col<T> { header: string; key?: keyof T; render?: (row: T) => ReactNode; width?: string; }
+interface Col<T> { header: string; key?: keyof T; render?: (row: T, idx?: number) => ReactNode; width?: string; }
 interface TableProps<T> { cols: Col<T>[]; rows: T[]; keyFn: (row: T) => string; onRowClick?: (row: T) => void; emptyMessage?: string; }
 export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No data' }: TableProps<T>) {
   return (
     <div className='overflow-x-auto'>
       <table className='w-full text-sm'>
         <thead>
-          <tr className='border-b border-[#FFE8D6] bg-[#FFF4EE]'>
+          <tr style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D6 100%)', borderBottom: '2px solid #FFD0B0' }}>
             {cols.map((c) => (
-              <th key={c.header} style={{ width: c.width }}
-                className='text-left text-xs font-semibold text-[#7A5C44] uppercase tracking-wider px-5 py-3'
-                style={{ fontFamily: 'Sora, sans-serif', width: c.width }}>
+              <th key={c.header} style={{ width: c.width, fontFamily: 'Sora, sans-serif' }}
+                className='text-left text-xs font-bold text-[#6A3A1A] uppercase tracking-wider px-5 py-3.5'>
                 {c.header}
               </th>
             ))}
@@ -155,15 +154,16 @@ export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No dat
               </td>
             </tr>
           )}
-          {rows.map((row) => (
+          {rows.map((row, rowIdx) => (
             <tr key={keyFn(row)} onClick={() => onRowClick?.(row)}
               className={clsx(
-                'border-b border-[#FFF0E8] transition-colors duration-150',
-                onRowClick ? 'cursor-pointer hover:bg-[#FFF4EE]' : 'hover:bg-[#FFFAF7]',
+                'border-b border-[#FFF0E8] transition-all duration-150',
+                rowIdx % 2 === 0 ? 'bg-white' : 'bg-[#FFFCFA]',
+                onRowClick ? 'cursor-pointer hover:bg-gradient-to-r hover:from-[#FFF4EE] hover:to-[#FFF8F4] hover:shadow-sm' : 'hover:bg-[#FFFAF7]',
               )}>
               {cols.map((c) => (
                 <td key={c.header} className='px-5 py-3.5 text-[#1A0F00]'>
-                  {c.render ? c.render(row) : c.key ? String(row[c.key] ?? '—') : ''}
+                  {c.render ? c.render(row, rowIdx) : c.key ? String(row[c.key] ?? '—') : ''}
                 </td>
               ))}
             </tr>
@@ -175,10 +175,6 @@ export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No dat
 }
 
 // ── Modal ───────────────────────────────────────────────────────────────────
-// Portals to document.body so `position: fixed` is anchored to the viewport
-// even when the page wrapper sits inside a transformed ancestor (e.g. the
-// `.animate-fade-up` class on every page applies a translate that turns
-// fixed-positioned children into wrapper-relative children).
 export function Modal({ title, open, onClose, children, size = 'md' }: {
   title: string; open: boolean; onClose: () => void; children: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
@@ -189,10 +185,11 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
       onClick={onClose}>
       <div className={clsx('bg-white rounded-2xl shadow-2xl w-full border border-[#FFE0C8]', widths[size])}
         onClick={(e) => e.stopPropagation()}>
-        <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'>
+        <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'
+          style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D2 100%)' }}>
           <h3 className='font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</h3>
           <button onClick={onClose}
-            className='p-1.5 rounded-xl hover:bg-orange-50 text-[#7A5C44] hover:text-[#F4521E] transition-colors'>
+            className='p-1.5 rounded-xl hover:bg-white/60 text-[#7A5C44] hover:text-[#F4521E] transition-colors'>
             <X className='w-4 h-4' />
           </button>
         </div>
@@ -204,8 +201,6 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
 }
 
 // ── Input / Select / Textarea ─────────────────────────────────────────────
-// Focus ring uses /60 opacity + a 2px border swap so the active field is
-// always clearly distinguishable, even against the off-white surface bg.
 const inputCls =
   'w-full border-2 border-[#FFD0B0] rounded-xl px-3.5 py-2.5 text-sm bg-white text-[#1A0F00] placeholder-[#B89070] focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890] transition-all disabled:bg-[#FFF4EE] disabled:text-[#7A5C44]';
 
@@ -241,21 +236,78 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────
-export function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+const statCardColors: Record<string, { gradient: string; tint: string; border: string; textColor: string }> = {
+  gray:   { gradient: 'linear-gradient(135deg,#6B7280,#4B5563)', tint: 'linear-gradient(135deg,#F9FAFB,#F3F4F6)', border: '#E5E7EB', textColor: '#374151' },
+  green:  { gradient: 'linear-gradient(135deg,#10B981,#059669)', tint: 'linear-gradient(135deg,#ECFDF5,#D1FAE5)', border: '#A7F3D0', textColor: '#065F46' },
+  blue:   { gradient: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', tint: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border: '#BFDBFE', textColor: '#1E40AF' },
+  indigo: { gradient: 'linear-gradient(135deg,#8B5CF6,#7C3AED)', tint: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', border: '#DDD6FE', textColor: '#5B21B6' },
+  red:    { gradient: 'linear-gradient(135deg,#EF4444,#DC2626)', tint: 'linear-gradient(135deg,#FEF2F2,#FEE2E2)', border: '#FECACA', textColor: '#991B1B' },
+  orange: { gradient: 'linear-gradient(135deg,#E8470A,#F59E0B)', tint: 'linear-gradient(135deg,#FFF4EE,#FFE6D2)', border: '#FFD3B5', textColor: '#C43A06' },
+  amber:  { gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', tint: 'linear-gradient(135deg,#FFFBEB,#FEF3C7)', border: '#FDE68A', textColor: '#92400E' },
+  cyan:   { gradient: 'linear-gradient(135deg,#06B6D4,#0891B2)', tint: 'linear-gradient(135deg,#ECFEFF,#CFFAFE)', border: '#A5F3FC', textColor: '#164E63' },
+  purple: { gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', tint: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', border: '#DDD6FE', textColor: '#5B21B6' },
+};
+
+export function StatCard({
+  label, value, sub,
+  color,
+  gradient, tint, border, textColor,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  color?: string;
+  gradient?: string;
+  tint?: string;
+  border?: string;
+  textColor?: string;
+  icon?: React.ElementType;
+}) {
+  const resolved = (gradient && tint && border && textColor)
+    ? { gradient, tint, border, textColor }
+    : color && statCardColors[color]
+      ? statCardColors[color]
+      : null;
+
+  if (resolved) {
+    return (
+      <div
+        className='rounded-2xl px-4 py-3.5 flex items-center gap-3 border'
+        style={{ background: resolved.tint, borderColor: resolved.border }}
+      >
+        {Icon && (
+          <div className='w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0'
+            style={{ background: resolved.gradient }}>
+            <Icon className='w-4 h-4 text-white' />
+          </div>
+        )}
+        <div className='min-w-0'>
+          <p className='text-xs font-semibold uppercase tracking-wide mb-0.5' style={{ color: resolved.textColor, opacity: 0.7 }}>{label}</p>
+          <p className='text-xl font-bold leading-tight' style={{ color: resolved.textColor, fontFamily: 'Sora, sans-serif' }}>{value}</p>
+          {sub && <p className='text-xs mt-0.5' style={{ color: resolved.textColor, opacity: 0.6 }}>{sub}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback: brand cream style
   return (
-    <Card className='p-5'>
-      <p className='text-xs text-[#7A5C44] mb-1 font-medium'>{label}</p>
-      <p className='text-2xl font-bold text-[#F4521E]' style={{ fontFamily: 'Sora, sans-serif' }}>{value}</p>
-      {sub && <p className='text-xs text-[#7A5C44] mt-1'>{sub}</p>}
-    </Card>
+    <div className='rounded-2xl px-4 py-3.5 border border-[#FFD3B5]'
+      style={{ background: 'linear-gradient(135deg,#FFF4EE,#FFE6D2)' }}>
+      <p className='text-xs font-semibold uppercase tracking-wide text-[#C43A06]/70 mb-0.5'>{label}</p>
+      <p className='text-xl font-bold text-[#C43A06]' style={{ fontFamily: 'Sora, sans-serif' }}>{value}</p>
+      {sub && <p className='text-xs text-[#C43A06]/60 mt-0.5'>{sub}</p>}
+    </div>
   );
 }
 
-// ── Empty state ───────────────────────────────────────────────────────────
+// ── Empty State ──────────────────────────────────────────────────────────────
 export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <div className='text-center py-16'>
-      <div className='w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4'>
+      <div className='w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4'
+        style={{ background: 'linear-gradient(135deg, #FFF0E5, #FFE0C8)', border: '1.5px solid #FFD0B0' }}>
         <span className='text-2xl'>📭</span>
       </div>
       <p className='font-semibold text-[#1A0F00] mb-1' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</p>
@@ -278,8 +330,6 @@ export function Progress({ value }: { value: number; color?: string }) {
 }
 
 // ── Search input ─────────────────────────────────────────────────────────
-// Compact search box with a leading magnifier icon and a clear (X) button
-// when non-empty. Used by every list page to filter table rows client-side.
 export function SearchInput({
   value,
   onChange,
@@ -293,19 +343,33 @@ export function SearchInput({
 }) {
   return (
     <div className={clsx('relative flex-1 min-w-[200px] max-w-sm', className)}>
-      <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
+      <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none' style={{ color: '#F4521E' }} />
       <input
         type='text'
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className='w-full pl-9 pr-9 py-2 text-sm border-2 border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-gray-300 transition placeholder:text-gray-400'
+        className='w-full pl-9 pr-9 py-2.5 text-sm rounded-xl focus:outline-none transition placeholder:text-[#C09070]'
+        style={{
+          border: '2px solid #FFD0B0',
+          background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)',
+          color: '#1A0F00',
+          boxShadow: '0 1px 4px rgba(244,82,30,0.08)',
+        }}
+        onFocus={e => {
+          e.currentTarget.style.borderColor = '#F4521E';
+          e.currentTarget.style.boxShadow = '0 0 0 4px rgba(244,82,30,0.18)';
+        }}
+        onBlur={e => {
+          e.currentTarget.style.borderColor = '#FFD0B0';
+          e.currentTarget.style.boxShadow = '0 1px 4px rgba(244,82,30,0.08)';
+        }}
       />
       {value && (
         <button
           type='button'
           onClick={() => onChange('')}
-          className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
+          className='absolute right-3 top-1/2 -translate-y-1/2 text-[#C09070] hover:text-[#F4521E] transition'
         >
           <X className='w-3.5 h-3.5' />
         </button>
@@ -315,16 +379,14 @@ export function SearchInput({
 }
 
 // ── Filter dropdown ──────────────────────────────────────────────────────
-// Pill button that opens a single-select menu. Active state uses an accent
-// color (defaults to indigo) and shows the chosen label inline.
 type FilterColor = 'indigo' | 'amber' | 'green' | 'red' | 'orange' | 'purple';
-const filterColorMap: Record<FilterColor, string> = {
-  indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-  amber: 'bg-amber-50 border-amber-200 text-amber-700',
-  green: 'bg-green-50 border-green-200 text-green-700',
-  red: 'bg-red-50 border-red-200 text-red-700',
-  orange: 'bg-orange-50 border-[#FFD0B0] text-[#F4521E]',
-  purple: 'bg-purple-50 border-purple-200 text-purple-700',
+const filterColorMap: Record<FilterColor, { active: string; dot: string }> = {
+  indigo: { active: 'text-indigo-700', dot: '#6366F1' },
+  amber:  { active: 'text-amber-700', dot: '#D97706' },
+  green:  { active: 'text-green-700', dot: '#10B981' },
+  red:    { active: 'text-red-700', dot: '#EF4444' },
+  orange: { active: 'text-[#F4521E]', dot: '#F4521E' },
+  purple: { active: 'text-purple-700', dot: '#A855F7' },
 };
 
 export function FilterDropdown({
@@ -354,6 +416,7 @@ export function FilterDropdown({
 
   const selected = options.find((o) => o.value === value);
   const isActive = !!value;
+  const cm = filterColorMap[color];
 
   return (
     <div ref={ref} className='relative'>
@@ -361,13 +424,15 @@ export function FilterDropdown({
         type='button'
         onClick={() => setOpen((o) => !o)}
         className={clsx(
-          'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all',
-          isActive
-            ? filterColorMap[color]
-            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50',
+          'flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+          isActive ? cm.active : 'text-[#6A3A1A]',
         )}
+        style={isActive
+          ? { background: 'linear-gradient(135deg, #FFF4EE, #FFE6D2)', border: '2px solid #FFB87A', boxShadow: '0 2px 8px rgba(244,82,30,0.15)' }
+          : { background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', border: '2px solid #FFD0B0', boxShadow: '0 1px 4px rgba(244,82,30,0.06)' }
+        }
       >
-        <Filter className='w-3.5 h-3.5' />
+        <Filter className='w-3.5 h-3.5' style={{ color: isActive ? cm.dot : '#C09070' }} />
         <span>{isActive ? selected?.label : label}</span>
         {isActive ? (
           <span
@@ -377,17 +442,18 @@ export function FilterDropdown({
             <X className='w-3 h-3' />
           </span>
         ) : (
-          <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
+          <ChevronDown className={clsx('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} style={{ color: '#C09070' }} />
         )}
       </button>
 
       {open && (
-        <div className='absolute top-full left-0 mt-1.5 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden'>
-          <div className='p-1 max-h-72 overflow-y-auto'>
+        <div className='absolute top-full left-0 mt-1.5 w-52 rounded-2xl z-20 overflow-hidden'
+          style={{ background: 'white', border: '1.5px solid #FFD0B0', boxShadow: '0 8px 32px rgba(244,82,30,0.14), 0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div className='p-1.5 max-h-72 overflow-y-auto'>
             <button
               type='button'
               onClick={() => { onChange(''); setOpen(false); }}
-              className='w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 rounded-lg transition'
+              className='w-full text-left px-3 py-2 text-sm text-[#9A6A50] hover:bg-[#FFF4EE] rounded-xl transition'
             >
               All {label.toLowerCase()}
             </button>
@@ -396,16 +462,17 @@ export function FilterDropdown({
                 key={opt.value}
                 type='button'
                 onClick={() => { onChange(opt.value); setOpen(false); }}
-                className={clsx(
-                  'w-full text-left px-3 py-2 text-sm rounded-lg transition flex items-center justify-between',
-                  value === opt.value
-                    ? 'bg-[#FFF0E8] text-[#F4521E] font-medium'
-                    : 'text-gray-700 hover:bg-gray-50',
-                )}
+                className='w-full text-left px-3 py-2 text-sm rounded-xl transition flex items-center justify-between'
+                style={value === opt.value
+                  ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#F4521E', fontWeight: 600 }
+                  : { color: '#1A0F00' }
+                }
+                onMouseEnter={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = '#FFF8F4'; }}
+                onMouseLeave={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = ''; }}
               >
                 <span className='truncate'>{opt.label}</span>
                 {value === opt.value && (
-                  <span className='w-1.5 h-1.5 rounded-full bg-[#F4521E] shrink-0 ml-2' />
+                  <span className='w-1.5 h-1.5 rounded-full shrink-0 ml-2' style={{ background: '#F4521E' }} />
                 )}
               </button>
             ))}
@@ -419,9 +486,10 @@ export function FilterDropdown({
 // ── Active filter pill ───────────────────────────────────────────────────
 export function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className='inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFF0E8] border border-[#FFD0B0] text-[#F4521E] text-xs font-medium'>
+    <span className='inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold'
+      style={{ background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', border: '1.5px solid #FFB87A', color: '#E8470A' }}>
       {label}
-      <button type='button' onClick={onRemove} className='hover:text-[#9B2D0A] transition'>
+      <button type='button' onClick={onRemove} className='hover:opacity-70 transition'>
         <X className='w-3 h-3' />
       </button>
     </span>
@@ -434,7 +502,18 @@ export function ClearFiltersButton({ onClick }: { onClick: () => void }) {
     <button
       type='button'
       onClick={onClick}
-      className='flex items-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition font-medium'
+      className='flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all duration-200'
+      style={{ color: '#7A5C44', border: '1.5px solid #FFD0B0', background: 'white' }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.color = '#EF4444';
+        (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
+        (e.currentTarget as HTMLElement).style.borderColor = '#FECACA';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.color = '#7A5C44';
+        (e.currentTarget as HTMLElement).style.background = 'white';
+        (e.currentTarget as HTMLElement).style.borderColor = '#FFD0B0';
+      }}
     >
       <X className='w-3.5 h-3.5' />
       Clear all

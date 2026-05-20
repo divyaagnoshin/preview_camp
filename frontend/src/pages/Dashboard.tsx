@@ -40,7 +40,7 @@ export default function DashboardPage() {
       {/* Welcome header */}
       <div className='flex items-center justify-between flex-wrap gap-4'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'},{' '}
             <span style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               {user?.firstName}

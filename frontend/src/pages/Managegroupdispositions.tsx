@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, PageLoader, SearchInput, Input, Select, Modal } from '../components/ui';
 import { ArrowLeft, Plus, Tag, X, Save } from 'lucide-react';
@@ -45,20 +45,36 @@ export default function ManageGroupDispositions({ group, onBack }: Props) {
   const attachedCodes: any[] = data?.data || [];
   const availableCodes: any[] = availData?.data || [];
 
-  // ── selection state: tracks the desired attachments for this group ──
+  // ── optimistic local pool ─────────────────────────────────────
+  // Codes created this session are pushed here immediately on API success
+  // so they show up in the Available pane right away, before the refetch
+  // resolves. Once the server refetch includes the code, the Map merge
+  // below means the server entry takes over (same id = same key).
+  const [localCodes, setLocalCodes] = useState<any[]>([]);
+
+  // ── selection state ───────────────────────────────────────────
+  // Seeded once per group from the server's attached list.
+  // Must NOT re-seed on refetch — that would clobber in-flight picks
+  // and flip dirty back to false.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const seededFor = useRef<string | null>(null);
 
   useEffect(() => {
+    if (isLoading) return;
+    if (seededFor.current === group.id) return;
     setSelectedIds(attachedCodes.map((c) => c.id));
-  }, [data, group.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    seededFor.current = group.id;
+  }, [isLoading, attachedCodes, group.id]);
 
-  // ── full pool: attached + available (keyed by id) ─────────────
+  // ── full pool: server codes + locally created (keyed by id) ───
   const codeById = useMemo(() => {
     const m = new Map<string, any>();
     attachedCodes.forEach((c) => m.set(c.id, c));
     availableCodes.forEach((c) => m.set(c.id, c));
+    // localCodes fills the gap before refetch — skipped once server has it
+    localCodes.forEach((c) => { if (!m.has(c.id)) m.set(c.id, c); });
     return m;
-  }, [attachedCodes, availableCodes]);
+  }, [attachedCodes, availableCodes, localCodes]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -131,10 +147,17 @@ export default function ManageGroupDispositions({ group, onBack }: Props) {
         display_order: form.display_order !== '' ? parseInt(form.display_order) : 99,
       }),
     onSuccess: (created: any) => {
-      qc.invalidateQueries({ queryKey: ['disposition-group-codes', group.id] });
+      // 1. Push the new code into localCodes immediately so it appears in
+      //    the Available pane right away (before refetch resolves).
+      if (created?.id) {
+        setLocalCodes((prev) =>
+          prev.find((c) => c.id === created.id) ? prev : [...prev, created],
+        );
+      }
+      // 2. Refresh the available pool from the server.
+      //    Do NOT invalidate disposition-group-codes — that would re-seed
+      //    selectedIds and reset dirty to false.
       qc.invalidateQueries({ queryKey: ['disposition-codes-available', group.id] });
-      if (created?.id)
-        setSelectedIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
       setShowCreate(false);
       setForm({ ...blank });
     },
@@ -172,10 +195,7 @@ export default function ManageGroupDispositions({ group, onBack }: Props) {
                 Disposition Groups
               </span>
               <span>/</span>
-              <span
-                className='cursor-pointer hover:text-[#F4521E] transition'
-                onClick={onBack}
-              >
+              <span className='cursor-pointer hover:text-[#F4521E] transition' onClick={onBack}>
                 {group.name}
               </span>
               <span>/</span>
@@ -377,12 +397,6 @@ export default function ManageGroupDispositions({ group, onBack }: Props) {
             />
           )}
           <div className='grid grid-cols-2 gap-3'>
-            {/* <Input
-              label='Display Order'
-              type='number'
-              value={form.display_order}
-              onChange={(e) => setField('display_order', e.target.value)}
-            /> */}
             <div>
               <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>Notes</label>
               <label className='flex items-center gap-2 text-sm text-gray-700 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'>

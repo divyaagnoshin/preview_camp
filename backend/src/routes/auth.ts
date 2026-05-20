@@ -27,6 +27,11 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) throw new AppError(401, 'Invalid credentials');
 
+    // Agent workflow has been removed from the product; existing rows in the
+    // users table with role='agent' must not be able to obtain a token.
+    if (user.role === 'agent')
+      throw new AppError(403, 'Agent accounts are no longer supported on this instance');
+
     const secret = process.env.JWT_SECRET || 'dev-secret';
     const expiresIn = (process.env.JWT_EXPIRES_IN || '8h') as `${number}${'s'|'m'|'h'|'d'}`;
     const token = jwt.sign(

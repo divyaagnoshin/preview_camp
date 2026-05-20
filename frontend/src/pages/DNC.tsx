@@ -26,7 +26,10 @@ import {
   ArrowLeft,
   List,
   Hash,
+  AlertCircle,
+  X,
 } from 'lucide-react';
+import { deleteAllDncNumbers, deleteDncNumbersBulk } from '../api/client';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -85,9 +88,6 @@ type View =
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function DNCPage() {
-  // Callers (e.g. the Campaign Detail "View Group" button) can deep-link to a
-  // specific group's lists view by passing the group object via location state.
-  // Without state we land on the top-level groups list as before.
   const location = useLocation();
   const initialGroup = (location.state as any)?.group;
   const [view, setView] = useState<View>(
@@ -176,9 +176,9 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
 
   return (
     <div className='p-6 space-y-5'>
-      <div className='flex items-center justify-between'>
+      <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             DNC Management
           </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
@@ -193,7 +193,7 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
       </div>
 
       {allGroups.length > 0 && (
-        <div className='flex items-center gap-3 flex-wrap'>
+        <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search groups…' />
         </div>
       )}
@@ -226,15 +226,13 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
               {
                 header: 'Lists',
                 render: (r: any) => (
-                  <span className='font-medium text-indigo-600'>{r.list_count ?? 0}</span>
+                  <span className='font-medium text-[#1A0F00]'>{r.list_count ?? 0}</span>
                 ),
               },
               {
                 header: 'Total Numbers',
                 render: (r: any) => (
-                  <span className='font-medium text-red-600'>
-                    {r.number_count?.toLocaleString() ?? 0}
-                  </span>
+                  <span className='dnc-pill'>{r.number_count?.toLocaleString() ?? 0}</span>
                 ),
               },
               {
@@ -245,14 +243,6 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
                 header: 'Actions',
                 render: (r: any) => (
                   <div className='flex items-center gap-1' onClick={(e) => e.stopPropagation()}>
-                    {/* <Button
-                      size='sm'
-                      variant='secondary'
-                      icon={<List className='w-3.5 h-3.5' />}
-                      onClick={() => onOpenGroup(r)}
-                    >
-                      View Lists
-                    </Button> */}
                     <button
                       onClick={() => openEdit(r)}
                       title='Edit group'
@@ -454,7 +444,7 @@ function DncListsView({
             <span>/</span>
             <span className='text-gray-600 font-medium'>{group.name}</span>
           </div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             {group.name}
           </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
@@ -470,7 +460,7 @@ function DncListsView({
 
       {allLists.length > 0 && (
         <div className='space-y-3'>
-          <div className='flex items-center gap-3 flex-wrap'>
+          <div className='filter-bar'>
             <SearchInput value={search} onChange={setSearch} placeholder='Search lists…' />
             <FilterDropdown
               label='Source'
@@ -480,8 +470,6 @@ function DncListsView({
               options={[
                 { value: 'manual', label: 'Manual' },
                 { value: 'import', label: 'Import' },
-                { value: 'agent_disposition', label: 'Agent Disposition' },
-                { value: 'campaign_specific', label: 'Campaign Specific' },
               ]}
             />
             {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
@@ -531,11 +519,18 @@ function DncListsView({
               },
               {
                 header: 'Phone Numbers',
-                render: (r: any) => (
-                  <span className='font-medium text-red-600'>
-                    {r.number_count?.toLocaleString() ?? 0}
-                  </span>
-                ),
+                render: (r: any, idx?: number) => {
+                  const isEven = !!(idx !== undefined && idx % 2 === 0);
+                  return (
+                    <span className='inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold'
+                      style={isEven
+                        ? { background: 'linear-gradient(135deg,#FEF2F2,#FEE2E2)', color: '#991B1B', border: '1px solid #FECACA' }
+                        : { background: 'linear-gradient(135deg,#FFF7ED,#FFEDD5)', color: '#C2410C', border: '1px solid #FED7AA' }
+                      }>
+                      {r.number_count?.toLocaleString() ?? 0}
+                    </span>
+                  );
+                },
               },
               {
                 header: 'Created',
@@ -545,14 +540,6 @@ function DncListsView({
                 header: 'Actions',
                 render: (r: any) => (
                   <div className='flex items-center gap-1' onClick={(e) => e.stopPropagation()}>
-                    {/* <Button
-                      size='sm'
-                      variant='secondary'
-                      icon={<Hash className='w-3.5 h-3.5' />}
-                      onClick={() => onOpenList(r)}
-                    >
-                      View Numbers
-                    </Button> */}
                     <button
                       onClick={() => openEdit(r)}
                       title='Edit list'
@@ -589,7 +576,6 @@ function DncListsView({
             onChange={(e) => setListName(e.target.value)}
             placeholder='e.g. TRAI_JAN_2026'
           />
-          
           <p className='text-xs text-gray-400'>
             After creating the list you can add or import phone numbers into it.
           </p>
@@ -625,8 +611,6 @@ function DncListsView({
             >
               <option value='manual'>Manual</option>
               <option value='import'>Import</option>
-              <option value='agent_disposition'>Agent Disposition</option>
-              <option value='campaign_specific'>Campaign Specific</option>
             </select>
           </div>
           {editMut.isError && (
@@ -696,12 +680,8 @@ function DncNumbersView({
 
   // ── Add numbers modal ─────────────────────────────────────────────────────
   const [showAddNumbers, setShowAddNumbers] = useState(false);
-  // 'single' = one phone input field (like Contact List single mode)
-  // 'bulk'   = spreadsheet-style grid (like Contact List bulk mode)
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
-  // Single mode
   const [singlePhone, setSinglePhone] = useState('');
-  // Bulk mode — each row is { phone_number: string }
   const [bulkRows, setBulkRows] = useState<{ phone_number: string }[]>([
     { phone_number: '' },
     { phone_number: '' },
@@ -711,16 +691,22 @@ function DncNumbersView({
     done: number; failed: number; total: number;
     errors: { row: number; error: string }[];
   } | null>(null);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvNumbers, setCsvNumbers] = useState<string[]>([]);
-  const [csvError, setCsvError] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
 
-  // ── Header CSV upload (mirrors ContactList's Upload CSV button) ───────────
+  // ── Header CSV upload ─────────────────────────────────────────────────────
   const [headerUploadStatus, setHeaderUploadStatus] = useState<string | null>(null);
 
-  // ── Delete ────────────────────────────────────────────────────────────────
+  // ── Delete single ─────────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
+
+  // ── Delete selected (bulk checkbox) ──────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [showDeleteSelected, setShowDeleteSelected] = useState(false);
+  const anySelected = selectedIds.size > 0;
+
+  // ── Delete all ────────────────────────────────────────────────────────────
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
 
   // ── Edit ──────────────────────────────────────────────────────────────────
   const [editTarget, setEditTarget] = useState<any>(null);
@@ -762,7 +748,7 @@ function DncNumbersView({
   const hasActiveFilters = !!(search || filterReason);
   const clearAll = () => { setSearch(''); setFilterReason(''); };
 
-  // Derive last-added date — handles ISO strings, epoch ms numbers, and null
+  // Derive last-added date
   const lastAddedDate = numbers.length
     ? numbers.reduce((latest: string | null, r: any) => {
         const raw = r.created_at ?? r.added_at;
@@ -774,6 +760,35 @@ function DncNumbersView({
       }, null)
     : null;
 
+  // ── Select helpers ────────────────────────────────────────────────────────
+  const allOnPageSelected =
+    filteredNumbers.length > 0 &&
+    filteredNumbers.every((n) => selectedIds.has(n.id));
+
+  const toggleSelectAll = () => {
+    if (allOnPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredNumbers.forEach((n) => next.delete(n.id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        filteredNumbers.forEach((n) => next.add(n.id));
+        return next;
+      });
+    }
+  };
+
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
   // ── Reset modal ───────────────────────────────────────────────────────────
   const resetAddModal = () => {
     setShowAddNumbers(false);
@@ -781,13 +796,10 @@ function DncNumbersView({
     setSinglePhone('');
     setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
     setBulkProgress(null);
-    setCsvFile(null);
-    setCsvNumbers([]);
-    setCsvError('');
     setUploadStatus('');
   };
 
-  // ── Header "Upload CSV" button handler (like ContactListDetailPage) ───────
+  // ── Header "Upload CSV" handler ───────────────────────────────────────────
   const handleHeaderCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -843,7 +855,7 @@ function DncNumbersView({
     },
   });
 
-  // ── Bulk add mutation — submits each non-empty row sequentially ───────────
+  // ── Bulk add mutation ─────────────────────────────────────────────────────
   const bulkMut = useMutation({
     mutationFn: async () => {
       const candidates = bulkRows
@@ -871,7 +883,7 @@ function DncNumbersView({
       qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
       qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
       qc.invalidateQueries({ queryKey: ['dnc-groups'] });
-       resetAddModal();
+      resetAddModal();
     },
   });
 
@@ -893,7 +905,7 @@ function DncNumbersView({
     },
   });
 
-  // ── Delete number mutation ────────────────────────────────────────────────
+  // ── Delete single mutation ────────────────────────────────────────────────
   const deleteNumMut = useMutation({
     mutationFn: (numberId: string) =>
       api.delete(`/dnc-numbers/${numberId}`).then((r) => r.data),
@@ -905,11 +917,76 @@ function DncNumbersView({
     },
   });
 
+  // ── Delete selected mutation — loops through selected IDs sequentially ────
+  const deleteSelectedMut = useMutation({
+    mutationFn: () => deleteDncNumbersBulk(list.id, Array.from(selectedIds)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+      setShowDeleteSelected(false);
+      setSelectedIds(new Set());
+    },
+    onError: () => {
+      // Fallback: loop delete if bulk-delete endpoint not yet available
+      deleteSelectedFallback();
+    },
+  });
+
+  // Fallback sequential delete when no bulk endpoint exists on backend yet
+  const deleteSelectedFallback = async () => {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await api.delete(`/dnc-numbers/${id}`);
+      } catch {
+        // continue on individual failures
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
+    qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+    setShowDeleteSelected(false);
+    setSelectedIds(new Set());
+  };
+
+  // ── Delete all mutation ───────────────────────────────────────────────────
+  const deleteAllMut = useMutation({
+    mutationFn: () => deleteAllDncNumbers(list.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+      setShowDeleteAll(false);
+      setSelectedIds(new Set());
+    },
+    onError: () => {
+      // Fallback: loop delete all
+      deleteAllFallback();
+    },
+  });
+
+  // Fallback sequential delete-all when no endpoint exists yet
+  const deleteAllFallback = async () => {
+    for (const num of numbers) {
+      try {
+        await api.delete(`/dnc-numbers/${num.id}`);
+      } catch {
+        // continue
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
+    qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+    setShowDeleteAll(false);
+    setSelectedIds(new Set());
+  };
+
   if (isLoading) return <PageLoader />;
 
   return (
     <div className='p-6 space-y-5'>
-      {/* Header — mirrors ContactListDetailPage layout */}
+      {/* Header */}
       <div className='flex items-center gap-3'>
         <button onClick={onBack} className='p-1.5 hover:bg-gray-100 rounded-lg transition'>
           <ArrowLeft className='w-4 h-4 text-gray-500' />
@@ -924,7 +1001,7 @@ function DncNumbersView({
             <span>/</span>
             <span className='text-gray-600 font-medium'>{list.name}</span>
           </div>
-          <h1 className='text-2xl font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             {list.name}
           </h1>
           {list.source && (
@@ -934,8 +1011,8 @@ function DncNumbersView({
           )}
         </div>
 
-        {/* Action buttons — same pattern as ContactListDetailPage */}
-        <div className='flex gap-2'>
+        {/* Action buttons */}
+        <div className='flex items-center gap-2 flex-wrap justify-end'>
           <Button
             variant='secondary'
             icon={<Upload className='w-4 h-4' />}
@@ -962,7 +1039,7 @@ function DncNumbersView({
       {/* Header CSV upload status banner */}
       {headerUploadStatus && (
         <div
-          className={`p-3 rounded-lg text-sm ${
+          className={`p-3 rounded-lg text-sm flex items-center justify-between ${
             headerUploadStatus.startsWith('✓')
               ? 'bg-green-50 text-green-700'
               : headerUploadStatus.startsWith('⚠')
@@ -970,26 +1047,23 @@ function DncNumbersView({
                 : 'bg-red-50 text-red-700'
           }`}
         >
-          {headerUploadStatus}
+          <span>{headerUploadStatus}</span>
+          <button onClick={() => setHeaderUploadStatus(null)} className='ml-2 opacity-60 hover:opacity-100'>
+            <X className='w-4 h-4' />
+          </button>
         </div>
       )}
 
       {/* Stat cards */}
       <div className='grid grid-cols-2 gap-4'>
-        <StatCard
-          label='Total Numbers'
-          value={totalNumbers.toLocaleString()}
-        />
-        <StatCard
-          label='Last Added'
-          value={formatDateTime(lastAddedDate)}
-        />
+        <StatCard label='Total Numbers' value={totalNumbers.toLocaleString()} color='red' />
+        <StatCard label='Last Added' value={formatDateTime(lastAddedDate)} color='orange' />
       </div>
 
       {/* Search / filter bar */}
       {numbers.length > 0 && (
         <div className='space-y-3'>
-          <div className='flex items-center gap-3 flex-wrap'>
+          <div className='filter-bar'>
             <SearchInput value={search} onChange={setSearch} placeholder='Search phone numbers…' />
             <FilterDropdown
               label='Reason'
@@ -999,8 +1073,6 @@ function DncNumbersView({
               options={[
                 { value: 'manual', label: 'Manual' },
                 { value: 'import', label: 'Import' },
-                { value: 'agent_disposition', label: 'Agent Disposition' },
-                { value: 'campaign_specific', label: 'Campaign Specific' },
               ]}
             />
             {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
@@ -1022,6 +1094,36 @@ function DncNumbersView({
 
       {/* Numbers table */}
       <Card>
+        {/* Toolbar — shown when there are numbers */}
+        {numbers.length > 0 && (
+          <div className='flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-wrap'>
+            <div className='flex items-center gap-3 flex-1 min-w-0'>
+              <h3 className='font-semibold text-gray-900 text-sm whitespace-nowrap'>
+                Numbers ({totalNumbers})
+              </h3>
+            </div>
+            <div className='flex items-center gap-2'>
+              {anySelected && (
+                <button
+                  onClick={() => setShowDeleteSelected(true)}
+                  className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 transition'
+                >
+                  <Trash2 className='w-3.5 h-3.5' />
+                  Delete Selected ({selectedIds.size})
+                </button>
+              )}
+              <button
+                onClick={() => setShowDeleteAll(true)}
+                disabled={totalNumbers === 0}
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed'
+              >
+                <Trash2 className='w-3.5 h-3.5' />
+                Delete All
+              </button>
+            </div>
+          </div>
+        )}
+
         {numbers.length === 0 ? (
           <EmptyState
             title='No numbers in this list'
@@ -1035,69 +1137,111 @@ function DncNumbersView({
         ) : filteredNumbers.length === 0 ? (
           <EmptyState title='No matches' description='Try adjusting or clearing the filters above.' />
         ) : (
-          <Table
-            cols={[
-              {
-                header: 'Phone Number',
-                render: (r: any) => (
-                  <span className='font-mono font-medium text-gray-900'>{r.phone_number}</span>
-                ),
-              },
-              {
-                header: 'Added Reason',
-                render: (r: any) => {
+          <div className='overflow-x-auto'>
+            <table className='w-full text-sm'>
+              <thead>
+                <tr className='border-b border-gray-100 bg-gray-50/50'>
+                  {/* Checkbox column header */}
+                  <th className='w-10 px-4 py-2.5 text-left'>
+                    {anySelected && (
+                      <input
+                        type='checkbox'
+                        checked={allOnPageSelected}
+                        onChange={toggleSelectAll}
+                        className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer'
+                        title='Select / deselect all visible'
+                      />
+                    )}
+                  </th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                    Phone Number
+                  </th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                    Added Reason
+                  </th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                    Added
+                  </th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-gray-50'>
+                {filteredNumbers.map((r) => {
+                  const isSelected = selectedIds.has(r.id);
+                  const isHovered = hoveredId === r.id;
+                  const checkboxVisible = anySelected || isHovered;
                   const reason = r.added_reason || '—';
-                  const styles: Record<string, string> = {
+                  const reasonStyles: Record<string, string> = {
                     manual: 'bg-blue-50 text-blue-700',
                     import: 'bg-purple-50 text-purple-700',
                     agent_disposition: 'bg-amber-50 text-amber-700',
                     campaign_specific: 'bg-green-50 text-green-700',
                   };
-                  const cls = styles[reason] ?? 'bg-gray-100 text-gray-600';
+                  const reasonCls = reasonStyles[reason] ?? 'bg-gray-100 text-gray-600';
+
                   return (
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${cls}`}>
-                      {reason.replace(/_/g, ' ')}
-                    </span>
+                    <tr
+                      key={r.id}
+                      onMouseEnter={() => setHoveredId(r.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      className={`transition-colors ${
+                        isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''
+                      }`}
+                    >
+                      {/* Checkbox cell */}
+                      <td className='px-4 py-2.5 w-10'>
+                        {checkboxVisible ? (
+                          <input
+                            type='checkbox'
+                            checked={isSelected}
+                            onChange={() => toggleOne(r.id)}
+                            className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer'
+                          />
+                        ) : (
+                          <span className='inline-block w-4 h-4' />
+                        )}
+                      </td>
+                      <td className='px-4 py-2.5'>
+                        <span className='font-mono font-medium text-gray-900'>{r.phone_number}</span>
+                      </td>
+                      <td className='px-4 py-2.5'>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${reasonCls}`}>
+                          {reason.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className='px-4 py-2.5'>
+                        <span className='text-sm text-gray-600'>{formatDate(r.added_at)}</span>
+                      </td>
+                      <td className='px-4 py-2.5'>
+                        <div className='flex items-center gap-2' onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => openEdit(r)}
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                          >
+                            <Pencil className='w-3 h-3' />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(r)}
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                          >
+                            <Trash2 className='w-3 h-3' />
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
-                },
-              },
-              {
-                header: 'Added',
-                render: (r: any) => (
-                  <span className='text-sm text-gray-600'>{formatDate(r.added_at)}</span>
-                ),
-              },
-              {
-                header: 'Actions',
-                render: (r: any) => (
-                  <div className='flex items-center gap-2' onClick={(e) => e.stopPropagation()}>
-                    <button
-                      onClick={() => openEdit(r)}
-                      title='Edit number'
-                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
-                    >
-                      <Pencil className='w-3 h-3' />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(r)}
-                      title='Remove number'
-                      className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
-                    >
-                      <Trash2 className='w-3 h-3' />
-                      Delete
-                    </button>
-                  </div>
-                ),
-              },
-            ]}
-            rows={filteredNumbers}
-            keyFn={(r: any) => r.id}
-          />
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
-      {/* Add Numbers modal — matches Contact List "Add Contact" UI exactly */}
+      {/* ── Add Numbers modal ────────────────────────────────────────────────── */}
       <Modal
         title='Add Numbers'
         open={showAddNumbers}
@@ -1105,7 +1249,6 @@ function DncNumbersView({
         size={addMode === 'bulk' ? 'xl' : 'lg'}
       >
         <div className='space-y-4'>
-          {/* Mode selector — identical <select> pattern to Contact List */}
           <div className='flex items-center gap-3'>
             <label className='text-xs text-gray-500'>Mode</label>
             <select
@@ -1115,9 +1258,6 @@ function DncNumbersView({
                 setSinglePhone('');
                 setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
                 setBulkProgress(null);
-                setCsvFile(null);
-                setCsvNumbers([]);
-                setCsvError('');
                 setUploadStatus('');
               }}
               className='border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
@@ -1127,7 +1267,6 @@ function DncNumbersView({
             </select>
           </div>
 
-          {/* ── Single mode ── */}
           {addMode === 'single' && (
             <div className='space-y-3'>
               <Input
@@ -1149,7 +1288,6 @@ function DncNumbersView({
             </div>
           )}
 
-          {/* ── Bulk mode — spreadsheet grid identical to BulkGrid in ContactList ── */}
           {addMode === 'bulk' && (
             <DncBulkGrid
               rows={bulkRows}
@@ -1159,7 +1297,6 @@ function DncNumbersView({
             />
           )}
 
-          {/* Footer buttons */}
           <div className='flex gap-3 pt-2 border-t border-gray-100'>
             <Button variant='secondary' className='flex-1' onClick={resetAddModal}>
               Cancel
@@ -1189,34 +1326,156 @@ function DncNumbersView({
         </div>
       </Modal>
 
-      {/* Delete confirmation */}
-      <Modal title='Remove Number?' open={!!deleteTarget} onClose={() => setDeleteTarget(null)} size='sm'>
-        <div className='space-y-4'>
-          <p className='text-sm text-gray-600'>
-            Remove{' '}
-            <span className='font-mono font-medium text-gray-900'>{deleteTarget?.phone_number}</span>{' '}
-            from this list? It can be re-added later.
-          </p>
-          {deleteNumMut.isError && (
-            <p className='text-xs text-red-500'>
-              {(deleteNumMut.error as any)?.response?.data?.error || 'Delete failed'}
-            </p>
-          )}
-          <div className='flex gap-3'>
-            <Button variant='secondary' className='flex-1' onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button
-              variant='danger'
-              className='flex-1'
-              loading={deleteNumMut.isPending}
-              onClick={() => deleteTarget && deleteNumMut.mutate(deleteTarget.id)}
-            >
-              Remove
-            </Button>
+      {/* ── Delete single confirmation ───────────────────────────────────────── */}
+      {deleteTarget && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Remove Number</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button
+                onClick={() => { setDeleteTarget(null); deleteNumMut.reset(); }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <div className='p-5 space-y-4'>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Remove <span className='font-mono'>{deleteTarget.phone_number}</span> from this list?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1'>This number will be permanently removed from the DNC list.</p>
+                </div>
+              </div>
+              {deleteNumMut.isError && (
+                <p className='text-xs text-red-600'>Delete failed. Please try again.</p>
+              )}
+            </div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button variant='secondary' onClick={() => { setDeleteTarget(null); deleteNumMut.reset(); }}>
+                Cancel
+              </Button>
+              <Button
+                loading={deleteNumMut.isPending}
+                onClick={() => deleteNumMut.mutate(deleteTarget.id)}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Remove Number
+              </Button>
+            </div>
           </div>
         </div>
-      </Modal>
+      )}
 
-      {/* Edit number */}
+      {/* ── Delete selected confirmation ─────────────────────────────────────── */}
+      {showDeleteSelected && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete Selected Numbers</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button
+                onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <div className='p-5 space-y-4'>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete {selectedIds.size} selected number{selectedIds.size !== 1 ? 's' : ''}?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1'>
+                    These numbers will be permanently removed from the DNC list.
+                  </p>
+                </div>
+              </div>
+              {deleteSelectedMut.isError && (
+                <p className='text-xs text-red-600'>Delete failed. Please try again.</p>
+              )}
+            </div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button
+                variant='secondary'
+                onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteSelectedMut.isPending}
+                onClick={() => deleteSelectedMut.mutate()}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete {selectedIds.size} Number{selectedIds.size !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete all confirmation ──────────────────────────────────────────── */}
+      {showDeleteAll && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete All Numbers</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button
+                onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <div className='p-5 space-y-4'>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete all {totalNumbers.toLocaleString()} number{totalNumbers !== 1 ? 's' : ''} from this list?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1 leading-relaxed'>
+                    Every number in <strong>{list.name}</strong> will be permanently deleted.
+                    The list itself will remain.
+                  </p>
+                </div>
+              </div>
+              {deleteAllMut.isError && (
+                <p className='text-xs text-red-600'>Delete failed. Please try again.</p>
+              )}
+            </div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button
+                variant='secondary'
+                onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteAllMut.isPending}
+                onClick={() => deleteAllMut.mutate()}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete All Numbers
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit number modal ────────────────────────────────────────────────── */}
       <Modal title='Edit DNC Number' open={!!editTarget} onClose={resetEdit} size='sm'>
         <div className='space-y-4'>
           <Input
@@ -1227,23 +1486,6 @@ function DncNumbersView({
             required
             autoFocus
           />
-         {/*  <Select
-            label='Added Reason'
-            value={editReason}
-            onChange={(e) => setEditReason(e.target.value)}
-            options={[
-              { value: 'manual', label: 'Manual' },
-              { value: 'import', label: 'Import' },
-              { value: 'agent_disposition', label: 'Agent Disposition' },
-              { value: 'campaign_specific', label: 'Campaign Specific' },
-            ]}
-          />
-          <Input
-            label='Notes (optional)'
-            value={editNotes}
-            onChange={(e) => setEditNotes(e.target.value)}
-            placeholder='Why is this number on DNC?'
-          /> */}
           {editNumMut.isError && (
             <p className='text-xs text-red-500'>
               {(editNumMut.error as any)?.response?.data?.error || 'Save failed'}
@@ -1266,7 +1508,7 @@ function DncNumbersView({
   );
 }
 
-// ── Spreadsheet-style bulk grid for DNC numbers (mirrors BulkGrid in ContactList) ──
+// ── Spreadsheet-style bulk grid for DNC numbers ───────────────────────────────
 function DncBulkGrid({
   rows,
   setRows,

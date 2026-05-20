@@ -196,6 +196,30 @@ CREATE TABLE IF NOT EXISTS campaigns (
 CREATE INDEX IF NOT EXISTS idx_campaigns_org    ON campaigns(org_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
 
+-- ── SYSTEM CONFIG ─────────────────────────────────────────
+-- Per-organisation singleton. Drives the backend-injector cadence and the
+-- Time Guard that restricts schedule_windows to permitted hours.
+CREATE TABLE IF NOT EXISTS system_config (
+  org_id              UUID        PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
+  inject_poll_minutes INT         NOT NULL DEFAULT 5,
+  last_injected_at    TIMESTAMPTZ,
+  time_guard_enabled  BOOLEAN     NOT NULL DEFAULT TRUE,
+  time_guard_windows  JSONB       NOT NULL DEFAULT jsonb_build_object(
+    '0', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '1', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '2', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '3', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '4', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '5', jsonb_build_object('start', '00:00', 'end', '23:00'),
+    '6', jsonb_build_object('start', '00:00', 'end', '23:00')
+  ),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_config_due
+  ON system_config (last_injected_at NULLS FIRST);
+
 -- ── CAMPAIGN JUNCTIONS ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS campaign_contact_lists (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -264,7 +288,7 @@ CREATE TABLE IF NOT EXISTS campaign_jobs (
   id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_id         UUID        NOT NULL REFERENCES campaigns(id),
   job_run_number      INT         NOT NULL DEFAULT 1,
-  status              TEXT        NOT NULL DEFAULT 'active', -- active | completed | stopped
+  status              TEXT        NOT NULL DEFAULT 'active', -- preparing | active | completed | stopped
   start_time          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   end_time            TIMESTAMPTZ,
   total_contacts      INT         NOT NULL DEFAULT 0,
@@ -445,7 +469,7 @@ DECLARE
 BEGIN
   FOR tbl IN SELECT unnest(ARRAY[
     'organizations','users','contact_lists','contacts',
-    'campaigns','campaign_contact_status'
+    'campaigns','campaign_contact_status','system_config'
   ]) LOOP
     EXECUTE format(
       'CREATE TRIGGER trg_updated_at BEFORE UPDATE ON %I
