@@ -185,41 +185,94 @@ router.get(
   '/:id/contacts',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Accept page/per_page or page/page_size, plus optional search across
-      // phone_number / first_name / last_name / email.
       const page = parseInt(req.query.page as string) || 1;
+
       const perPage = Math.min(
         parseInt(
-          (req.query.per_page as string) || (req.query.page_size as string),
+          (req.query.per_page as string) ||
+            (req.query.page_size as string),
         ) || 50,
         200,
       );
+
       const offset = (page - 1) * perPage;
+
       const search = String(req.query.search || '').trim();
-      const searchClause = search ? `AND (
-        c.phone_number ILIKE $4 OR c.first_name ILIKE $4
-        OR c.last_name ILIKE $4 OR c.email ILIKE $4)` : '';
+
+      const searchClause = search
+        ? `AND (
+            c.phone_number ILIKE $4
+            OR c.first_name ILIKE $4
+            OR c.last_name ILIKE $4
+            OR c.email ILIKE $4
+          )`
+        : '';
+
       const params: any[] = [req.params.id, perPage, offset];
-      if (search) params.push(`%${search}%`);
+
+      if (search) {
+        params.push(`%${search}%`);
+      }
+
+      console.log(
+        '[contacts] fetching - list_id:',
+        req.params.id,
+        'page:',
+        page,
+        'perPage:',
+        perPage,
+        'search:',
+        search,
+      );
 
       const { rows } = await pool.query(
-        `SELECT c.*, u.first_name || ' ' || u.last_name AS assigned_agent_name
-       FROM contacts c
-       LEFT JOIN users u ON u.id = c.assigned_agent_id
-       WHERE c.contact_list_id = $1 ${searchClause}
-       ORDER BY c.priority ASC, c.created_at ASC
-       LIMIT $2 OFFSET $3`,
+        `
+        SELECT
+          c.*,
+          u.first_name || ' ' || u.last_name AS assigned_agent_name
+        FROM contacts c
+        LEFT JOIN users u
+          ON u.id = c.assigned_agent_id
+        WHERE c.contact_list_id = $1::uuid
+        ${searchClause}
+        ORDER BY c.priority ASC, c.created_at ASC
+        LIMIT $2 OFFSET $3
+        `,
         params,
       );
+
+      console.log('[contacts] rows fetched:', rows.length);
+
       const countParams: any[] = [req.params.id];
-      if (search) countParams.push(`%${search}%`);
+
+      if (search) {
+        countParams.push(`%${search}%`);
+      }
+
       const total = await pool.query(
-        `SELECT COUNT(*)::int FROM contacts c
-          WHERE c.contact_list_id = $1
-          ${search ? `AND (c.phone_number ILIKE $2 OR c.first_name ILIKE $2
-                          OR c.last_name ILIKE $2 OR c.email ILIKE $2)` : ''}`,
+        `
+        SELECT COUNT(*)::int
+        FROM contacts c
+        WHERE c.contact_list_id = $1::uuid
+        ${
+          search
+            ? `AND (
+                c.phone_number ILIKE $2
+                OR c.first_name ILIKE $2
+                OR c.last_name ILIKE $2
+                OR c.email ILIKE $2
+              )`
+            : ''
+        }
+        `,
         countParams,
       );
+
+      console.log(
+        '[contacts] total count:',
+        total.rows[0].count,
+      );
+
       res.json({
         data: rows,
         total: total.rows[0].count,
@@ -227,10 +280,12 @@ router.get(
         per_page: perPage,
       });
     } catch (err) {
+      console.error('[contacts] ERROR:', err);
       next(err);
     }
   },
 );
+
 
 // Shared purger — wipes operational state referencing the supplied contacts
 // then deletes them. Mirrors DELETE /contacts/:id semantics so dropping one

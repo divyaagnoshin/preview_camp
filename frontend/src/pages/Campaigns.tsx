@@ -67,59 +67,60 @@ function FilterDropdown({
   const selected = options.find((o) => o.value === value);
   const isActive = !!value;
 
-  const colorMap: Record<string, string> = {
-    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-    amber:  'bg-amber-50 border-amber-200 text-amber-700',
-    green:  'bg-green-50 border-green-200 text-green-700',
-    red:    'bg-red-50 border-red-200 text-red-700',
+  const colorMap: Record<string, { active: string; dot: string }> = {
+    indigo: { active: 'text-indigo-700', dot: '#6366F1' },
+    amber:  { active: 'text-amber-700',  dot: '#D97706' },
+    green:  { active: 'text-green-700',  dot: '#10B981' },
+    red:    { active: 'text-red-700',    dot: '#EF4444' },
   };
+  const cm = colorMap[color];
 
   return (
     <div ref={ref} className='relative'>
       <button
         onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
-          isActive
-            ? colorMap[color]
-            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-        }`}
+        className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive ? cm.active : 'text-[#6A3A1A]'}`}
+        style={isActive
+          ? { background: 'linear-gradient(135deg, #FFF4EE, #FFE6D2)', border: '2px solid #FFB87A', boxShadow: '0 2px 8px rgba(244,82,30,0.15)' }
+          : { background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', border: '2px solid #FFD0B0', boxShadow: '0 1px 4px rgba(244,82,30,0.06)' }
+        }
       >
-        <Filter className='w-3.5 h-3.5' />
+        <Filter className='w-3.5 h-3.5' style={{ color: isActive ? cm.dot : '#C09070' }} />
         <span>{isActive ? selected?.label : label}</span>
         {isActive ? (
-          <span
-            onClick={(e) => { e.stopPropagation(); onChange(''); }}
-            className='ml-0.5 hover:opacity-70'
-          >
+          <span onClick={(e) => { e.stopPropagation(); onChange(''); }} className='ml-0.5 hover:opacity-70'>
             <X className='w-3 h-3' />
           </span>
         ) : (
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: '#C09070' }} />
         )}
       </button>
 
       {open && (
-        <div className='absolute top-full left-0 mt-1.5 w-48 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden'>
-          <div className='p-1'>
+        <div className='absolute top-full left-0 mt-1.5 w-52 rounded-2xl z-20 overflow-hidden'
+          style={{ background: 'white', border: '1.5px solid #FFD0B0', boxShadow: '0 8px 32px rgba(244,82,30,0.14), 0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div className='p-1.5 max-h-72 overflow-y-auto'>
             <button
               onClick={() => { onChange(''); setOpen(false); }}
-              className='w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-50 rounded-lg transition'
+              className='w-full text-left px-3 py-2 text-sm text-[#9A6A50] hover:bg-[#FFF4EE] rounded-xl transition'
             >
-              All {label}s
+              All {label.toLowerCase()}s
             </button>
             {options.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => { onChange(opt.value); setOpen(false); }}
-                className={`w-full text-left px-3 py-2 text-sm rounded-lg transition flex items-center justify-between ${
-                  value === opt.value
-                    ? 'bg-indigo-50 text-indigo-700 font-medium'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
+                className='w-full text-left px-3 py-2 text-sm rounded-xl transition flex items-center justify-between'
+                style={value === opt.value
+                  ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#F4521E', fontWeight: 600 }
+                  : { color: '#1A0F00' }
+                }
+                onMouseEnter={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = '#FFF8F4'; }}
+                onMouseLeave={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = ''; }}
               >
-                {opt.label}
+                <span className='truncate'>{opt.label}</span>
                 {value === opt.value && (
-                  <span className='w-1.5 h-1.5 rounded-full bg-indigo-500' />
+                  <span className='w-1.5 h-1.5 rounded-full shrink-0 ml-2' style={{ background: '#F4521E' }} />
                 )}
               </button>
             ))}
@@ -133,16 +134,16 @@ function FilterDropdown({
 // ─── Active filter pill ───────────────────────────────────────────────────────
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className='inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium'>
+    <span className='inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold'
+      style={{ background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', border: '1.5px solid #FFB87A', color: '#E8470A' }}>
       {label}
-      <button onClick={onRemove} className='hover:text-indigo-900 transition'>
+      <button onClick={onRemove} className='hover:opacity-70 transition'>
         <X className='w-3 h-3' />
       </button>
     </span>
   );
 }
 
-// ─── Searchable dropdown component ───────────────────────────────────────────
 // ─── Searchable dropdown component ───────────────────────────────────────────
 function SearchableDropdown({
   label,
@@ -175,7 +176,7 @@ function SearchableDropdown({
 
   return (
     <div ref={ref} className='relative'>
-      <label className='block text-xs text-gray-500 mb-1'>{label}</label>
+      <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>{label}</label>
       <div className='relative'>
         <input
           type='text'
@@ -184,16 +185,17 @@ function SearchableDropdown({
           onFocus={() => { setQuery(''); setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder={selected ? selected.label : placeholder}
-          className='w-full border border-gray-200 rounded-lg pl-3 pr-8 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder:text-gray-400'
+          className='w-full border-2 border-[#FFD0B0] rounded-xl pl-3 pr-8 py-2.5 text-sm text-[#1A0F00] bg-white focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890] transition-all placeholder:text-[#B89070]'
         />
-        <ChevronDown className='w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none' />
+        <ChevronDown className='w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none' style={{ color: '#C09070' }} />
       </div>
 
       {open && (
-        <div className='absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden'>
-          <div className='max-h-52 overflow-y-auto p-1'>
+        <div className='absolute z-30 mt-1.5 w-full rounded-2xl overflow-hidden'
+          style={{ background: 'white', border: '1.5px solid #FFD0B0', boxShadow: '0 8px 32px rgba(244,82,30,0.14), 0 2px 8px rgba(0,0,0,0.06)' }}>
+          <div className='max-h-52 overflow-y-auto p-1.5'>
             {filtered.length === 0 ? (
-              <p className='px-3 py-2 text-xs text-gray-400'>No results found</p>
+              <p className='px-3 py-2 text-xs text-[#9A6A50]'>No results found</p>
             ) : (
               filtered.map((opt) => (
                 <button
@@ -205,17 +207,19 @@ function SearchableDropdown({
                     setOpen(false);
                     setQuery('');
                   }}
-                  className={`w-full text-left px-3 py-2 text-sm rounded-lg transition flex items-center justify-between ${
-                    value === opt.value
-                      ? 'bg-indigo-50 text-indigo-700 font-medium'
-                      : opt.value === ''
-                      ? 'text-gray-400 hover:bg-gray-50'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className='w-full text-left px-3 py-2 text-sm rounded-xl transition flex items-center justify-between'
+                  style={value === opt.value
+                    ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#F4521E', fontWeight: 600 }
+                    : opt.value === ''
+                    ? { color: '#9A6A50' }
+                    : { color: '#1A0F00' }
+                  }
+                  onMouseEnter={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = '#FFF8F4'; }}
+                  onMouseLeave={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = ''; }}
                 >
                   <span className='truncate'>{opt.label}</span>
                   {value === opt.value && opt.value !== '' && (
-                    <span className='w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0 ml-2' />
+                    <span className='w-1.5 h-1.5 rounded-full flex-shrink-0 ml-2' style={{ background: '#F4521E' }} />
                   )}
                 </button>
               ))
@@ -227,7 +231,7 @@ function SearchableDropdown({
   );
 }
 
-// ─── Searchable multi-select (checkbox list with search) ─────────────────────
+// ─── Searchable multi-select ──────────────────────────────────────────────────
 function SearchableMultiSelect({
   label,
   placeholder = 'Search…',
@@ -261,74 +265,73 @@ function SearchableMultiSelect({
 
   return (
     <div>
-      <label className='block text-xs text-gray-500 mb-1'>{label}</label>
-
-      {/* Search input */}
+      <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>{label}</label>
       <div className='relative mb-1.5'>
-        <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none' />
+        <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none' style={{ color: '#F4521E' }} />
         <input
           type='text'
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          className='w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder:text-gray-400'
+          className='w-full pl-9 pr-8 py-2.5 text-sm border-2 border-[#FFD0B0] rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890] transition-all placeholder:text-[#B89070]'
         />
         {query && (
           <button
             onClick={() => setQuery('')}
-            className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
+            className='absolute right-2.5 top-1/2 -translate-y-1/2 transition'
+            style={{ color: '#C09070' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#F4521E'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#C09070'; }}
           >
             <X className='w-3.5 h-3.5' />
           </button>
         )}
       </div>
-
-      {/* Checkbox list */}
-      <div className='border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-52 overflow-y-auto bg-white'>
+      <div className='border-2 border-[#FFD0B0] rounded-xl divide-y divide-[#FFF0E8] max-h-44 overflow-y-auto bg-white'>
         {items.length === 0 ? (
-          <p className='text-xs text-gray-400 p-3'>{emptyText}</p>
+          <p className='text-xs text-[#9A6A50] p-3'>{emptyText}</p>
         ) : filtered.length === 0 ? (
-          <p className='text-xs text-gray-400 p-3'>No results for "{query}"</p>
+          <p className='text-xs text-[#9A6A50] p-3'>No results for "{query}"</p>
         ) : (
           filtered.map((it) => (
             <label
               key={it.id}
-              className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${
-                selectedIds.includes(it.id) ? 'bg-indigo-50' : 'hover:bg-gray-50'
-              }`}
+              className='flex items-center gap-3 px-3 py-2.5 cursor-pointer transition'
+              style={selectedIds.includes(it.id)
+                ? { background: 'linear-gradient(135deg, #FFF4EE, #FFE6D2)' }
+                : {}}
+              onMouseEnter={e => { if (!selectedIds.includes(it.id)) (e.currentTarget as HTMLElement).style.background = '#FFFAF7'; }}
+              onMouseLeave={e => { if (!selectedIds.includes(it.id)) (e.currentTarget as HTMLElement).style.background = ''; }}
             >
               <input
                 type='checkbox'
                 checked={selectedIds.includes(it.id)}
                 onChange={(e) => toggle(it.id, e.target.checked)}
-                className='w-4 h-4 text-indigo-600 rounded flex-shrink-0'
+                className='w-4 h-4 rounded flex-shrink-0'
+                style={{ accentColor: '#F4521E' }}
               />
               {renderItem ? renderItem(it) : (
                 <div className='min-w-0'>
-                  <div className='text-sm font-medium text-gray-900 truncate'>{it.label}</div>
-                  {it.sub && <div className='text-xs text-gray-400'>{it.sub}</div>}
+                  <div className='text-sm font-medium text-[#1A0F00] truncate'>{it.label}</div>
+                  {it.sub && <div className='text-xs text-[#7A5C44]'>{it.sub}</div>}
                 </div>
               )}
             </label>
           ))
         )}
       </div>
-
-      {/* Selected tags + count */}
       {selectedItems.length > 0 ? (
         <div className='mt-2 space-y-1.5'>
-          <p className='text-xs text-indigo-600 font-medium'>{selectedCountLabel(selectedItems.length)}</p>
+          <p className='text-xs font-medium' style={{ color: '#F4521E' }}>{selectedCountLabel(selectedItems.length)}</p>
           <div className='flex flex-wrap gap-1.5'>
             {selectedItems.map((it) => (
               <span
                 key={it.id}
-                className='inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium'
+                className='inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium'
+                style={{ background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', border: '1.5px solid #FFB87A', color: '#E8470A' }}
               >
                 {it.label}
-                <button
-                  onClick={() => toggle(it.id, false)}
-                  className='hover:text-indigo-900 transition ml-0.5'
-                >
+                <button onClick={() => toggle(it.id, false)} className='hover:opacity-70 transition ml-0.5'>
                   <X className='w-3 h-3' />
                 </button>
               </span>
@@ -336,7 +339,7 @@ function SearchableMultiSelect({
           </div>
         </div>
       ) : (
-        <p className='text-xs text-gray-400 mt-1.5'>None selected</p>
+        <p className='text-xs text-[#9A6A50] mt-1.5'>None selected</p>
       )}
     </div>
   );
@@ -347,14 +350,12 @@ export default function CampaignsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  // ── Filter state ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterMaxAttempts, setFilterMaxAttempts] = useState('');
   const [filterAgentPriority, setFilterAgentPriority] = useState('');
 
-  // ── Modal / form state ────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
   const [step, setStep] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -363,7 +364,7 @@ export default function CampaignsPage() {
     name: '',
     schedule_type: 'finite',
     max_attempts: '5',
-    wrapup_time_sec: '3',
+    wrapup_time_sec: '90',
     auto_dial_delay_sec: '8',
     caller_id: '',
     start_date: '',
@@ -383,7 +384,6 @@ export default function CampaignsPage() {
   const { data: dncGroups } = useQuery({ queryKey: ['dnc-groups'], queryFn: getDncGroups });
   const { data: dispositionGroups } = useQuery({ queryKey: ['disposition-groups'], queryFn: listDispositionGroups });
 
-  // ── Filtered rows ─────────────────────────────────────────────────────────
   const allCampaigns: any[] = data?.data || [];
 
   const filtered = useMemo(() => {
@@ -406,11 +406,8 @@ export default function CampaignsPage() {
   const hasActiveFilters = !!(search || filterStatus || filterType || filterMaxAttempts || filterAgentPriority);
 
   const clearAllFilters = () => {
-    setSearch('');
-    setFilterStatus('');
-    setFilterType('');
-    setFilterMaxAttempts('');
-    setFilterAgentPriority('');
+    setSearch(''); setFilterStatus(''); setFilterType('');
+    setFilterMaxAttempts(''); setFilterAgentPriority('');
   };
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -431,12 +428,14 @@ export default function CampaignsPage() {
     mutationFn: () =>
       updateCampaign(editingId!, {
         name: form.name,
+        schedule_type: form.schedule_type,
         max_attempts: form.schedule_type === 'infinite' ? null : parseInt(form.max_attempts),
         wrapup_time_sec: parseInt(form.wrapup_time_sec),
         auto_dial_delay_sec: parseInt(form.auto_dial_delay_sec),
+        caller_id: form.caller_id || null,
         agent_priority_enabled: form.agent_priority_enabled,
-        schedule_template_id: form.schedule_template_id,
-        holiday_calendar_id: form.holiday_calendar_id,
+        schedule_template_id: form.schedule_template_id || null,
+        holiday_calendar_id: form.holiday_calendar_id || null,
         contact_list_ids: form.contact_list_ids,
         dnc_group_ids: form.dnc_group_ids,
         disposition_group_id: form.disposition_group_id || null,
@@ -466,8 +465,8 @@ export default function CampaignsPage() {
       wrapup_time_sec: '90', auto_dial_delay_sec: '8',
       caller_id: '', start_date: '', end_date: '',
       agent_priority_enabled: false, contact_list_ids: [],
-      schedule_template_id: '', holiday_calendar_id: '', dnc_group_ids: [],
-      disposition_group_id: '',
+      schedule_template_id: '', holiday_calendar_id: '',
+      dnc_group_ids: [], disposition_group_id: '',
     });
 
   const closeCreate = () => { setShowCreate(false); setEditingId(null); setStep(1); resetForm(); };
@@ -498,19 +497,23 @@ export default function CampaignsPage() {
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
-  // Validate max attempts: integer between 1 and 20
   const maxAttemptsValid =
-    form.max_attempts === '' ||
+    form.schedule_type === 'infinite' ||
     (/^\d+$/.test(form.max_attempts) &&
       parseInt(form.max_attempts) >= 1 &&
       parseInt(form.max_attempts) <= 20);
+
+  const step1Disabled =
+    !form.name ||
+    !maxAttemptsValid ||
+    (form.schedule_type !== 'infinite' && form.max_attempts === '');
 
   if (isLoading) return <PageLoader />;
 
   return (
     <div className='p-6 space-y-5'>
 
-      {/* ── Page header ─────────────────────────────────────────────────── */}
+      {/* ── Page header ── */}
       <div className='page-header-bar'>
         <div>
           <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
@@ -527,10 +530,9 @@ export default function CampaignsPage() {
         </Button>
       </div>
 
-      {/* ── Search + Filters bar ─────────────────────────────────────────── */}
+      {/* ── Search + Filters ── */}
       <div className='space-y-3'>
         <div className='filter-bar'>
-          {/* Search input */}
           <div className='relative flex-1 min-w-[200px] max-w-sm'>
             <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none' style={{ color: '#F4521E' }} />
             <input
@@ -542,22 +544,13 @@ export default function CampaignsPage() {
               style={{ border: '2px solid #FFD0B0', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', color: '#1A0F00' }}
             />
             {search && (
-              <button
-                onClick={() => setSearch('')}
-                className='absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
-              >
+              <button onClick={() => setSearch('')} className='absolute right-3 top-1/2 -translate-y-1/2 transition' style={{ color: '#C09070' }}>
                 <X className='w-3.5 h-3.5' />
               </button>
             )}
           </div>
-
-          {/* Filter dropdowns */}
           <div className='flex items-center gap-2 flex-wrap'>
-            <FilterDropdown
-              label='Status'
-              value={filterStatus}
-              onChange={setFilterStatus}
-              color='green'
+            <FilterDropdown label='Status' value={filterStatus} onChange={setFilterStatus} color='green'
               options={[
                 { value: 'draft', label: 'Draft' },
                 { value: 'active', label: 'Active' },
@@ -565,115 +558,70 @@ export default function CampaignsPage() {
                 { value: 'completed', label: 'Completed' },
               ]}
             />
-            <FilterDropdown
-              label='Type'
-              value={filterType}
-              onChange={setFilterType}
-              color='indigo'
+            <FilterDropdown label='Type' value={filterType} onChange={setFilterType} color='indigo'
               options={[
                 { value: 'finite', label: 'Finite' },
                 { value: 'infinite', label: 'Infinite' },
               ]}
             />
-            {/* <FilterDropdown
-              label='Max Attempts'
-              value={filterMaxAttempts}
-              onChange={setFilterMaxAttempts}
-              color='amber'
-              options={[
-                { value: 'infinite', label: 'Infinite (∞)' },
-                { value: '1', label: '1 attempt' },
-                { value: '2', label: '2 attempts' },
-                { value: '3', label: '3 attempts' },
-                { value: '5', label: '5 attempts' },
-                { value: '10', label: '10 attempts' },
-                { value: '15', label: '15 attempts' },
-                { value: '20', label: '20 attempts' },
-              ]}
-            /> */}
-            <FilterDropdown
-              label='Agent Priority'
-              value={filterAgentPriority}
-              onChange={setFilterAgentPriority}
-              color='indigo'
+            <FilterDropdown label='Agent Priority' value={filterAgentPriority} onChange={setFilterAgentPriority} color='indigo'
               options={[
                 { value: 'yes', label: 'Enabled' },
                 { value: 'no', label: 'Disabled' },
               ]}
             />
-
             {hasActiveFilters && (
               <button
                 onClick={clearAllFilters}
-                className='flex items-center gap-1.5 px-3 py-2 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition font-medium'
+                className='flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl transition-all duration-200'
+                style={{ color: '#7A5C44', border: '1.5px solid #FFD0B0', background: 'white' }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLElement).style.color = '#EF4444';
+                  (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
+                  (e.currentTarget as HTMLElement).style.borderColor = '#FECACA';
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLElement).style.color = '#7A5C44';
+                  (e.currentTarget as HTMLElement).style.background = 'white';
+                  (e.currentTarget as HTMLElement).style.borderColor = '#FFD0B0';
+                }}
               >
-                <X className='w-3.5 h-3.5' />
-                Clear all
+                <X className='w-3.5 h-3.5' /> Clear all
               </button>
             )}
           </div>
         </div>
 
-        {/* Active filter pills summary row */}
         {hasActiveFilters && (
           <div className='flex items-center gap-2 flex-wrap'>
-            <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
-            {search && (
-              <FilterPill label={`Name: "${search}"`} onRemove={() => setSearch('')} />
-            )}
-            {filterStatus && (
-              <FilterPill
-                label={`Status: ${filterStatus}`}
-                onRemove={() => setFilterStatus('')}
-              />
-            )}
-            {filterType && (
-              <FilterPill
-                label={`Type: ${filterType}`}
-                onRemove={() => setFilterType('')}
-              />
-            )}
-            {filterMaxAttempts && (
-              <FilterPill
-                label={`Max attempts: ${filterMaxAttempts === 'infinite' ? '∞' : filterMaxAttempts}`}
-                onRemove={() => setFilterMaxAttempts('')}
-              />
-            )}
-            {filterAgentPriority && (
-              <FilterPill
-                label={`Agent priority: ${filterAgentPriority === 'yes' ? 'Enabled' : 'Disabled'}`}
-                onRemove={() => setFilterAgentPriority('')}
-              />
-            )}
+            <span className='text-xs text-[#7A5C44] font-medium'>Active filters:</span>
+            {search && <FilterPill label={`Name: "${search}"`} onRemove={() => setSearch('')} />}
+            {filterStatus && <FilterPill label={`Status: ${filterStatus}`} onRemove={() => setFilterStatus('')} />}
+            {filterType && <FilterPill label={`Type: ${filterType}`} onRemove={() => setFilterType('')} />}
+            {filterMaxAttempts && <FilterPill label={`Max attempts: ${filterMaxAttempts === 'infinite' ? '∞' : filterMaxAttempts}`} onRemove={() => setFilterMaxAttempts('')} />}
+            {filterAgentPriority && <FilterPill label={`Agent priority: ${filterAgentPriority === 'yes' ? 'Enabled' : 'Disabled'}`} onRemove={() => setFilterAgentPriority('')} />}
           </div>
         )}
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────── */}
+      {/* ── Table ── */}
       <Card>
         {allCampaigns.length === 0 ? (
           <EmptyState
             title='No campaigns yet'
             description='Create your first campaign to start outbound calling.'
-            action={
-              <Button icon={<Plus className='w-4 h-4' />} onClick={() => setShowCreate(true)}>
-                Create Campaign
-              </Button>
-            }
+            action={<Button icon={<Plus className='w-4 h-4' />} onClick={() => setShowCreate(true)}>Create Campaign</Button>}
           />
         ) : filtered.length === 0 ? (
           <div className='flex flex-col items-center justify-center py-14 gap-3'>
-            <div className='w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center'>
-              <Search className='w-5 h-5 text-gray-400' />
+            <div className='w-12 h-12 rounded-full flex items-center justify-center' style={{ background: 'linear-gradient(135deg, #FFF4EE, #FFE0C8)' }}>
+              <Search className='w-5 h-5' style={{ color: '#F4521E' }} />
             </div>
             <div className='text-center'>
-              <p className='text-sm font-medium text-gray-700'>No campaigns match your filters</p>
-              <p className='text-xs text-gray-400 mt-0.5'>Try adjusting or clearing the filters above</p>
+              <p className='text-sm font-medium text-[#1A0F00]'>No campaigns match your filters</p>
+              <p className='text-xs text-[#7A5C44] mt-0.5'>Try adjusting or clearing the filters above</p>
             </div>
-            <button
-              onClick={clearAllFilters}
-              className='text-xs text-indigo-600 hover:text-indigo-700 font-medium underline underline-offset-2 transition'
-            >
+            <button onClick={clearAllFilters} className='text-xs font-medium underline underline-offset-2 transition' style={{ color: '#F4521E' }}>
               Clear all filters
             </button>
           </div>
@@ -706,71 +654,44 @@ export default function CampaignsPage() {
                   );
                 },
               },
-              {
-                header: 'Type',
-                render: (r: any) => <StatusBadge status={r.schedule_type} />,
-              },
-              {
-                header: 'Status',
-                render: (r: any) => <StatusBadge status={r.status} />,
-              },
-              {
-                header: 'Max Attempts',
-                render: (r: any) => r.max_attempts || '∞',
-              },
+              { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
+              { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+              { header: 'Max Attempts', render: (r: any) => r.max_attempts || '∞' },
               {
                 header: 'Actions',
                 width: '220px',
                 render: (r: any) => (
                   <div className='flex items-center gap-1' onClick={(e) => e.stopPropagation()}>
                     {r.status === 'active' ? (
-                      <button
-                        onClick={() => stopMut.mutate(r.id)}
-                        disabled={stopMut.isPending}
-                        title='Pause campaign'
-                        className='p-1.5 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50'
-                      >
+                      <button onClick={() => stopMut.mutate(r.id)} disabled={stopMut.isPending} title='Pause campaign'
+                        className='p-1.5 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 transition disabled:opacity-50'>
                         <Pause className='w-4 h-4' />
                       </button>
                     ) : (
-                      <button
-                        onClick={() => runMut.mutate(r.id)}
-                        disabled={runMut.isPending}
-                        title='Run campaign'
-                        className='p-1.5 rounded-md text-green-600 hover:text-green-700 hover:bg-green-50 transition disabled:opacity-50'
-                      >
+                      <button onClick={() => runMut.mutate(r.id)} disabled={runMut.isPending} title='Run campaign'
+                        className='p-1.5 rounded-md text-green-600 hover:text-green-700 hover:bg-green-50 transition disabled:opacity-50'>
                         <Play className='w-4 h-4' />
                       </button>
                     )}
                     {r.status !== 'active' ? (
-                      <button
-                        onClick={() => openEdit(r)}
-                        title='Edit campaign'
-                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
-                      >
+                      <button onClick={() => openEdit(r)} title='Edit campaign'
+                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'>
                         <Pencil className='w-3 h-3' />
                       </button>
-                    ) : (
-                      <span className='inline-block w-[58px] h-[26px]' />
-                    )}
+                    ) : <span className='inline-block w-[58px] h-[26px]' />}
                     {r.status !== 'active' ? (
-                      <button
-                        onClick={() => setDeleteTarget(r)}
-                        title='Delete campaign'
-                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
-                      >
+                      <button onClick={() => setDeleteTarget(r)} title='Delete campaign'
+                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'>
                         <Trash2 className='w-3 h-3' />
                       </button>
-                    ) : (
-                      <span className='inline-block w-[70px] h-[26px]' />
-                    )}
-                    <button
-                      onClick={() => navigate(`/campaigns/${r.id}`)}
-                      title='View details'
-                      className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-semibold transition'
+                    ) : <span className='inline-block w-[70px] h-[26px]' />}
+                    <button onClick={() => navigate(`/campaigns/${r.id}`)} title='View details'
+                      className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition'
+                      style={{ background: 'linear-gradient(135deg, #FFF4EE, #FFE6D2)', color: '#E8470A', border: '1px solid #FFD3B5' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'linear-gradient(135deg, #FFE6D2, #FFD3B5)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'linear-gradient(135deg, #FFF4EE, #FFE6D2)'; }}
                     >
-                      View
-                      <ChevronRight className='w-3.5 h-3.5' />
+                      View <ChevronRight className='w-3.5 h-3.5' />
                     </button>
                   </div>
                 ),
@@ -783,16 +704,17 @@ export default function CampaignsPage() {
         )}
       </Card>
 
-      {/* ── Create / Edit Modal ──────────────────────────────────────────── */}
+      {/* ── Create / Edit Modal ── */}
       <Modal
         title={editingId ? 'Edit Campaign' : 'Create Campaign'}
         open={showCreate}
         onClose={closeCreate}
         size='lg'
       >
-        <div className='space-y-4'>
-          {/* Step indicator */}
-          <div className='flex items-center gap-2 text-xs flex-wrap'>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '450px' }}>
+
+          {/* ── Step indicator ── */}
+          <div className='flex items-center gap-2 text-xs flex-wrap pb-4 flex-shrink-0'>
             {[
               { n: 1, label: '1. Details' },
               { n: 2, label: '2. Contacts' },
@@ -801,233 +723,246 @@ export default function CampaignsPage() {
               { n: 5, label: '5. Dispositions' },
             ].map((s, i) => (
               <React.Fragment key={s.n}>
-                {i > 0 && <span className='text-gray-300'>—</span>}
-                <span
-                  className={
-                    step === s.n
-                      ? 'px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium'
-                      : 'px-2 py-0.5 rounded-full bg-gray-100 text-gray-500'
-                  }
-                >
+                {i > 0 && <span className='text-[#FFD0B0]'>—</span>}
+                <span style={step === s.n
+                  ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#E8470A', border: '1.5px solid #FFB87A', padding: '2px 10px', borderRadius: '999px', fontWeight: 600 }
+                  : { background: '#FFF4EE', color: '#9A6A50', border: '1.5px solid #FFE0C8', padding: '2px 10px', borderRadius: '999px' }
+                }>
                   {s.label}
                 </span>
               </React.Fragment>
             ))}
           </div>
 
-          {/* ── Step 1: Details ── */}
-          {step === 1 && (
-            <>
-              <Input
-                label='Campaign Name *'
-                value={form.name}
-                onChange={(e) => set('name', e.target.value)}
-                placeholder='e.g. Q2 Loan Outreach'
-              />
-              <div className='grid grid-cols-2 gap-3'>
-                <Select
-                  label='Schedule Type'
-                  value={form.schedule_type}
-                  onChange={(e) => set('schedule_type', e.target.value)}
-                  options={[
-                    { value: 'finite', label: 'Finite (runs to completion)' },
-                    { value: 'infinite', label: 'Infinite (runs until stopped)' },
-                  ]}
-                />
-                {/* ── CHANGED: free-text number input instead of dropdown ── */}
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>Max Attempts</label>
-                  <input
-                    type='number'
-                    min={1}
-                    max={20}
-                    value={form.max_attempts}
-                    onChange={(e) => set('max_attempts', e.target.value)}
-                    placeholder='1 – 20'
-                    className={`w-full px-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition ${
-                      !maxAttemptsValid ? 'border-red-300 focus:ring-red-400' : 'border-gray-200'
-                    }`}
-                  />
-                  {!maxAttemptsValid && (
-                    <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
-                  )}
-                  {maxAttemptsValid && (
-                    <p className='text-xs text-gray-400 mt-1'>Enter a value between 1 and 20</p>
-                  )}
-                </div>
-              </div>
-              <div className='grid grid-cols-2 gap-3'>
-                <Input
-                  label='Wrap-up Time (seconds)'
-                  type='number'
-                  value={form.wrapup_time_sec}
-                  onChange={(e) => set('wrapup_time_sec', e.target.value)}
-                />
-                <Input
-                  label='Auto-dial Delay (seconds)'
-                  type='number'
-                  value={form.auto_dial_delay_sec}
-                  onChange={(e) => set('auto_dial_delay_sec', e.target.value)}
-                />
-              </div>
-              <Input
-                label='Caller ID (E.164 format)'
-                value={form.caller_id}
-                onChange={(e) => set('caller_id', e.target.value)}
-                placeholder='+18005550100'
-              />
-              <div className='flex gap-3 pt-2'>
-                <Button variant='secondary' className='flex-1' onClick={closeCreate}>Cancel</Button>
-                <Button
-                  className='flex-1'
-                  disabled={!form.name || !maxAttemptsValid || form.max_attempts === ''}
-                  onClick={() => setStep(2)}
-                >
-                  Next
-                </Button>
-              </div>
-            </>
-          )}
+          {/* ── Scrollable step content ── */}
+          <div className='flex-1 overflow-y-auto space-y-4 pr-1' style={{ minHeight: 0 }}>
 
-          {/* ── Step 2: Contacts ── */}
-          {step === 2 && (
-            <>
-              <div>
+            {/* Step 1: Details */}
+            {step === 1 && (
+              <>
+                <Input
+                  label='Campaign Name *'
+                  value={form.name}
+                  onChange={(e) => set('name', e.target.value)}
+                  placeholder='e.g. Q2 Loan Outreach'
+                />
+                <div className='grid grid-cols-2 gap-3'>
+                  <Select
+                    label='Schedule Type'
+                    value={form.schedule_type}
+                    onChange={(e) => set('schedule_type', e.target.value)}
+                    options={[
+                      { value: 'finite', label: 'Finite (runs to completion)' },
+                      { value: 'infinite', label: 'Infinite (runs until stopped)' },
+                    ]}
+                  />
+                  <div>
+                    <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>Max Attempts</label>
+                    {form.schedule_type === 'infinite' ? (
+                      <div className='w-full px-3.5 py-2.5 text-sm border-2 border-[#FFD0B0] rounded-xl bg-[#FFF4EE] text-[#7A5C44] select-none flex items-center' style={{ minHeight: '42px' }}>
+                        ∞ Unlimited
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type='number'
+                          min={1}
+                          max={20}
+                          value={form.max_attempts}
+                          onChange={(e) => set('max_attempts', e.target.value)}
+                          placeholder='1 – 20'
+                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${
+                            !maxAttemptsValid
+                              ? 'border-red-300 focus:ring-red-200 focus:border-red-400'
+                              : 'border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
+                          }`}
+                        />
+                        {!maxAttemptsValid ? (
+                          <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
+                        ) : (
+                          <p className='text-xs text-[#9A6A50] mt-1'>Enter a value between 1 and 20</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className='grid grid-cols-2 gap-3'>
+                  <Input label='Wrap-up Time (seconds)' type='number' value={form.wrapup_time_sec} onChange={(e) => set('wrapup_time_sec', e.target.value)} />
+                  <Input label='Auto-dial Delay (seconds)' type='number' value={form.auto_dial_delay_sec} onChange={(e) => set('auto_dial_delay_sec', e.target.value)} />
+                </div>
+                <Input
+                  label='Caller ID (E.164 format)'
+                  value={form.caller_id}
+                  onChange={(e) => set('caller_id', e.target.value)}
+                  placeholder='+18005550100'
+                />
+                {editMut.isError && editingId && (
+                  <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
+                )}
+              </>
+            )}
+
+            {/* Step 2: Contacts */}
+            {step === 2 && (
+              <>
                 <SearchableMultiSelect
                   label='Contact Lists *'
                   placeholder='Search contact lists…'
                   emptyText='No contact lists. Create one first.'
                   selectedCountLabel={(n) => `${n} list${n !== 1 ? 's' : ''} selected`}
-                  items={(lists?.data || []).map((l: any) => ({
-                    id: l.id,
-                    label: l.name,
-                    sub: `${l.contact_count ?? 0} contacts`,
-                  }))}
+                  items={(lists?.data || []).map((l: any) => ({ id: l.id, label: l.name, sub: `${l.contact_count ?? 0} contacts` }))}
                   selectedIds={form.contact_list_ids}
                   onChange={(ids) => set('contact_list_ids', ids)}
                 />
                 {editingId && (
-                  <p className='text-xs text-gray-400 mt-1'>
+                  <p className='text-xs text-[#9A6A50]'>
                     Changing lists affects only future job runs; in-progress contacts on the current job are unaffected.
                   </p>
                 )}
-              </div>
-              {/* Per-campaign inject poll has moved to System Configuration. */}
-              <label className='flex items-center gap-3 cursor-pointer'>
-                <input
-                  type='checkbox'
-                  checked={form.agent_priority_enabled}
-                  onChange={(e) => set('agent_priority_enabled', e.target.checked)}
-                  className='w-4 h-4 text-indigo-600 rounded'
-                />
-                <div>
-                  <div className='text-sm font-medium text-gray-900'>Enable Agent Priority</div>
-                  <div className='text-xs text-gray-400'>Route contacts to their assigned agent</div>
-                </div>
-              </label>
-              <div className='flex gap-3 pt-2'>
-                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(1)}>Back</Button>
-                <Button className='flex-1' disabled={!editingId && !form.contact_list_ids.length} onClick={() => setStep(3)}>Next</Button>
-              </div>
-            </>
-          )}
-
-          {/* ── Step 3: Schedule ── */}
-          {step === 3 && (
-            <>
-              <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                <Input label='Start Date' type='date' value={form.start_date} onChange={(e) => set('start_date', e.target.value)} />
-                {form.schedule_type !== 'infinite' && (
-                  <Input label='End Date' type='date' value={form.end_date} onChange={(e) => set('end_date', e.target.value)} />
+                <label className='flex items-center gap-3 cursor-pointer p-3 rounded-xl border-2 border-[#FFE0C8] hover:border-[#FFB890] hover:bg-[#FFFAF7] transition-all'>
+                  <input
+                    type='checkbox'
+                    checked={form.agent_priority_enabled}
+                    onChange={(e) => set('agent_priority_enabled', e.target.checked)}
+                    className='w-4 h-4 rounded flex-shrink-0'
+                    style={{ accentColor: '#F4521E' }}
+                  />
+                  <div>
+                    <div className='text-sm font-medium text-[#1A0F00]'>Enable Agent Priority</div>
+                    <div className='text-xs text-[#7A5C44]'>Route contacts to their assigned agent</div>
+                  </div>
+                </label>
+                {editMut.isError && editingId && (
+                  <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
                 )}
-              </div>
+              </>
+            )}
 
-              {/* ── CHANGED: Searchable dropdown for Schedule Template ── */}
-              <SearchableDropdown
-                label='Schedule Template'
-                placeholder='Search templates…'
-                value={form.schedule_template_id}
-                onChange={(v) => set('schedule_template_id', v)}
-                noneLabel='— None —'
-                options={(templates?.data || []).map((t: any) => ({
-                  value: t.id,
-                  label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
-                }))}
-              />
+            {/* Step 3: Schedule */}
+            {step === 3 && (
+              <>
+                <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  <Input label='Start Date' type='date' value={form.start_date} onChange={(e) => set('start_date', e.target.value)} />
+                  {form.schedule_type !== 'infinite' && (
+                    <Input label='End Date' type='date' value={form.end_date} onChange={(e) => set('end_date', e.target.value)} />
+                  )}
+                </div>
+                <SearchableDropdown
+                  label='Schedule Template'
+                  placeholder='Search templates…'
+                  value={form.schedule_template_id}
+                  onChange={(v) => set('schedule_template_id', v)}
+                  noneLabel='— None —'
+                  options={(templates?.data || []).map((t: any) => ({
+                    value: t.id,
+                    label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
+                  }))}
+                />
+                <SearchableDropdown
+                  label='Holiday Calendar'
+                  placeholder='Search calendars…'
+                  value={form.holiday_calendar_id}
+                  onChange={(v) => set('holiday_calendar_id', v)}
+                  noneLabel='— None —'
+                  options={(calendars?.data || []).map((c: any) => ({
+                    value: c.id,
+                    label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
+                  }))}
+                />
+                {editMut.isError && editingId && (
+                  <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
+                )}
+              </>
+            )}
 
-              {/* ── CHANGED: Searchable dropdown for Holiday Calendar ── */}
-              <SearchableDropdown
-                label='Holiday Calendar'
-                placeholder='Search calendars…'
-                value={form.holiday_calendar_id}
-                onChange={(v) => set('holiday_calendar_id', v)}
-                noneLabel='— None —'
-                options={(calendars?.data || []).map((c: any) => ({
-                  value: c.id,
-                  label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
-                }))}
-              />
-
-              <div className='flex gap-3 pt-2'>
-                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(2)}>Back</Button>
-                <Button className='flex-1' onClick={() => setStep(4)}>Next</Button>
-              </div>
-            </>
-          )}
-
-          {/* ── Step 4: DNC ── */}
-          {step === 4 && (
-            <>
-              <div>
+            {/* Step 4: DNC */}
+            {step === 4 && (
+              <>
                 <SearchableMultiSelect
                   label='DNC Groups'
                   placeholder='Search DNC groups…'
                   emptyText='No DNC groups yet.'
                   selectedCountLabel={(n) => `${n} group${n !== 1 ? 's' : ''} selected — numbers in these lists will be suppressed`}
-                  items={(dncGroups?.data || []).map((g: any) => ({
-                    id: g.id,
-                    label: g.name,
-                  }))}
+                  items={(dncGroups?.data || []).map((g: any) => ({ id: g.id, label: g.name }))}
                   selectedIds={form.dnc_group_ids}
                   onChange={(ids) => set('dnc_group_ids', ids)}
                 />
-               
-              </div>
-              <div className='flex gap-3 pt-2'>
-                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(3)}>Back</Button>
-                <Button className='flex-1' onClick={() => setStep(5)}>Next</Button>
-              </div>
-            </>
-          )}
+                {editMut.isError && editingId && (
+                  <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
+                )}
+              </>
+            )}
 
-          {/* ── Step 5: Dispositions ── */}
-          {step === 5 && (
-            <>
-              {/* ── CHANGED: Searchable dropdown instead of radio list ── */}
-              <SearchableDropdown
-                label='Disposition Group'
-                placeholder='Search disposition groups…'
-                value={form.disposition_group_id}
-                onChange={(v) => set('disposition_group_id', v)}
-                noneLabel='— None (system codes only) —'
-                options={(dispositionGroups?.data || []).map((g: any) => ({
-                  value: g.id,
-                  label: g.name + (g.description ? ` — ${g.description}` : ''),
-                }))}
-              />
-              {(dispositionGroups?.data || []).length === 0 && (
-                <p className='text-xs text-gray-400 -mt-2'>
-                  No disposition groups yet. Create one in the Dispositions page.
+            {/* Step 5: Dispositions */}
+            {step === 5 && (
+              <>
+                <SearchableDropdown
+                  label='Disposition Group'
+                  placeholder='Search disposition groups…'
+                  value={form.disposition_group_id}
+                  onChange={(v) => set('disposition_group_id', v)}
+                  noneLabel='— None (system codes only) —'
+                  options={(dispositionGroups?.data || []).map((g: any) => ({
+                    value: g.id,
+                    label: g.name + (g.description ? ` — ${g.description}` : ''),
+                  }))}
+                />
+                {(dispositionGroups?.data || []).length === 0 && (
+                  <p className='text-xs text-[#9A6A50]'>No disposition groups yet. Create one in the Dispositions page.</p>
+                )}
+                <p className='text-xs text-[#9A6A50]'>
+                  {form.disposition_group_id
+                    ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
+                    : 'Agents will see only the org-wide system dispositions.'}
                 </p>
-              )}
-              <p className='text-xs text-gray-400'>
-                {form.disposition_group_id
-                  ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
-                  : 'Agents will see only the org-wide system dispositions.'}
-              </p>
+                {(editingId ? editMut.isError : createMut.isError) && (
+                  <p className='text-xs text-red-500'>
+                    {((editingId ? editMut.error : createMut.error) as any)?.response?.data?.error || 'Save failed'}
+                  </p>
+                )}
+              </>
+            )}
 
-              <div className='flex gap-3 pt-2'>
-                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(4)}>Back</Button>
+          </div>
+
+          {/* ── Fixed footer ── */}
+          <div className='flex-shrink-0 pt-4 mt-2 border-t border-[#FFE8D6]'>
+            <div className='flex gap-3'>
+              {step === 1 ? (
+                <Button variant='secondary' className='flex-1' onClick={closeCreate}>
+                  Cancel
+                </Button>
+              ) : (
+                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(step - 1)}>
+                  Back
+                </Button>
+              )}
+
+              {editingId && step < 5 && (
+                <Button
+                  variant='secondary'
+                  className='flex-1'
+                  loading={editMut.isPending}
+                  disabled={step === 1 ? step1Disabled : (step === 2 ? !form.contact_list_ids.length : false)}
+                  onClick={() => editMut.mutate()}
+                >
+                  Save
+                </Button>
+              )}
+
+              {step < 5 ? (
+                <Button
+                  className='flex-1'
+                  disabled={
+                    step === 1 ? step1Disabled :
+                    step === 2 ? (!editingId && !form.contact_list_ids.length) :
+                    false
+                  }
+                  onClick={() => setStep(step + 1)}
+                >
+                  Next
+                </Button>
+              ) : (
                 <Button
                   className='flex-1'
                   loading={editingId ? editMut.isPending : createMut.isPending}
@@ -1036,23 +971,19 @@ export default function CampaignsPage() {
                 >
                   {editingId ? 'Save Changes' : 'Create Campaign'}
                 </Button>
-              </div>
-              {(editingId ? editMut.isError : createMut.isError) && (
-                <p className='text-xs text-red-500'>
-                  {((editingId ? editMut.error : createMut.error) as any)?.response?.data?.error || 'Save failed'}
-                </p>
               )}
-            </>
-          )}
+            </div>
+          </div>
+
         </div>
       </Modal>
 
-      {/* ── Delete confirmation ──────────────────────────────────────────── */}
+      {/* ── Delete confirmation ── */}
       <Modal title='Delete campaign?' open={!!deleteTarget} onClose={() => setDeleteTarget(null)} size='sm'>
         <div className='space-y-4'>
-          <p className='text-sm text-gray-600'>
+          <p className='text-sm text-[#5C4030]'>
             This will permanently delete{' '}
-            <span className='font-medium text-gray-900'>{deleteTarget?.name}</span>{' '}
+            <span className='font-medium text-[#1A0F00]'>{deleteTarget?.name}</span>{' '}
             and all of its job history. This action cannot be undone.
           </p>
           {deleteMut.isError && (
@@ -1062,12 +993,8 @@ export default function CampaignsPage() {
           )}
           <div className='flex gap-3'>
             <Button variant='secondary' className='flex-1' onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button
-              variant='danger'
-              className='flex-1'
-              loading={deleteMut.isPending}
-              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}
-            >
+            <Button variant='danger' className='flex-1' loading={deleteMut.isPending}
+              onClick={() => deleteTarget && deleteMut.mutate(deleteTarget.id)}>
               Delete
             </Button>
           </div>

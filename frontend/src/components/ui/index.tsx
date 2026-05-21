@@ -59,7 +59,7 @@ export function Button({
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={clsx(
-      'bg-white rounded-2xl border border-[#FFE0C8] shadow-[0_2px_16px_rgba(244,82,30,0.06)]',
+      'bg-white rounded-2xl border border-[#FFD0B0] shadow-[0_2px_20px_rgba(244,82,30,0.08)] overflow-hidden',
       className,
     )}>
       {children}
@@ -70,7 +70,7 @@ export function CardHeader({
   title, subtitle, action,
 }: { title: string; subtitle?: string; action?: ReactNode }) {
   return (
-    <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'>
+    <div className='flex items-center justify-between px-6 py-4' style={{ borderBottom: '2px solid #FFE0C8', background: 'linear-gradient(135deg, #FFFAF7 0%, #FFF4EE 100%)' }}>
       <div>
         <h3 className='font-semibold text-[#1A0F00] text-sm' style={{ fontFamily: 'Sora, sans-serif' }}>
           {title}
@@ -134,13 +134,23 @@ interface Col<T> { header: string; key?: keyof T; render?: (row: T, idx?: number
 interface TableProps<T> { cols: Col<T>[]; rows: T[]; keyFn: (row: T) => string; onRowClick?: (row: T) => void; emptyMessage?: string; }
 export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No data' }: TableProps<T>) {
   return (
-    <div className='overflow-x-auto'>
-      <table className='w-full text-sm'>
+    <div className='w-full overflow-x-auto'>
+      <table className='w-full text-sm border-collapse'>
         <thead>
-          <tr style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D6 100%)', borderBottom: '2px solid #FFD0B0' }}>
-            {cols.map((c) => (
-              <th key={c.header} style={{ width: c.width, fontFamily: 'Sora, sans-serif' }}
-                className='text-left text-xs font-bold text-[#6A3A1A] uppercase tracking-wider px-5 py-3.5'>
+          <tr style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D6 100%)' }}>
+            {cols.map((c, i) => (
+              <th
+                key={c.header}
+                style={{
+                  width: c.width,
+                  fontFamily: 'Sora, sans-serif',
+                  borderBottom: '2px solid #FFD0B0',
+                  borderTop: 'none',
+                  borderLeft: 'none',
+                  borderRight: 'none',
+                }}
+                className='text-left text-xs font-bold text-[#7A3A10] uppercase tracking-widest px-5 py-4'
+              >
                 {c.header}
               </th>
             ))}
@@ -149,20 +159,29 @@ export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No dat
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length} className='text-center text-[#7A5C44] py-14 text-sm'>
+              <td colSpan={cols.length} className='text-center text-[#7A5C44] py-16 text-sm'>
                 {emptyMessage}
               </td>
             </tr>
           )}
           {rows.map((row, rowIdx) => (
-            <tr key={keyFn(row)} onClick={() => onRowClick?.(row)}
+            <tr
+              key={keyFn(row)}
+              onClick={() => onRowClick?.(row)}
               className={clsx(
-                'border-b border-[#FFF0E8] transition-all duration-150',
-                rowIdx % 2 === 0 ? 'bg-white' : 'bg-[#FFFCFA]',
-                onRowClick ? 'cursor-pointer hover:bg-gradient-to-r hover:from-[#FFF4EE] hover:to-[#FFF8F4] hover:shadow-sm' : 'hover:bg-[#FFFAF7]',
-              )}>
+                'transition-all duration-150 group',
+                onRowClick ? 'cursor-pointer' : '',
+              )}
+              style={{ borderBottom: rowIdx < rows.length - 1 ? '1px solid #FFE8D6' : 'none' }}
+              onMouseEnter={e => {
+                if (onRowClick) (e.currentTarget as HTMLElement).style.background = 'linear-gradient(90deg, #FFF8F4, #FFFAF7)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = '';
+              }}
+            >
               {cols.map((c) => (
-                <td key={c.header} className='px-5 py-3.5 text-[#1A0F00]'>
+                <td key={c.header} className='px-5 py-4 text-[#1A0F00] align-middle'>
                   {c.render ? c.render(row, rowIdx) : c.key ? String(row[c.key] ?? '—') : ''}
                 </td>
               ))}
@@ -183,17 +202,24 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
   return createPortal(
     <div className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1A0F00]/50 backdrop-blur-sm'
       onClick={onClose}>
-      <div className={clsx('bg-white rounded-2xl shadow-2xl w-full border border-[#FFE0C8]', widths[size])}
-        onClick={(e) => e.stopPropagation()}>
-        <div className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'
-          style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D2 100%)' }}>
+      <div
+        className={clsx('bg-white shadow-2xl w-full border border-[#FFE0C8]', widths[size])}
+        style={{ borderRadius: '16px', overflow: 'visible' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'
+          style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D2 100%)', borderRadius: '16px 16px 0 0' }}
+        >
           <h3 className='font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</h3>
           <button onClick={onClose}
             className='p-1.5 rounded-xl hover:bg-white/60 text-[#7A5C44] hover:text-[#F4521E] transition-colors'>
             <X className='w-4 h-4' />
           </button>
         </div>
-        <div className='p-6'>{children}</div>
+        <div className='p-6' style={{ borderRadius: '0 0 16px 16px', overflow: 'visible' }}>
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
@@ -291,7 +317,6 @@ export function StatCard({
     );
   }
 
-  // Fallback: brand cream style
   return (
     <div className='rounded-2xl px-4 py-3.5 border border-[#FFD3B5]'
       style={{ background: 'linear-gradient(135deg,#FFF4EE,#FFE6D2)' }}>
