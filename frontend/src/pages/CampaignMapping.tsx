@@ -5,7 +5,7 @@ import { Button, Card, CardHeader, EmptyState, PageLoader, SearchInput } from '.
 import { useAuth } from '../hooks/useAuth';
 import {
   Search, Plus, X, ChevronLeft, ChevronRight,
-  ChevronDown, Loader2, AlertCircle, Check, Users,
+  ChevronDown, ChevronUp, Loader2, AlertCircle, Check, Users,
 } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────
@@ -21,6 +21,12 @@ interface MappingRow {
   mapping_id: number; campaign_id: string; user_id: string;
   first_name: string | null; last_name: string | null;
   email: string | null; role: string | null; is_active: boolean | null;
+}
+
+interface CampaignGroup {
+  campaign_id: string;
+  campaign_name: string;
+  agents: MappingRow[];
 }
 
 // ── API ───────────────────────────────────────────────────────
@@ -44,26 +50,14 @@ function Avatar({ name, small }: { name: string; small?: boolean }) {
   );
 }
 
-// ── Pagination button ─────────────────────────────────────────
-
-function PagBtn({ onClick, disabled, label }: { onClick: () => void; disabled: boolean; label: string }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className="px-2 py-1 rounded text-xs bg-white border border-gray-200 text-gray-600 hover:border-[#F4521E] hover:text-[#F4521E] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-      {label}
-    </button>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────
 
 export default function CampaignMappingPage() {
   const { isAdmin } = useAuth();
 
   const [globalSearch, setGlobalSearch] = useState('');
-  const [pageSize, setPageSize]         = useState(25);
-  const [currentPage, setCurrentPage]   = useState(1);
   const [modalOpen, setModalOpen]       = useState(false);
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
 
   const { data: campaignData, isLoading: loadingCampaigns } = useQuery({ queryKey: ['campaigns'],               queryFn: listCampaigns });
   const { data: usersData }                                  = useQuery({ queryKey: ['org-users'],               queryFn: listUsers });
@@ -80,23 +74,52 @@ export default function CampaignMappingPage() {
     return m;
   }, [allCampaigns]);
 
-  const filteredRows = useMemo(() => {
+  // Group mappings by campaign
+  const campaignGroups = useMemo((): CampaignGroup[] => {
     const q = globalSearch.trim().toLowerCase();
-    if (!q) return allMappings;
-    return allMappings.filter((r) => {
-      const campName  = (campaignById[r.campaign_id]?.name ?? r.campaign_id).toLowerCase();
-      const agentName = `${r.first_name ?? ''} ${r.last_name ?? ''}`.toLowerCase();
-      const email     = (r.email ?? '').toLowerCase();
-      return campName.includes(q) || agentName.includes(q) || email.includes(q) || r.user_id.toLowerCase().includes(q);
+    const groupMap: Record<string, CampaignGroup> = {};
+
+    allMappings.forEach((row) => {
+      const campName = campaignById[row.campaign_id]?.name ?? row.campaign_id;
+
+      if (q) {
+        const agentName = `${row.first_name ?? ''} ${row.last_name ?? ''}`.toLowerCase();
+        const email = (row.email ?? '').toLowerCase();
+        const matchesCamp = campName.toLowerCase().includes(q);
+        const matchesAgent = agentName.includes(q) || email.includes(q) || row.user_id.toLowerCase().includes(q);
+        if (!matchesCamp && !matchesAgent) return;
+      }
+
+      if (!groupMap[row.campaign_id]) {
+        groupMap[row.campaign_id] = {
+          campaign_id: row.campaign_id,
+          campaign_name: campName,
+          agents: [],
+        };
+      }
+      groupMap[row.campaign_id].agents.push(row);
     });
+
+    return Object.values(groupMap).sort((a, b) => a.campaign_name.localeCompare(b.campaign_name));
   }, [allMappings, globalSearch, campaignById]);
 
-  const totalEntries = filteredRows.length;
-  const totalPages   = Math.max(1, Math.ceil(totalEntries / pageSize));
-  const safePage     = Math.min(currentPage, totalPages);
-  const pagedRows    = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize);
-  const fromEntry    = totalEntries === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const toEntry      = Math.min(safePage * pageSize, totalEntries);
+  // Auto-expand all when searching
+  useEffect(() => {
+    if (globalSearch.trim()) {
+      setExpandedCampaigns(new Set(campaignGroups.map((g) => g.campaign_id)));
+    }
+  }, [globalSearch, campaignGroups]);
+
+  const toggleCampaign = (id: string) => {
+    setExpandedCampaigns((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const expandAll  = () => setExpandedCampaigns(new Set(campaignGroups.map((g) => g.campaign_id)));
+  const collapseAll = () => setExpandedCampaigns(new Set());
 
   if (loadingCampaigns) return <PageLoader />;
 
@@ -109,7 +132,7 @@ export default function CampaignMappingPage() {
           <h1 className="text-2xl font-bold page-heading">Campaign Mapping</h1>
           <p className="text-sm text-gray-500 mt-1">
             {globalSearch
-              ? `${filteredRows.length} of ${allMappings.length} mapping(s)`
+              ? `${campaignGroups.reduce((a, g) => a + g.agents.length, 0)} of ${allMappings.length} mapping(s)`
               : 'Assign agents and supervisors to campaigns'}
           </p>
         </div>
@@ -120,88 +143,119 @@ export default function CampaignMappingPage() {
         )}
       </div>
 
-      {/* Search */}
+      {/* Search + expand/collapse controls */}
       {allMappings.length > 0 && (
-        <div className="filter-bar">
-          <SearchInput value={globalSearch} onChange={(v) => { setGlobalSearch(v); setCurrentPage(1); }} placeholder="Search by campaign or agent…" />
+        <div className="filter-bar flex items-center gap-3">
+          <div className="flex-1">
+            <SearchInput value={globalSearch} onChange={(v) => { setGlobalSearch(v); }} placeholder="Search by campaign or agent…" />
+          </div>
+          <button onClick={expandAll}   className="text-xs text-[#F4521E] hover:underline font-medium whitespace-nowrap">Expand All</button>
+          <button onClick={collapseAll} className="text-xs text-gray-400 hover:underline font-medium whitespace-nowrap">Collapse All</button>
         </div>
       )}
 
-      {/* Table card */}
+      {/* Accordion — styled like SupervisorTeamsPage */}
       <Card>
-        <CardHeader title={globalSearch ? `${filteredRows.length} of ${allMappings.length} mappings` : 'All Mappings'} />
-
-        {allMappings.length === 0 ? (
+        {loadingMappings ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin text-[#F4521E]" />
+            <span className="text-sm">Loading mappings…</span>
+          </div>
+        ) : allMappings.length === 0 ? (
           <EmptyState
             title="No mappings yet"
             description="Assign agents or supervisors to a campaign to get started."
             action={isAdmin ? <Button icon={<Plus className="w-4 h-4" />} onClick={() => setModalOpen(true)}>Add Mapping</Button> : undefined}
           />
+        ) : campaignGroups.length === 0 ? (
+          <EmptyState title="No matches" description="Try adjusting the search above." />
         ) : (
-          <>
-            {/* Column headers */}
-            <div className="grid grid-cols-4 px-5 py-3 border-b border-gray-100 bg-gray-50">
-              {['Campaign', 'Type', 'Agent Name', 'Agent ID'].map((h) => (
-                <div key={h} className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</div>
-              ))}
-            </div>
+          <div className="divide-y divide-gray-100">
+            {campaignGroups.map((group) => {
+              const open     = expandedCampaigns.has(group.campaign_id);
+              const campaign = campaignById[group.campaign_id];
+              // Campaign initials for avatar (up to 2 words)
+              const initials = group.campaign_name
+                .trim().split(/\s+/).slice(0, 2)
+                .map((w) => w[0]?.toUpperCase() ?? '').join('');
 
-            {/* Rows */}
-            {loadingMappings ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
-                <Loader2 className="w-5 h-5 animate-spin text-[#F4521E]" />
-                <span className="text-sm">Loading mappings…</span>
-              </div>
-            ) : pagedRows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-14 text-gray-400">
-                <Users className="w-10 h-10 mb-2 opacity-30" />
-                <p className="text-sm">No results match your search</p>
-              </div>
-            ) : (
-              <div>
-                {pagedRows.map((row, i) => {
-                  const campName = campaignById[row.campaign_id]?.name ?? row.campaign_id;
-                  const fullName = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || '—';
-                  return (
-                    <div key={row.mapping_id}
-                      className={`grid grid-cols-4 px-5 py-3 items-center border-b border-gray-50 last:border-0 hover:bg-orange-50/40 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                      <div className="text-sm text-gray-900 font-medium truncate pr-2" title={campName}>{campName}</div>
-                      <div>
-                        {row.role ? (
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${row.role === 'supervisor' ? 'bg-[#F4521E]/10 text-[#F4521E]' : 'bg-[#F5A623]/15 text-[#C07800]'}`}>
-                            {row.role}
-                          </span>
-                        ) : <span className="text-[11px] text-gray-400">—</span>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Avatar name={fullName} small />
-                        <span className="text-sm text-gray-800 truncate">{fullName}</span>
-                      </div>
-                      <div className="text-xs text-gray-400 font-mono truncate" title={row.user_id}>{row.user_id}</div>
+              return (
+                <div key={group.campaign_id}>
+
+                  {/* ── Campaign header row (mirrors supervisor row) ── */}
+                  <button
+                    onClick={() => toggleCampaign(group.campaign_id)}
+                    className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-orange-50/50 transition-colors"
+                  >
+                    {/* Gradient avatar */}
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#F4521E] to-[#F5A623] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                      {initials}
                     </div>
-                  );
-                })}
-              </div>
-            )}
 
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between px-5 py-3 text-xs text-gray-500 border-t border-gray-100 bg-gray-50 rounded-b-xl">
-              <span>Showing {fromEntry} to {toEntry} of {totalEntries} entries</span>
-              <div className="flex items-center gap-1.5">
-                <PagBtn onClick={() => setCurrentPage(1)}                                      disabled={safePage === 1}          label="<<" />
-                <PagBtn onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}              disabled={safePage === 1}          label="<"  />
-                <PagBtn onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}     disabled={safePage === totalPages} label=">"  />
-                <PagBtn onClick={() => setCurrentPage(totalPages)}                             disabled={safePage === totalPages} label=">>" />
-                <div className="relative ml-2">
-                  <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                    className="appearance-none bg-white border border-gray-200 text-gray-600 text-xs rounded px-3 py-1.5 pr-7 outline-none focus:border-[#F4521E] cursor-pointer">
-                    {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                  <ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    {/* Campaign name + optional status */}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900">{group.campaign_name}</div>
+                      {campaign?.status && (
+                        <div className="text-xs text-gray-500">{campaign.status}</div>
+                      )}
+                    </div>
+
+                    {/* Agent count badge */}
+                    <span className="text-xs bg-[#F4521E]/10 text-[#F4521E] px-2.5 py-1 rounded-full font-medium flex-shrink-0">
+                      {group.agents.length} agent{group.agents.length !== 1 ? 's' : ''}
+                    </span>
+
+                    {/* Chevron */}
+                    {open
+                      ? <ChevronDown  className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                  </button>
+
+                  {/* ── Expanded agent rows (mirrors agents list) ── */}
+                  {open && (
+                    <div className="border-t border-orange-100 bg-orange-50/30">
+                      {group.agents.length === 0 ? (
+                        <div className="px-5 py-4 text-sm text-gray-400 italic pl-14">
+                          No agents assigned to this campaign yet.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-orange-100/60">
+                          {group.agents.map((row) => {
+                            const fullName = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || '—';
+                            return (
+                              <div
+                                key={row.mapping_id}
+                                className="flex items-center gap-3 pl-14 pr-5 py-3 hover:bg-orange-50 transition-colors"
+                              >
+                                {/* Agent avatar (amber, matches supervisor teams agent) */}
+                                <div className="w-7 h-7 rounded-full bg-[#F5A623]/20 flex items-center justify-center text-[#C07010] text-xs font-bold flex-shrink-0">
+                                  {(row.first_name?.[0] ?? '').toUpperCase()}{(row.last_name?.[0] ?? '').toUpperCase()}
+                                </div>
+
+                                {/* Name + email */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900">{fullName}</div>
+                                  <div className="text-xs text-gray-500">{row.email ?? '—'}</div>
+                                </div>
+
+                                {/* Role badge */}
+                                {row.role && (
+                                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${row.role === 'supervisor' ? 'bg-[#F4521E]/10 text-[#F4521E]' : 'bg-[#F5A623]/15 text-[#C07800]'}`}>
+                                    {row.role}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </div>
-              </div>
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
       </Card>
 
@@ -238,8 +292,15 @@ function AddMappingModal({ campaigns, users, onSaved, onClose }: AddMappingModal
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
 
+  // Show no agents until a campaign is selected; load assigned/unassigned on selection
   useEffect(() => {
-    if (!selectedCampaign) { setLocalUnassigned(users); setLocalAssigned([]); setUnassignedSel(new Set()); setAssignedSel(new Set()); return; }
+    if (!selectedCampaign) {
+      setLocalUnassigned([]);
+      setLocalAssigned([]);
+      setUnassignedSel(new Set());
+      setAssignedSel(new Set());
+      return;
+    }
     setLoadingCampaign(true); setError(null);
     getMappingsByCampaign(selectedCampaign.id)
       .then(({ data }) => {
@@ -248,7 +309,10 @@ function AddMappingModal({ campaigns, users, onSaved, onClose }: AddMappingModal
         setLocalUnassigned(users.filter((u) => !ids.has(u.id)));
         setUnassignedSel(new Set()); setAssignedSel(new Set());
       })
-      .catch(() => { setLocalUnassigned(users); setLocalAssigned([]); })
+      .catch(() => {
+        setLocalUnassigned(users);
+        setLocalAssigned([]);
+      })
       .finally(() => setLoadingCampaign(false));
   }, [selectedCampaign?.id]);
 
@@ -427,16 +491,20 @@ function AgentListBox({ label, count, agents, selected, search, onSearch, onTogg
         {agents.length === 0 ? (
           <div className="flex items-center justify-center h-[200px] text-gray-400 text-xs text-center px-4">{emptyText}</div>
         ) : agents.map((u) => {
-          const sel = selected.has(u.id);
+          const sel      = selected.has(u.id);
           const fullName = `${u.first_name} ${u.last_name}`;
           return (
             <button key={u.id} type="button" onClick={() => onToggle(u.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-50 last:border-0 transition-colors ${sel ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left border-b border-gray-50 last:border-0 transition-colors ${sel ? 'bg-orange-50' : 'hover:bg-orange-50/40'}`}>
+              {/* Checkbox */}
               <div className="w-3.5 h-3.5 rounded flex items-center justify-center flex-shrink-0 transition-colors"
                 style={sel ? { background: accentColor, border: `2px solid ${accentColor}` } : { border: '2px solid #D1D5DB', background: 'white' }}>
                 {sel && <Check className="w-2 h-2 text-white" />}
               </div>
-              <Avatar name={fullName} small />
+              {/* Agent avatar — amber style matching supervisor teams agent rows */}
+              <div className="w-7 h-7 rounded-full bg-[#F5A623]/20 flex items-center justify-center text-[#C07010] text-xs font-bold flex-shrink-0">
+                {(u.first_name?.[0] ?? '').toUpperCase()}{(u.last_name?.[0] ?? '').toUpperCase()}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-semibold text-gray-900 truncate">{fullName}</div>
                 <div className="text-[10px] text-gray-500 truncate">{u.email}</div>
