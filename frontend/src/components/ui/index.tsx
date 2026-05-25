@@ -217,7 +217,7 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
             <X className='w-4 h-4' />
           </button>
         </div>
-        <div className='p-6' style={{ borderRadius: '0 0 16px 16px', overflow: 'visible' }}>
+        <div className='p-6' style={{ borderRadius: '0 0 16px 16px', overflow: 'visible', paddingRight: '2rem' }}>
           {children}
         </div>
       </div>

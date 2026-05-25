@@ -246,7 +246,7 @@ function RowEditor({
               checked={row.is_private}
               onChange={(v) => onChange({ is_private: v })}
             />
-            <CheckCell
+           {/*  <CheckCell
               label='Read Only for Agents'
               hint='Agents cannot edit'
               checked={row.is_read_only_agent}
@@ -257,7 +257,7 @@ function RowEditor({
               hint='Value obfuscated'
               checked={row.is_masked_agent}
               onChange={(v) => onChange({ is_masked_agent: v })}
-            />
+            /> */}
             <CheckCell
               label='Masked for Users'
               hint='Hidden in reports'

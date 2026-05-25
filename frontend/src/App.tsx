@@ -23,6 +23,9 @@ import {
 import DNCPage from './pages/DNC';
 import DispositionsPage from './pages/Dispositions';
 import AgentsPage from './pages/Agents';
+import UsersPage from './pages/Users';
+import CampaignMappingPage from './pages/CampaignMapping';
+import SupervisorTeamsPage from './pages/SupervisorTeams';
 import ReportsPage from './pages/Reports';
 import SystemConfigurationPage from './pages/SystemConfiguration';
 import OrganizationsPage from './pages/Organizations';
@@ -214,6 +217,8 @@ function AppRoutes() {
           </PrivateRoute>
         }
       />
+
+      {/* ── Existing agents page (Admin child) ── */}
       <Route
         path='/agents'
         element={
@@ -224,6 +229,39 @@ function AppRoutes() {
           </PrivateRoute>
         }
       />
+
+      {/* ── New Users sub-pages (under the Users accordion) ── */}
+      <Route
+        path='/users'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <UsersPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/campaign-mapping'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <CampaignMappingPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/supervisor-teams'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <SupervisorTeamsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
       <Route
         path='/reports'
         element={

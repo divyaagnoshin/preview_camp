@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { startScheduler } from './services/scheduler';
+import { startCleanupScheduler } from './services/Ccscleanupscheduler';
 import pool from './db/pool';
 
 dotenv.config();
@@ -10,6 +11,7 @@ dotenv.config();
 // request-driven mutations; this process only writes when its tick fires.
 console.log('[injector] booting backend-injector…');
 startScheduler();
+startCleanupScheduler();
 
 // Graceful shutdown so an in-flight transaction has a chance to commit or
 // roll back cleanly before the connection pool is torn down. Without this

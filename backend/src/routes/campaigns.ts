@@ -192,6 +192,7 @@ router.patch(
       // cleared by passing null/''.
       const ALLOWED = [
         'name',
+        'schedule_type',
         'max_attempts',
         'wrapup_time_sec',
         'auto_dial_delay_sec',

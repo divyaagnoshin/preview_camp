@@ -37,6 +37,11 @@ import { seedSuperadmin } from './db/seedSuperadmin';
 import { seedFieldLibrary } from './db/seedFieldLibrary';
 import { seedSystemDispositions } from './db/seedSystemDispositions';
 
+import usersRouter from './routes/users';
+import userDetailsRouter from './routes/users';   // ← ADD THIS
+import supervisorTeamsRouter from './routes/supervisorTeamsAndCampaigns';
+import campaignMappingRouter from './routes/Campaignmappingroute';
+
 dotenv.config();
 
 const app = express();
@@ -76,6 +81,12 @@ app.use('/v1/sessions', sessionsRouter);
 app.use('/v1/timezones', timezonesRouter);
 app.use('/v1/telephony', telephonyRouter);
 app.use('/v1/system-config', systemConfigRouter);
+
+app.use('/v1/users', usersRouter);
+app.use('/v1/user_details', userDetailsRouter);          // ← ADD THIS
+app.use('/v1/supervisor-teams', supervisorTeamsRouter);
+
+app.use('/v1/campaign-mapping', campaignMappingRouter);
 // /v1/workspace/* and the mutating /v1/sessions/{ready,heartbeat,offline}
 // endpoints are served by the backend-queue service (see ../backend-queue).
 

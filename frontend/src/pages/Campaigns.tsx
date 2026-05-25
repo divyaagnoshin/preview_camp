@@ -735,7 +735,7 @@ export default function CampaignsPage() {
           </div>
 
           {/* ── Scrollable step content ── */}
-          <div className='flex-1 overflow-y-auto space-y-4 pr-1' style={{ minHeight: 0 }}>
+          <div className='flex-1 overflow-y-auto space-y-4 pr-2' style={{ minHeight: 0, overflowX: 'visible' }}>
 
             {/* Step 1: Details */}
             {step === 1 && (
