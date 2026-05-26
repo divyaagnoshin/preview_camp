@@ -24,7 +24,7 @@ import {
   SearchInput,
   Select,
   StatusBadge,
-  Table,
+  PagedTable,
 } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
@@ -165,7 +165,7 @@ export default function AgentsPage() {
             description='Try adjusting or clearing the filters above.'
           />
         ) : (
-        <Table
+        <PagedTable
           cols={[
             {
               header: 'User',

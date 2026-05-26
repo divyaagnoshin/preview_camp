@@ -545,3 +545,237 @@ export function ClearFiltersButton({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
+// ── Pagination ────────────────────────────────────────────────────────────────
+export const PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50] as const;
+export type PageSizeOption = typeof PAGE_SIZE_OPTIONS[number];
+
+export function usePagination<T>(items: T[], defaultPageSize: PageSizeOption = 10) {
+  const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState<PageSizeOption>(defaultPageSize);
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+
+  const goTo = (p: number) => setPage(Math.max(1, Math.min(p, totalPages)));
+  const changePageSize = (ps: PageSizeOption) => { setPageSize(ps); setPage(1); };
+
+  React.useEffect(() => { setPage(1); }, [items.length]);
+
+  return { page: safePage, pageSize, totalPages, pageItems, goTo, changePageSize, totalItems: items.length };
+}
+
+// Rows-per-page dropdown (self-contained)
+function PageSizeDropdown({ value, onChange }: { value: PageSizeOption; onChange: (ps: PageSizeOption) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className='relative'>
+      <button
+        type='button'
+        onClick={() => setOpen(o => !o)}
+        className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 select-none'
+        style={{ background: 'white', border: '1.5px solid #FFD0B0', color: '#5C4030', minWidth: '64px', justifyContent: 'space-between' }}
+      >
+        <span>{value}</span>
+        <ChevronDown className={clsx('w-3 h-3 transition-transform', open && 'rotate-180')} style={{ color: '#C09070' }} />
+      </button>
+
+      {open && (
+        <div
+          className='absolute bottom-full mb-1.5 right-0 rounded-xl overflow-hidden z-30'
+          style={{ background: 'white', border: '1.5px solid #FFD0B0', boxShadow: '0 6px 24px rgba(244,82,30,0.12), 0 2px 8px rgba(0,0,0,0.06)', minWidth: '72px' }}
+        >
+          {PAGE_SIZE_OPTIONS.map((ps) => (
+            <button
+              key={ps}
+              type='button'
+              onClick={() => { onChange(ps); setOpen(false); }}
+              className='w-full text-left px-3 py-2 text-xs font-medium transition-all'
+              style={ps === value
+                ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#F4521E', fontWeight: 700 }
+                : { color: '#3C2A1A' }
+              }
+              onMouseEnter={e => { if (ps !== value) (e.currentTarget as HTMLElement).style.background = '#FFF8F4'; }}
+              onMouseLeave={e => { if (ps !== value) (e.currentTarget as HTMLElement).style.background = ''; }}
+            >
+              {ps}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Pagination({
+  page,
+  totalPages,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  pageSize: PageSizeOption;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (ps: PageSizeOption) => void;
+}) {
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalItems);
+
+  const getPages = (): (number | '...')[] => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const pages: (number | '...')[] = [1];
+    if (page > 3) pages.push('...');
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+    if (page < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  };
+
+  const navBtn = (disabled: boolean) => ({
+    background: disabled ? '#FFF4EE' : 'white',
+    color: disabled ? '#D4A890' : '#7A5C44',
+    border: '1.5px solid #FFE0C8',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.55 : 1,
+  } as React.CSSProperties);
+
+  const pageBtn = (active: boolean) => ({
+    background: active ? '#FFF0E8' : 'white',
+    color: active ? '#D85A20' : '#7A5C44',
+    border: active ? '1.5px solid #FFBB90' : '1.5px solid #FFE0C8',
+    fontWeight: active ? 700 : 500,
+  } as React.CSSProperties);
+
+  const btnCls = 'min-w-[30px] h-7 px-1.5 flex items-center justify-center rounded-lg text-xs transition-all duration-150 select-none';
+
+  return (
+    <div
+      className='flex items-center justify-end px-5 py-2.5 gap-4 flex-wrap'
+      style={{ borderTop: '1px solid #FFE8D6', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)' }}
+    >
+      {/* Count */}
+      {totalItems > 0 && (
+        <span className='text-xs text-[#9A6A50] whitespace-nowrap'>
+          {start}–{end} of {totalItems}
+        </span>
+      )}
+
+      {/* Page numbers */}
+      <div className='flex items-center gap-1'>
+        <button onClick={() => onPageChange(page - 1)} disabled={page === 1} className={btnCls} style={navBtn(page === 1)}>‹</button>
+
+        {getPages().map((p, idx) =>
+          p === '...' ? (
+            <span key={`el-${idx}`} className='min-w-[28px] h-7 flex items-center justify-center text-xs text-[#C09070]'>…</span>
+          ) : (
+            <button key={p} onClick={() => onPageChange(p)} className={btnCls} style={pageBtn(p === page)}>{p}</button>
+          )
+        )}
+
+        <button onClick={() => onPageChange(page + 1)} disabled={page === totalPages} className={btnCls} style={navBtn(page === totalPages)}>›</button>
+      </div>
+
+      {/* Rows-per-page dropdown — rightmost */}
+      <div className='flex items-center gap-2'>
+        <span className='text-xs text-[#9A6A50] whitespace-nowrap'>Rows per page</span>
+        <PageSizeDropdown value={pageSize} onChange={onPageSizeChange} />
+      </div>
+    </div>
+  );
+}
+
+// ── Table with built-in pagination & scrollable body ─────────────────────────
+interface PagedTableProps<T> {
+  cols: Col<T>[];
+  rows: T[];
+  keyFn: (row: T) => string;
+  onRowClick?: (row: T) => void;
+  emptyMessage?: string;
+  maxHeight?: string;
+}
+
+export function PagedTable<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No data', maxHeight = '650px' }: PagedTableProps<T>) {
+  const { page, pageSize, totalPages, pageItems, goTo, changePageSize, totalItems } = usePagination(rows);
+
+  return (
+    <div className='flex flex-col'>
+      {/* Scrollable table area */}
+      <div style={{ maxHeight, overflowY: 'auto', overflowX: 'auto' }}>
+        <table className='w-full text-sm border-collapse'>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+            <tr style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D6 100%)' }}>
+              {cols.map((c) => (
+                <th
+                  key={c.header}
+                  style={{
+                    width: c.width,
+                    fontFamily: 'Sora, sans-serif',
+                    borderBottom: '2px solid #FFD0B0',
+                    borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+                  }}
+                  className='text-left text-xs font-bold text-[#7A3A10] uppercase tracking-widest px-5 py-4'
+                >
+                  {c.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.length === 0 ? (
+              <tr>
+                <td colSpan={cols.length} className='text-center text-[#7A5C44] py-16 text-sm'>
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              pageItems.map((row, rowIdx) => (
+                <tr
+                  key={keyFn(row)}
+                  onClick={() => onRowClick?.(row)}
+                  className={clsx('transition-all duration-150', onRowClick ? 'cursor-pointer' : '')}
+                  style={{ borderBottom: rowIdx < pageItems.length - 1 ? '1px solid #FFE8D6' : 'none' }}
+                  onMouseEnter={e => { if (onRowClick) (e.currentTarget as HTMLElement).style.background = 'linear-gradient(90deg, #FFF8F4, #FFFAF7)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ''; }}
+                >
+                  {cols.map((c) => (
+                    <td key={c.header} className='px-5 py-4 text-[#1A0F00] align-middle'>
+                      {c.render ? c.render(row, rowIdx) : c.key ? String(row[c.key] ?? '—') : ''}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination bar */}
+      {totalItems > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          onPageChange={goTo}
+          onPageSizeChange={changePageSize}
+        />
+      )}
+    </div>
+  );
+}

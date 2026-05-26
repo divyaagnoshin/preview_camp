@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { Button, Card, CardHeader, EmptyState, PageLoader, SearchInput } from '../components/ui';
+import { Button, Card, CardHeader, EmptyState, PageLoader, SearchInput, usePagination, Pagination } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import {
   Search, Plus, X, ChevronLeft, ChevronRight,
@@ -120,6 +120,9 @@ export default function CampaignMappingPage() {
 
   const expandAll  = () => setExpandedCampaigns(new Set(campaignGroups.map((g) => g.campaign_id)));
   const collapseAll = () => setExpandedCampaigns(new Set());
+  const allExpanded = campaignGroups.length > 0 && campaignGroups.every((g) => expandedCampaigns.has(g.campaign_id));
+
+  const { page, pageSize, totalPages, pageItems: pagedGroups, goTo, changePageSize, totalItems } = usePagination(campaignGroups);
 
   if (loadingCampaigns) return <PageLoader />;
 
@@ -144,15 +147,21 @@ export default function CampaignMappingPage() {
       </div>
 
       {/* Search + expand/collapse controls */}
-      {allMappings.length > 0 && (
-        <div className="filter-bar flex items-center gap-3">
-          <div className="flex-1">
-            <SearchInput value={globalSearch} onChange={(v) => { setGlobalSearch(v); }} placeholder="Search by campaign or agent…" />
-          </div>
-          <button onClick={expandAll}   className="text-xs text-[#F4521E] hover:underline font-medium whitespace-nowrap">Expand All</button>
-          <button onClick={collapseAll} className="text-xs text-gray-400 hover:underline font-medium whitespace-nowrap">Collapse All</button>
-        </div>
-      )}
+      {/* Search + expand/collapse controls */}
+{allMappings.length > 0 && (
+  <div className="filter-bar flex items-center gap-3">
+    <div className="flex-1">
+      <SearchInput value={globalSearch} onChange={(v) => { setGlobalSearch(v); }} placeholder="Search by campaign or agent…" />
+    </div>
+    {/* ↓ replaces the two old Expand All / Collapse All buttons */}
+    <button
+      onClick={allExpanded ? collapseAll : expandAll}
+      title={allExpanded ? 'Collapse all' : 'Expand all'}
+      className="w-6 h-6 flex items-center justify-center rounded text-gray-500 hover:text-[#F4521E] hover:bg-orange-50 transition">
+      {allExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+    </button>
+  </div>
+)}
 
       {/* Accordion — styled like SupervisorTeamsPage */}
       <Card>
@@ -170,8 +179,9 @@ export default function CampaignMappingPage() {
         ) : campaignGroups.length === 0 ? (
           <EmptyState title="No matches" description="Try adjusting the search above." />
         ) : (
+          <>
           <div className="divide-y divide-gray-100">
-            {campaignGroups.map((group) => {
+            {pagedGroups.map((group) => {
               const open     = expandedCampaigns.has(group.campaign_id);
               const campaign = campaignById[group.campaign_id];
               // Campaign initials for avatar (up to 2 words)
@@ -202,7 +212,7 @@ export default function CampaignMappingPage() {
 
                     {/* Agent count badge */}
                     <span className="text-xs bg-[#F4521E]/10 text-[#F4521E] px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                      {group.agents.length} agent{group.agents.length !== 1 ? 's' : ''}
+                      {group.agents.length} User{group.agents.length !== 1 ? 's' : ''}
                     </span>
 
                     {/* Chevron */}
@@ -256,6 +266,15 @@ export default function CampaignMappingPage() {
               );
             })}
           </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={goTo}
+            onPageSizeChange={changePageSize}
+          />
+          </>
         )}
       </Card>
 

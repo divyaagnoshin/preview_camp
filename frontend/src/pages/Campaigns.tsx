@@ -16,7 +16,7 @@ import {
 } from '../api/client';
 import {
   Card,
-  Table,
+  PagedTable,
   StatusBadge,
   Button,
   Modal,
@@ -604,7 +604,7 @@ export default function CampaignsPage() {
         )}
       </div>
 
-      {/* ── Table ── */}
+      {/* ── PagedTable ── */}
       <Card>
         {allCampaigns.length === 0 ? (
           <EmptyState
@@ -626,7 +626,7 @@ export default function CampaignsPage() {
             </button>
           </div>
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Name',

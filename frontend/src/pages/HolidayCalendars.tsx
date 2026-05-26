@@ -17,7 +17,7 @@ import {
 import {
   Card,
   CardHeader,
-  Table,
+  PagedTable,
   Button,
   Modal,
   Input,
@@ -305,7 +305,7 @@ export function HolidayCalendarsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title='No matches' description='Try adjusting or clearing the filters above.' />
         ) : (
-          <Table<HolidayCalendar>
+          <PagedTable<HolidayCalendar>
             keyFn={(r) => r.id}
             rows={filtered}
             onRowClick={(r) => navigate(`/holiday-calendars/${r.id}`)}
@@ -724,7 +724,7 @@ function HolidayDateEditor({
           <div className='flex items-start gap-2.5 p-3 bg-red-50 border border-red-200 rounded-lg'>
             <AlertTriangle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
             <p className='text-xs text-red-700 leading-relaxed'>
-              Could not save this holiday. Please check the date and time values and try again.
+              Unable to save changes.
             </p>
           </div>
         )}

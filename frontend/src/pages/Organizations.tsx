@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listOrganizations, createOrganization, updateOrganization, deleteOrganization, Organization } from '../api/client';
-import { Button, Card, CardHeader, EmptyState, Input, Modal, PageLoader, SearchInput, Table, Textarea } from '../components/ui';
+import { Button, Card, CardHeader, EmptyState, Input, Modal, PageLoader, SearchInput, PagedTable, Textarea } from '../components/ui';
 import { Building2, Pencil, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -60,7 +60,7 @@ export default function OrganizationsPage() {
         <SearchInput value={search} onChange={setSearch} placeholder='Search organizations…' />
       </div>
 
-      {/* Table card */}
+      {/* PagedTable card */}
       <Card className='anim-d2'>
         <CardHeader
           title='All organizations'
@@ -74,7 +74,7 @@ export default function OrganizationsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title='No matches' description={`No organizations match "${search}".`} />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Name',

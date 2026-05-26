@@ -8,7 +8,7 @@ import {
 } from '../api/client';
 import {
   Card,
-  Table,
+  PagedTable,
   Button,
   Modal,
   Input,
@@ -191,7 +191,7 @@ export default function FieldLibraryPage() {
         ) : hasActiveFilters && filtered.length === 0 ? (
           <EmptyState title='No matches' description='Try adjusting or clearing the filters above.' />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Name',

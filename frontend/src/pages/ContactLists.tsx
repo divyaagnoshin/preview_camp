@@ -10,7 +10,7 @@ import {
   deleteAllContacts,
   updateContactList,
 } from '../api/client';
-import { Card, Table, Button, Modal, Input, PageLoader, EmptyState } from '../components/ui';
+import { Card, PagedTable, Button, Modal, Input, PageLoader, EmptyState } from '../components/ui';
 import { Plus, Trash2, AlertCircle, X, Pencil, Eye, MoreVertical, XCircle } from 'lucide-react';
 
 // ── Dropdown component ────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ export default function ContactListsPage() {
         </Button>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────────────────────── */}
+      {/* ── PagedTable ─────────────────────────────────────────────────────────── */}
       <Card>
         {lists.length === 0 ? (
           <EmptyState
@@ -187,7 +187,7 @@ export default function ContactListsPage() {
             }
           />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Name',

@@ -238,6 +238,62 @@ router.get(
 );
 
 // ─────────────────────────────────────────────────────────────
+// GET /v1/users/extensions
+// Returns UNASSIGNED, active SIP extensions from agnoconnew.extensions.
+//
+// Mirrors AgnoCon's own extensionselect logic exactly:
+//   SELECT extension_id FROM extensions
+//   WHERE status = 'Active'
+//     AND extension_id NOT IN (
+//       SELECT CAST(extension_id AS text) FROM user_details
+//       WHERE extension_id IS NOT NULL
+//     )
+//
+// When editing an existing user we also include their currently-assigned
+// extension so it appears pre-selected in the dropdown (pass ?current=<id>).
+//
+// extensions table columns used:
+//   extension_id   — the SIP extension number (PK, text)
+//   effective_name — friendly label e.g. "Sales Line 1"  (nullable)
+//   status         — 'Active' | 'Inactive'
+//
+// NOTE: The agnoconnew extensions table does NOT have an "effetive_number"
+// column — that was a typo in an earlier draft.  Only extension_id and
+// effective_name are returned.
+// ─────────────────────────────────────────────────────────────
+router.get(
+  '/extensions',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const current = req.query.current ? String(req.query.current).trim() : null;
+
+      const { rows } = await agnoPool.query(`
+        SELECT
+          extension_id::text AS extension_id,
+          effective_name
+        FROM extensions
+        WHERE LOWER(status) = 'active'
+          AND company_id = 1
+          AND (
+            extension_id NOT IN (
+              SELECT CAST(extension_id AS TEXT)
+              FROM user_details
+              WHERE extension_id IS NOT NULL
+             
+            )
+            ${current ? `OR extension_id = $1` : ''}
+          )
+        ORDER BY extension_id
+      `, current ? [current] : []);
+
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+// ─────────────────────────────────────────────────────────────
 // GET /v1/users/:id
 // ─────────────────────────────────────────────────────────────
 router.get(

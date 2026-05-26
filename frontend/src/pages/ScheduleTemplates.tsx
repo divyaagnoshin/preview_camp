@@ -18,7 +18,7 @@ import {
 } from '../api/client';
 import {
   Card,
-  Table,
+  PagedTable,
   Button,
   Modal,
   Input,
@@ -146,7 +146,7 @@ export function ScheduleTemplatesPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title='No matches' description={`No templates match "${search}".`} />
         ) : (
-          <Table<ScheduleTemplate>
+          <PagedTable<ScheduleTemplate>
             keyFn={(r) => r.id}
             rows={filtered}
             onRowClick={(r) => navigate(`/schedule-templates/${r.id}`)}
@@ -360,7 +360,7 @@ export function ScheduleTemplateDetailPage() {
             }
           />
         ) : (
-          <Table<ScheduleWindow>
+          <PagedTable<ScheduleWindow>
             keyFn={(w) => w.id}
             rows={windows}
             cols={[

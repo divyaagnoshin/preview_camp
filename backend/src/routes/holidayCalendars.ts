@@ -210,36 +210,36 @@ router.patch(
         block_start,
         block_end,
       } = req.body;
-      const fullDay =
-        is_full_day_block === undefined ? null : !!is_full_day_block;
-      const { rows } = await pool.query(
-        `UPDATE holiday_dates
-          SET holiday_date      = COALESCE($1::date, holiday_date),
-              holiday_name      = COALESCE($2::text, holiday_name),
-              is_full_day_block = COALESCE($3::boolean, is_full_day_block),
-              block_start       = CASE WHEN $3::boolean IS TRUE THEN NULL
-                                       WHEN $4::time IS NOT NULL THEN $4::time
-                                       ELSE block_start END,
-              block_end         = CASE WHEN $3::boolean IS TRUE THEN NULL
-                                       WHEN $5::time IS NOT NULL THEN $5::time
-                                       ELSE block_end END
-        WHERE id = $6 AND calendar_id = $7
-        RETURNING id, calendar_id,
-                  to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
-                  holiday_name, is_full_day_block, block_start, block_end`,
-        [
-          holiday_date || null,
-          holiday_name ?? null,
-          fullDay,
-          block_start || null,
-          block_end || null,
-          req.params.dateId,
-          req.params.id,
-        ],
-      );
-      if (!rows.length) throw new AppError(404, 'Holiday not found');
+     const fullDay = !!is_full_day_block;
+
+const finalBlockStart = fullDay ? null : block_start;
+const finalBlockEnd = fullDay ? null : block_end;
+
+const { rows } = await pool.query(
+  `UPDATE holiday_dates
+    SET holiday_date = COALESCE($1::date, holiday_date),
+        holiday_name = COALESCE($2::text, holiday_name),
+        is_full_day_block = $3,
+        block_start = $4,
+        block_end = $5
+  WHERE id = $6
+    AND calendar_id = $7
+  RETURNING id, calendar_id,
+            to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+            holiday_name, is_full_day_block, block_start, block_end`,
+  [
+    holiday_date || null,
+    holiday_name ?? null,
+    fullDay,
+    finalBlockStart,
+    finalBlockEnd,
+    req.params.dateId,
+    req.params.id,
+  ],
+);      if (!rows.length) throw new AppError(404, 'Holiday not found');
       res.json(rows[0]);
     } catch (e) {
+      
       next(e);
     }
   },

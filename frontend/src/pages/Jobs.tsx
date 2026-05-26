@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getJobs, getJob, getJobStats, getJobContacts, updateCCS } from '../api/client';
-import { Card, CardHeader, Table, StatusBadge, Button, StatCard, Progress, PageLoader, Modal, Input, Select, SearchInput, FilterDropdown, FilterPill, ClearFiltersButton, EmptyState } from '../components/ui';
+import { Card, CardHeader, PagedTable, StatusBadge, Button, StatCard, Progress, PageLoader, Modal, Input, Select, SearchInput, FilterDropdown, FilterPill, ClearFiltersButton, EmptyState } from '../components/ui';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 // ── Jobs List ─────────────────────────────────────────────
@@ -87,7 +87,7 @@ export function JobsPage() {
         {hasActiveFilters && filtered.length === 0 ? (
           <EmptyState title='No jobs match your filters' description='Try adjusting or clearing the filters above.' />
         ) : (
-        <Table
+        <PagedTable
           cols={[
             { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
             { header: 'Run #', key: 'job_run_number', width: '70px' },
@@ -197,7 +197,7 @@ export function JobDetailPage() {
       {stats?.by_agent?.length > 0 && (
         <Card>
           <CardHeader title="Agent Activity" />
-          <Table
+          <PagedTable
             cols={[
               { header: 'Agent', key: 'agent_name' },
               { header: 'With Agent', key: 'with_agent_count' },
@@ -235,7 +235,7 @@ export function JobDetailPage() {
             return hay.includes(q);
           });
           return (
-          <Table
+          <PagedTable
             cols={[
               { header: 'Contact', render: (r: any) => (
                 <div>

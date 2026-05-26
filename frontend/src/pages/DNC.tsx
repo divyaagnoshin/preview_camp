@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import {
   Card,
-  Table,
+  PagedTable,
   Button,
   Modal,
   Input,
@@ -212,7 +212,7 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
         ) : filteredGroups.length === 0 ? (
           <EmptyState title='No matches' description={`No groups match "${search}".`} />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Group Name',
@@ -498,7 +498,7 @@ function DncListsView({
         ) : filteredLists.length === 0 ? (
           <EmptyState title='No matches' description='Try adjusting or clearing the filters above.' />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'List Name',

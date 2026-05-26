@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Card, Table, Button, Modal, Input, Select,
+  Card, PagedTable, Button, Modal, Input, Select,
   PageLoader, EmptyState, SearchInput,
 } from '../components/ui';
 import {
@@ -144,7 +144,7 @@ function GroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
         ) : filtered.length === 0 ? (
           <EmptyState title='No matches' description={`No groups match "${search}".`} />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Group Name',
@@ -374,7 +374,7 @@ function CodesView({
         <SearchInput value={search} onChange={setSearch} placeholder='Search dispositions…' />
       )}
 
-      {/* Table */}
+      {/* PagedTable */}
       <Card>
         <div className='px-5 py-3 border-b border-gray-100'>
           <h2 className='text-sm font-semibold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>
@@ -400,7 +400,7 @@ function CodesView({
         ) : filteredDispositions.length === 0 ? (
           <EmptyState title='No matches' description='Try adjusting your search.' />
         ) : (
-          <Table
+          <PagedTable
             cols={[
               {
                 header: 'Code',

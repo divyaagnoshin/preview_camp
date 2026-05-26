@@ -91,21 +91,32 @@ export default function Layout({ children }: { children: ReactNode }) {
               title={!isExpanded ? n.label : undefined}
               className={clsx(
                 'flex items-center rounded-xl transition-all duration-150',
-                isExpanded ? 'gap-3 px-3 py-2.5 w-full' : 'justify-center w-10 h-10',
+                isExpanded ? 'gap-1.5 px-3 py-2.5 w-full' : 'justify-center w-10 h-10',
                 childActive
                   ? 'bg-gradient-to-r from-[#F4521E] to-[#F5A623] text-white shadow-[0_4px_16px_rgba(244,82,30,0.4)]'
                   : 'text-[#C4956A] hover:bg-white/10 hover:text-white',
               )}
             >
               <n.icon className="w-5 h-5 flex-shrink-0" />
-              {isExpanded && (
-                <span className="text-[14px] font-medium truncate flex-1" style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}>
-                  {n.label}
-                </span>
-              )}
-              {isExpanded && (
-                <ChevronDown className={clsx('w-4 h-4 transition-transform duration-200 flex-shrink-0', groupOpen ? 'rotate-0' : '-rotate-90')} />
-              )}
+             
+
+{isExpanded && (
+  <div className="flex items-center justify-between flex-1 min-w-0">
+    <span
+      className="text-[14px] font-medium truncate"
+      style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}
+    >
+      {n.label}
+    </span>
+
+    <ChevronDown
+      className={clsx(
+        'w-4 h-4 transition-transform duration-200 flex-shrink-0 ml-2',
+        groupOpen ? 'rotate-0' : '-rotate-90'
+      )}
+    />
+  </div>
+)}
             </button>
           ) : (
             <NavLink
@@ -116,7 +127,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               className={({ isActive: active }) =>
                 clsx(
                   'flex items-center rounded-xl transition-all duration-150',
-                  isExpanded ? 'gap-3 px-3 py-2.5 w-full' : 'justify-center w-10 h-10',
+                  isExpanded ? 'gap-1.5 px-3 py-2.5 w-full' : 'justify-center w-10 h-10',
                   active || childActive
                     ? 'bg-gradient-to-r from-[#F4521E] to-[#F5A623] text-white shadow-[0_4px_16px_rgba(244,82,30,0.4)]'
                     : 'text-[#C4956A] hover:bg-white/10 hover:text-white',
@@ -125,7 +136,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
               <n.icon className="w-5 h-5 flex-shrink-0" />
               {isExpanded && (
-                <span className="text-[14px] font-medium truncate flex-1" style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}>
+                <span className="text-[14px] font-medium truncate " style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}>
                   {n.label}
                 </span>
               )}

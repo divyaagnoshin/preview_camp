@@ -1,76 +1,104 @@
 // backend-injector/src/services/ccsCleanupScheduler.ts
 //
-// Periodic CCS cleanup for infinite campaigns.
-// Runs on its own interval — completely separate from the contact injector.
+// Daily CCS cleanup — fires at 02:00 server-local time every day.
 //
 // What it does on each tick
 // ──────────────────────────
-// For every active infinite campaign job across all orgs:
+// For INFINITE campaigns (active jobs):
 //   1. Snapshot counts into campaign_summary (before any deletion).
 //   2. Copy exhausted + dnc rows into ccs_archive.
 //   3. Delete completed + exhausted + dnc rows from campaign_contact_status.
+//   queued rows are LEFT ALONE — the campaign is still running.
 //
-// queued rows are LEFT ALONE — the campaign is still running and agents
-// need them. Only dead-end statuses (completed / exhausted / dnc) are removed.
+// For FINITE campaigns (any job, any status):
+//   1. Snapshot counts into campaign_summary.
+//   2. Copy exhausted + dnc rows into ccs_archive.
+//   3. Delete completed + exhausted + dnc rows from campaign_contact_status.
+//   Same logic — just no schedule_type filter applied.
 //
-// Why here and not in the main backend?
-// ──────────────────────────────────────
-// The main backend is already under load from contact uploads and call
-// handling. This process (backend-injector) is a low-traffic singleton
-// worker — the right home for background DB maintenance work.
+// Daily aggregation (both types):
+//   At exactly 02:00, per job_id, all removable-status rows are aggregated
+//   into campaign_summary with trigger = 'daily_aggregation' before cleanup.
 //
-// No system_config columns needed.
-// Timing is controlled purely by CLEANUP_INTERVAL_HOURS env var.
-// No DB-level claim/lock — this is a singleton process so setInterval
-// is sufficient coordination.
+// Timing
+// ──────
+// Controlled by CLEANUP_HOUR env var (default: 2 → 02:00 local time).
+// Uses a ms-precise setTimeout chain to land exactly on the clock hour.
+// No DB-level lock needed — this is a singleton process.
 
 import pool, { withTransaction } from '../db/pool';
 import { PoolClient } from 'pg';
 
-const CLEANUP_INTERVAL_HOURS = parseFloat(
-  process.env.CLEANUP_INTERVAL_HOURS || '24',
-);
+// Hour of day (0-23) at which cleanup runs. Default: 2 (02:00).
+const CLEANUP_HOUR = parseInt(process.env.CLEANUP_HOUR || '2', 10);
 
 interface CleanupTarget {
   campaign_id: string;
   job_id: string;
   org_id: string;
+  schedule_type: 'infinite' | 'finite' | string;
 }
 
 // ── Entry point — called once from index.ts ───────────────────────────────────
 export function startCleanupScheduler() {
-  const intervalMs = CLEANUP_INTERVAL_HOURS * 60 * 60 * 1000;
   console.log(
-    `[ccs-cleanup] scheduler started — runs every ${CLEANUP_INTERVAL_HOURS}h` +
-    ` (first run in ${CLEANUP_INTERVAL_HOURS}h)`,
+    `[ccs-cleanup] scheduler started — will run daily at ${String(CLEANUP_HOUR).padStart(2, '0')}:00`,
   );
-  // Delay first run by one full interval so it does not fire on boot
-  // while the injector is doing its initial pass.
+  scheduleNextRun();
+}
+
+// ── Schedule the next 02:00 tick using an exact ms offset ────────────────────
+function scheduleNextRun() {
+  const now  = new Date();
+  const next = new Date(now);
+
+  next.setHours(CLEANUP_HOUR, 0, 0, 0);
+
+  // If 02:00 already passed today, aim for tomorrow
+  if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+
+  const msUntilNext = next.getTime() - now.getTime();
+  const hh = String(next.getHours()).padStart(2, '0');
+  const mm = String(next.getMinutes()).padStart(2, '0');
+  console.log(
+    `[ccs-cleanup] next run scheduled at ${next.toDateString()} ${hh}:${mm}` +
+    ` (in ${Math.round(msUntilNext / 60000)} min)`,
+  );
+
   setTimeout(() => {
-    void cleanupTick();
-    setInterval(() => void cleanupTick(), intervalMs);
-  }, intervalMs);
+    void cleanupTick().finally(() => scheduleNextRun());
+  }, msUntilNext);
 }
 
 // ── Tick ─────────────────────────────────────────────────────────────────────
 async function cleanupTick() {
-  console.log('[ccs-cleanup] tick started');
+  const startedAt = new Date();
+  console.log(`[ccs-cleanup] tick started at ${startedAt.toISOString()}`);
 
   let targets: CleanupTarget[] = [];
   try {
-    targets = await findAllInfiniteActiveJobs();
+    targets = await findAllEligibleJobs();
   } catch (err) {
-    console.error('[ccs-cleanup] findAllInfiniteActiveJobs failed:', err);
+    console.error('[ccs-cleanup] findAllEligibleJobs failed:', err);
     return;
   }
 
   if (!targets.length) {
-    console.log('[ccs-cleanup] no active infinite jobs — nothing to do');
+    console.log('[ccs-cleanup] no eligible jobs — nothing to do');
     return;
   }
 
+  const infinite = targets.filter(t => t.schedule_type === 'infinite');
+  const finite   = targets.filter(t => t.schedule_type !== 'infinite');
+  console.log(
+    `[ccs-cleanup] targets — infinite=${infinite.length} finite=${finite.length}`,
+  );
+
   let success = 0;
   let failed  = 0;
+
   for (const t of targets) {
     try {
       await cleanupJob(t);
@@ -78,7 +106,8 @@ async function cleanupTick() {
     } catch (err) {
       failed++;
       console.error(
-        `[ccs-cleanup] campaign ${t.campaign_id} job ${t.job_id} failed:`,
+        `[ccs-cleanup] campaign ${t.campaign_id} job ${t.job_id}` +
+        ` (${t.schedule_type}) failed:`,
         err,
       );
     }
@@ -89,19 +118,45 @@ async function cleanupTick() {
   );
 }
 
-// ── Query: all active infinite jobs across all orgs ──────────────────────────
-async function findAllInfiniteActiveJobs(): Promise<CleanupTarget[]> {
+// ── Query: all eligible jobs ─────────────────────────────────────────────────
+//
+// INFINITE  → campaign active + job active   (running campaigns, queued rows
+//             must survive, only dead-end statuses removed)
+//
+// FINITE    → any campaign/job status        (campaign may already be finished;
+//             we still clean up leftover completed/exhausted/dnc rows)
+//
+async function findAllEligibleJobs(): Promise<CleanupTarget[]> {
   const { rows } = await pool.query(
-    `SELECT DISTINCT ON (c.id)
-            c.id     AS campaign_id,
-            j.id     AS job_id,
-            c.org_id
+    `-- Infinite: latest active job per active campaign
+     SELECT DISTINCT ON (c.id)
+            c.id             AS campaign_id,
+            j.id             AS job_id,
+            c.org_id,
+            c.schedule_type
        FROM campaigns c
        JOIN campaign_jobs j
          ON j.campaign_id = c.id
         AND j.status = 'active'
       WHERE c.schedule_type = 'infinite'
         AND c.status = 'active'
+
+     UNION ALL
+
+     -- Finite: latest job per campaign (any status), only if removable rows exist
+     SELECT DISTINCT ON (c.id)
+            c.id             AS campaign_id,
+            j.id             AS job_id,
+            c.org_id,
+            c.schedule_type
+       FROM campaigns c
+       JOIN campaign_jobs j ON j.campaign_id = c.id
+      WHERE c.schedule_type != 'infinite'
+        AND EXISTS (
+          SELECT 1 FROM campaign_contact_status ccs
+           WHERE ccs.job_id = j.id
+             AND ccs.status IN ('completed', 'exhausted', 'dnc')
+        )
       ORDER BY c.id, j.start_time DESC`,
   );
   return rows;
@@ -111,7 +166,7 @@ async function findAllInfiniteActiveJobs(): Promise<CleanupTarget[]> {
 async function cleanupJob(t: CleanupTarget): Promise<void> {
   await withTransaction(async (client: PoolClient) => {
 
-    // Step 1: snapshot counts — written before any deletion
+    // ── Step 1: Snapshot counts per job_id (daily aggregation) ───────────────
     const { rows: countRows } = await client.query(
       `SELECT
          COUNT(*)                                          ::int AS total_in_ccs,
@@ -125,33 +180,25 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
     );
     const counts = countRows[0];
 
-    // Nothing removable — skip entirely, no summary row written
     const removable =
       counts.completed_count + counts.exhausted_count + counts.dnc_count;
+
+    // Nothing removable — still write a daily aggregation row so we have a
+    // full-picture record for this job even on quiet days.
     if (removable === 0) {
       console.log(
-        `[ccs-cleanup] job ${t.job_id} — nothing to remove, skipping`,
+        `[ccs-cleanup] job ${t.job_id} (${t.schedule_type})` +
+        ` — nothing to remove; writing aggregation row only`,
       );
+      await writeSummary(client, t, counts, 'daily_aggregation');
       return;
     }
 
-    await client.query(
-      `INSERT INTO campaign_summary
-         (campaign_id, job_id, org_id,
-          total_in_ccs, completed_count, exhausted_count,
-          dnc_count, queued_count, trigger)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'periodic_cleanup')`,
-      [
-        t.campaign_id, t.job_id, t.org_id,
-        counts.total_in_ccs,
-        counts.completed_count,
-        counts.exhausted_count,
-        counts.dnc_count,
-        counts.queued_count,
-      ],
-    );
+    // Write aggregation snapshot BEFORE deletion so counts are accurate
+    await writeSummary(client, t, counts, 'daily_aggregation');
 
-    // Step 2: archive exhausted + dnc rows (not completed — history has them)
+    // ── Step 2: Archive exhausted + dnc rows ──────────────────────────────────
+    // completed rows are already tracked in call history — skip archiving them
     const { rowCount: archivedCount } = await client.query(
       `INSERT INTO ccs_archive
          (original_ccs_id, contact_id, job_id, campaign_id, org_id,
@@ -162,15 +209,16 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
           id, contact_id, $1, $2, $3,
           status, priority, assigned_agent_id, attempts_made,
           last_attempted_at, next_attempt_at,
-          'periodic_cleanup', created_at, updated_at
+          'daily_cleanup', created_at, updated_at
        FROM campaign_contact_status
        WHERE job_id = $4
          AND status IN ('exhausted', 'dnc')`,
-      [t.campaign_id, t.campaign_id, t.org_id, t.job_id],
+      [t.job_id, t.campaign_id, t.org_id, t.job_id],
     );
 
-    // Step 3: delete completed + exhausted + dnc from live CCS
-    // queued rows are intentionally NOT deleted — campaign is still active
+    // ── Step 3: Delete completed + exhausted + dnc ────────────────────────────
+    // For INFINITE campaigns: queued rows are intentionally kept — agents need them.
+    // For FINITE campaigns:   same rule — queued rows still in-flight are kept.
     const { rowCount: deletedCount } = await client.query(
       `DELETE FROM campaign_contact_status
        WHERE job_id = $1
@@ -179,7 +227,7 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
     );
 
     console.log(
-      `[ccs-cleanup] job ${t.job_id}` +
+      `[ccs-cleanup] job ${t.job_id} (${t.schedule_type})` +
       ` archived=${archivedCount ?? 0}` +
       ` deleted=${deletedCount ?? 0}` +
       ` (completed=${counts.completed_count}` +
@@ -187,4 +235,35 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
       ` dnc=${counts.dnc_count})`,
     );
   });
+}
+
+// ── Helper: insert one campaign_summary row ───────────────────────────────────
+async function writeSummary(
+  client: PoolClient,
+  t: CleanupTarget,
+  counts: {
+    total_in_ccs: number;
+    completed_count: number;
+    exhausted_count: number;
+    dnc_count: number;
+    queued_count: number;
+  },
+  trigger: string,
+) {
+  await client.query(
+    `INSERT INTO campaign_summary
+       (campaign_id, job_id, org_id,
+        total_in_ccs, completed_count, exhausted_count,
+        dnc_count, queued_count, trigger)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      t.campaign_id, t.job_id, t.org_id,
+      counts.total_in_ccs,
+      counts.completed_count,
+      counts.exhausted_count,
+      counts.dnc_count,
+      counts.queued_count,
+      trigger,
+    ],
+  );
 }

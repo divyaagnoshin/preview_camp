@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import { Card, EmptyState, PageLoader, SearchInput, StatusBadge, StatCard } from '../components/ui';
+import { Card, EmptyState, PageLoader, SearchInput, StatusBadge, StatCard, usePagination, Pagination } from '../components/ui';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface TeamAgent {
@@ -53,6 +53,9 @@ export default function SupervisorTeamsPage() {
 
   const totalAgents = teams.reduce((sum, t) => sum + t.agents.length, 0);
 
+  const { page, pageSize, totalPages, pageItems: pagedTeams, goTo, changePageSize, totalItems } =
+    usePagination(filteredTeams);
+
   if (isLoading) return <PageLoader />;
 
   const hasFilters = !!search;
@@ -96,77 +99,89 @@ export default function SupervisorTeamsPage() {
         ) : filteredTeams.length === 0 ? (
           <EmptyState title="No matches" description="Try adjusting the search above." />
         ) : (
-          <div className="divide-y divide-gray-100">
-            {filteredTeams.map((team) => {
-              const open = openSupervisors.has(team.supervisor_id);
-              const initials = `${team.supervisor_first_name?.[0] ?? ''}${team.supervisor_last_name?.[0] ?? ''}`;
+          <>
+            <div className="divide-y divide-gray-100">
+              {pagedTeams.map((team) => {
+                const open = openSupervisors.has(team.supervisor_id);
+                const initials = `${team.supervisor_first_name?.[0] ?? ''}${team.supervisor_last_name?.[0] ?? ''}`;
 
-              return (
-                <div key={team.supervisor_id}>
-                  {/* Supervisor header row */}
-                  <button
-                    onClick={() => toggleSupervisor(team.supervisor_id)}
-                    className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-orange-50/50 transition-colors"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#F4521E] to-[#F5A623] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-                      {initials}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {team.supervisor_first_name} {team.supervisor_last_name}
+                return (
+                  <div key={team.supervisor_id}>
+                    {/* Supervisor header row */}
+                    <button
+                      onClick={() => toggleSupervisor(team.supervisor_id)}
+                      className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-orange-50/50 transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#F4521E] to-[#F5A623] flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                        {initials}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {team.supervisor_username
-                          ? `@${team.supervisor_username} · ${team.supervisor_email}`
-                          : team.supervisor_email}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {team.supervisor_first_name} {team.supervisor_last_name}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {team.supervisor_username
+                            ? `@${team.supervisor_username} · ${team.supervisor_email}`
+                            : team.supervisor_email}
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-xs bg-[#F4521E]/10 text-[#F4521E] px-2.5 py-1 rounded-full font-medium flex-shrink-0">
-                      {team.agents.length} agent{team.agents.length !== 1 ? 's' : ''}
-                    </span>
-                    {open
-                      ? <ChevronDown  className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
-                  </button>
+                      <span className="text-xs bg-[#F4521E]/10 text-[#F4521E] px-2.5 py-1 rounded-full font-medium flex-shrink-0">
+                        {team.agents.length} agent{team.agents.length !== 1 ? 's' : ''}
+                      </span>
+                      {open
+                        ? <ChevronDown  className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                    </button>
 
-                  {/* Agents list */}
-                  {open && (
-                    <div className="border-t border-orange-100 bg-orange-50/30">
-                      {team.agents.length === 0 ? (
-                        <div className="px-5 py-4 text-sm text-gray-400 italic pl-14">
-                          No agents assigned to this supervisor yet.
-                        </div>
-                      ) : (
-                        <div className="divide-y divide-orange-100/60">
-                          {team.agents.map((agent) => (
-                            <div
-                              key={agent.id}
-                              className="flex items-center gap-3 pl-14 pr-5 py-3 hover:bg-orange-50 transition-colors"
-                            >
-                              <div className="w-7 h-7 rounded-full bg-[#F5A623]/20 flex items-center justify-center text-[#C07010] text-xs font-bold flex-shrink-0">
-                                {agent.first_name?.[0]}{agent.last_name?.[0]}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {agent.first_name} {agent.last_name}
+                    {/* Agents list */}
+                    {open && (
+                      <div className="border-t border-orange-100 bg-orange-50/30">
+                        {team.agents.length === 0 ? (
+                          <div className="px-5 py-4 text-sm text-gray-400 italic pl-14">
+                            No agents assigned to this supervisor yet.
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-orange-100/60">
+                            {team.agents.map((agent) => (
+                              <div
+                                key={agent.id}
+                                className="flex items-center gap-3 pl-14 pr-5 py-3 hover:bg-orange-50 transition-colors"
+                              >
+                                <div className="w-7 h-7 rounded-full bg-[#F5A623]/20 flex items-center justify-center text-[#C07010] text-xs font-bold flex-shrink-0">
+                                  {agent.first_name?.[0]}{agent.last_name?.[0]}
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                  {agent.username
-                                    ? `@${agent.username} · ${agent.email}`
-                                    : agent.email}
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {agent.first_name} {agent.last_name}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {agent.username
+                                      ? `@${agent.username} · ${agent.email}`
+                                      : agent.email}
+                                  </div>
                                 </div>
+                                <StatusBadge status={agent.is_active ? 'active' : 'inactive'} />
                               </div>
-                              <StatusBadge status={agent.is_active ? 'active' : 'inactive'} />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pagination — inside Card, visually attached */}
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={pageSize}
+              onPageChange={goTo}
+              onPageSizeChange={changePageSize}
+            />
+          </>
         )}
       </Card>
     </div>
