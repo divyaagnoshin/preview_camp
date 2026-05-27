@@ -7,7 +7,6 @@ const router = Router();
 router.use(authenticate);
 
 // ── Calendars ─────────────────────────────────────────────
-// GET /v1/holiday-calendars — list with date count and campaign usage count.
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
@@ -58,6 +57,7 @@ router.post('/', requireRole('admin', 'supervisor'), async (req, res, next) => {
     );
     res.status(201).json(rows[0]);
   } catch (e) {
+    console.log("Error Message ", e);
     next(e);
   }
 });
@@ -131,6 +131,79 @@ async function assertCalendarOwned(calendarId: string, orgId: string) {
   if (!r.rowCount) throw new AppError(404, 'Calendar not found');
 }
 
+/**
+ * Checks whether the proposed date entry conflicts with existing entries
+ * on the same calendar_id + holiday_date.
+ *
+ * Rules:
+ *  - Only one full-day block allowed per date (conflicts with everything).
+ *  - Multiple time-range blocks allowed per date, but they must not overlap.
+ *  - A full-day block cannot coexist with any time-range block on the same date.
+ *
+ * Pass excludeDateId on PATCH so the row being updated is not compared
+ * against itself.
+ */
+async function assertNoDateConflict(
+  calendarId: string,
+  holidayDate: string,
+  isFullDay: boolean,
+  blockStart: string | null,
+  blockEnd: string | null,
+  excludeDateId?: string,
+) {
+  const params: any[] = [calendarId, holidayDate];
+  const excludeClause = excludeDateId
+    ? `AND id <> $${params.push(excludeDateId)}`
+    : '';
+
+  const { rows } = await pool.query(
+    `SELECT id, is_full_day_block,
+            -- cast to text to guarantee HH:MM:SS string, not a JS Date
+            to_char(block_start, 'HH24:MI:SS') AS block_start,
+            to_char(block_end,   'HH24:MI:SS') AS block_end
+       FROM holiday_dates
+      WHERE calendar_id = $1
+        AND holiday_date = $2::date
+        ${excludeClause}`,
+    params,
+  );
+
+  for (const row of rows) {
+    if (isFullDay) {
+      // A new full-day block conflicts with anything already on that date.
+      if (row.is_full_day_block) {
+        throw new AppError(409, 'A full-day block already exists for this date');
+      }
+      throw new AppError(
+        409,
+        'Time-range blocks already exist for this date — remove them before adding a full-day block',
+      );
+    } else {
+      // A new time-range block conflicts with an existing full-day block.
+      if (row.is_full_day_block) {
+        throw new AppError(
+          409,
+          'A full-day block already exists for this date — remove it before adding a time-range block',
+        );
+      }
+      // Overlap check: two intervals overlap when startA < endB AND endA > startB.
+      if (blockStart && blockEnd && row.block_start && row.block_end) {
+        // Normalise to HH:MM for safe string comparison.
+        const start = blockStart.slice(0, 5);
+        const end   = blockEnd.slice(0, 5);
+        const rs    = String(row.block_start).slice(0, 5);
+        const re    = String(row.block_end).slice(0, 5);
+        if (start < re && end > rs) {
+          throw new AppError(
+            409,
+            `Time range overlaps with an existing block (${rs}–${re})`,
+          );
+        }
+      }
+    }
+  }
+}
+
 router.get('/:id/dates', async (req, res, next) => {
   try {
     await assertCalendarOwned(req.params.id, req.user!.orgId);
@@ -168,19 +241,29 @@ router.post(
         block_start,
         block_end,
       } = req.body;
+
       if (!holiday_date) throw new AppError(400, 'holiday_date required');
       if (!is_full_day_block && (!block_start || !block_end))
         throw new AppError(
           400,
           'block_start and block_end required when not a full-day block',
         );
+
+      await assertNoDateConflict(
+        req.params.id,
+        holiday_date,
+        !!is_full_day_block,
+        is_full_day_block ? null : block_start,
+        is_full_day_block ? null : block_end,
+      );
+
       const { rows } = await pool.query(
         `INSERT INTO holiday_dates
          (calendar_id, holiday_date, holiday_name, is_full_day_block, block_start, block_end)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING id, calendar_id,
-                 to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
-                 holiday_name, is_full_day_block, block_start, block_end`,
+         VALUES ($1,$2,$3,$4,$5,$6)
+         RETURNING id, calendar_id,
+                   to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+                   holiday_name, is_full_day_block, block_start, block_end`,
         [
           req.params.id,
           holiday_date,
@@ -192,6 +275,7 @@ router.post(
       );
       res.status(201).json(rows[0]);
     } catch (e) {
+      console.log("Error Message "+e);
       next(e);
     }
   },
@@ -210,36 +294,77 @@ router.patch(
         block_start,
         block_end,
       } = req.body;
-     const fullDay = !!is_full_day_block;
 
-const finalBlockStart = fullDay ? null : block_start;
-const finalBlockEnd = fullDay ? null : block_end;
+      const fullDay         = !!is_full_day_block;
+      const finalBlockStart = fullDay ? null : (block_start ?? null);
+      const finalBlockEnd   = fullDay ? null : (block_end ?? null);
 
-const { rows } = await pool.query(
-  `UPDATE holiday_dates
-    SET holiday_date = COALESCE($1::date, holiday_date),
-        holiday_name = COALESCE($2::text, holiday_name),
-        is_full_day_block = $3,
-        block_start = $4,
-        block_end = $5
-  WHERE id = $6
-    AND calendar_id = $7
-  RETURNING id, calendar_id,
-            to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
-            holiday_name, is_full_day_block, block_start, block_end`,
-  [
-    holiday_date || null,
-    holiday_name ?? null,
-    fullDay,
-    finalBlockStart,
-    finalBlockEnd,
-    req.params.dateId,
-    req.params.id,
-  ],
-);      if (!rows.length) throw new AppError(404, 'Holiday not found');
+      // Only run conflict check when date-related fields are being changed.
+      if (
+        holiday_date      !== undefined ||
+        is_full_day_block !== undefined ||
+        block_start       !== undefined ||
+        block_end         !== undefined
+      ) {
+        // Fetch the current row to fill in any fields not supplied in the request.
+        const cur = await pool.query(
+          `SELECT to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+                  is_full_day_block,
+                  to_char(block_start, 'HH24:MI:SS') AS block_start,
+                  to_char(block_end,   'HH24:MI:SS') AS block_end
+             FROM holiday_dates
+            WHERE id = $1 AND calendar_id = $2`,
+          [req.params.dateId, req.params.id],
+        );
+        if (!cur.rows.length) throw new AppError(404, 'Holiday not found');
+        const existing = cur.rows[0];
+
+        const checkDate    = holiday_date ?? existing.holiday_date;
+        const checkFullDay =
+          is_full_day_block !== undefined ? fullDay : existing.is_full_day_block;
+        const checkStart   = checkFullDay ? null : (block_start ?? existing.block_start);
+        const checkEnd     = checkFullDay ? null : (block_end   ?? existing.block_end);
+
+        await assertNoDateConflict(
+          req.params.id,
+          checkDate,
+          checkFullDay,
+          checkStart,
+          checkEnd,
+          req.params.dateId, // exclude self from conflict check
+        );
+      }
+
+      // FIX: use a sentinel only for holiday_name so that passing null
+      // explicitly clears it, while omitting the field leaves it unchanged.
+      const nameProvided = holiday_name !== undefined;
+
+      const { rows } = await pool.query(
+        `UPDATE holiday_dates
+            SET holiday_date      = COALESCE($1::date, holiday_date),
+                holiday_name      = CASE WHEN $6 THEN $2::text ELSE holiday_name END,
+                is_full_day_block = $3,
+                block_start       = $4,
+                block_end         = $5
+          WHERE id = $7
+            AND calendar_id = $8
+          RETURNING id, calendar_id,
+                    to_char(holiday_date, 'YYYY-MM-DD') AS holiday_date,
+                    holiday_name, is_full_day_block, block_start, block_end`,
+        [
+          holiday_date || null,    // $1
+          holiday_name || null,    // $2 — empty string or null both clear the field
+          fullDay,                 // $3
+          finalBlockStart,         // $4
+          finalBlockEnd,           // $5
+          nameProvided,            // $6 — boolean flag: should we update holiday_name?
+          req.params.dateId,       // $7
+          req.params.id,           // $8
+        ],
+      );
+      if (!rows.length) throw new AppError(404, 'Holiday not found');
       res.json(rows[0]);
     } catch (e) {
-      
       next(e);
     }
   },

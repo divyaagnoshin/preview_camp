@@ -447,6 +447,7 @@ export const listTimezones = (): Promise<{ data: string[] }> =>
 export interface SystemConfig {
   org_id: string;
   inject_poll_minutes: number;
+  recheck_interval: number;
   last_injected_at: string | null;
   time_guard_enabled: boolean;
   // Keyed by day_of_week ("0"–"6"). A day's absence means no windows are
@@ -460,6 +461,7 @@ export const getSystemConfig = (): Promise<SystemConfig> =>
 export const updateSystemConfig = (
   body: Partial<{
     inject_poll_minutes: number;
+    recheck_interval: number; 
     time_guard_enabled: boolean;
     time_guard_windows: Record<string, { start: string; end: string }>;
   }>,

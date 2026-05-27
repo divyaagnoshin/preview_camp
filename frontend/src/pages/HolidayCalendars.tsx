@@ -38,7 +38,6 @@ import {
   Trash2,
   AlertTriangle,
   CalendarX,
-  CalendarDays,
   Check,
   ChevronDown,
 } from 'lucide-react';
@@ -59,11 +58,59 @@ const COUNTRY_OPTIONS = [
 const flagFor = (code: string | null) =>
   COUNTRY_OPTIONS.find((c) => c.value === code)?.label ?? code ?? ' ';
 
-// ── Amber CalendarX icon — no background, icon only ──
+// ── Amber CalendarX icon ─────────────────────────────────────
 function HolidayRowIcon() {
   return (
     <CalendarX className='w-4 h-4 flex-shrink-0' style={{ color: '#D97706' }} />
   );
+}
+
+// ── Helper: extract a human-readable message from a mutation error ──
+/**
+ * Pulls the error message string out of an axios error (or any other shape).
+ * Tries every known location so nothing gets lost.
+ */
+function extractErrorMessage(error: unknown): string | null {
+  if (!error) return null;
+  const e = error as any;
+
+  // axios puts the parsed JSON body on e.response.data
+  const data = e?.response?.data;
+  if (data) {
+    // Try every common key the backend might use
+    const fromData =
+      data?.message ?? data?.error ?? data?.msg ?? data?.detail ?? null;
+    if (fromData && typeof fromData === 'string') return fromData;
+    // If data itself is a plain string
+    if (typeof data === 'string' && data.length < 300) return data;
+  }
+
+  // Fallbacks for non-axios shapes
+  return (
+    e?.data?.message ??
+    e?.body?.message ??
+    e?.message ??
+    e?.error ??
+    null
+  );
+}
+
+/**
+ * Returns a user-friendly error message for holiday-date save failures.
+ * Because the backend sends clear messages, we just show them directly
+ * after light normalisation — no fragile string-matching needed.
+ */
+function friendlyDateError(error: unknown): string {
+  const msg = extractErrorMessage(error) ?? '';
+  if (!msg) return 'Unable to save changes. Please check your input and try again.';
+
+  // The backend messages are already user-readable; return them as-is.
+  // We only rewrite the overlap one to prepend a label.
+  if (msg.includes('overlaps with an existing block')) {
+    return `Time overlap: ${msg}`;
+  }
+
+  return msg;
 }
 
 // ── CountryPicker ────────────────────────────────────────────
@@ -678,21 +725,37 @@ function HolidayDateEditor({
   onSaved: () => void;
 }) {
   const isEdit = !!target;
-  const [holidayDate, setHolidayDate] = useState(target?.holiday_date ?? new Date().toISOString().slice(0, 10));
+  const [holidayDate, setHolidayDate] = useState(
+    target?.holiday_date ?? new Date().toISOString().slice(0, 10),
+  );
   const [name, setName] = useState(target?.holiday_name ?? '');
   const [isFullDay, setIsFullDay] = useState(target?.is_full_day_block ?? true);
-  const [blockStart, setBlockStart] = useState(target?.block_start ? target.block_start.slice(0, 5) : '09:00');
-  const [blockEnd, setBlockEnd] = useState(target?.block_end ? target.block_end.slice(0, 5) : '17:00');
+  const [blockStart, setBlockStart] = useState(
+    target?.block_start ? target.block_start.slice(0, 5) : '09:00',
+  );
+  const [blockEnd, setBlockEnd] = useState(
+    target?.block_end ? target.block_end.slice(0, 5) : '17:00',
+  );
 
   const mut = useMutation({
     mutationFn: async () => {
+      const trimmedName = name.trim();
+
+      // The API type Partial<{holiday_name: string}> does not accept null.
+      // We use "" (empty string) to signal "clear the name" on edit;
+      // the backend does `holiday_name || null` before storing, so "" → null in DB.
+      const holidayName: string | undefined = isEdit
+        ? trimmedName           // "" clears, "foo" sets
+        : trimmedName || undefined; // on create just omit if blank
+
       const body = {
         holiday_date: holidayDate,
-        holiday_name: name.trim() || undefined,
+        holiday_name: holidayName,
         is_full_day_block: isFullDay,
         block_start: isFullDay ? undefined : blockStart,
         block_end: isFullDay ? undefined : blockEnd,
       };
+
       return isEdit
         ? updateHolidayDate(calendarId, target!.id, body)
         : createHolidayDate(calendarId, body as any);
@@ -705,32 +768,82 @@ function HolidayDateEditor({
   return (
     <Modal open title={isEdit ? 'Edit Holiday' : 'Add Holiday'} onClose={onClose}>
       <div className='space-y-4'>
-        <Input label='Date' type='date' value={holidayDate} onChange={(e) => setHolidayDate(e.target.value)} />
-        <Input label='Holiday Name (optional)' placeholder='e.g. Independence Day' value={name} onChange={(e) => setName(e.target.value)} />
+        <Input
+          label='Date'
+          type='date'
+          value={holidayDate}
+          onChange={(e) => { setHolidayDate(e.target.value); mut.reset(); }}
+        />
+        <Input
+          label='Holiday Name (optional)'
+          placeholder='e.g. Independence Day'
+          value={name}
+          onChange={(e) => { setName(e.target.value); mut.reset(); }}
+        />
         <div>
           <label className='block text-xs text-gray-500 mb-2'>Block Type</label>
           <div className='flex gap-2'>
-            <button type='button' onClick={() => setIsFullDay(true)} className={clsxBtn(isFullDay)}>Full Day</button>
-            <button type='button' onClick={() => setIsFullDay(false)} className={clsxBtn(!isFullDay)}>Time Range</button>
+            <button
+              type='button'
+              onClick={() => { setIsFullDay(true); mut.reset(); }}
+              className={clsxBtn(isFullDay)}
+            >
+              Full Day
+            </button>
+            <button
+              type='button'
+              onClick={() => { setIsFullDay(false); mut.reset(); }}
+              className={clsxBtn(!isFullDay)}
+            >
+              Time Range
+            </button>
           </div>
         </div>
+
         {!isFullDay && (
           <div className='grid grid-cols-2 gap-3'>
-            <Input label='From' type='time' value={blockStart} onChange={(e) => setBlockStart(e.target.value)} />
-            <Input label='To' type='time' value={blockEnd} onChange={(e) => setBlockEnd(e.target.value)} />
+            <Input
+              label='From'
+              type='time'
+              value={blockStart}
+              onChange={(e) => { setBlockStart(e.target.value); mut.reset(); }}
+            />
+            <Input
+              label='To'
+              type='time'
+              value={blockEnd}
+              onChange={(e) => { setBlockEnd(e.target.value); mut.reset(); }}
+            />
           </div>
         )}
+
+        {/* Inline time validation hint — shown before submission */}
+        {!isFullDay && blockStart && blockEnd && blockStart >= blockEnd && (
+          <div className='flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-lg'>
+            <AlertTriangle className='w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5' />
+            <p className='text-xs text-amber-700 leading-relaxed'>
+              End time must be after start time.
+            </p>
+          </div>
+        )}
+
+        {/* API error — conflict or other */}
         {mut.isError && (
           <div className='flex items-start gap-2.5 p-3 bg-red-50 border border-red-200 rounded-lg'>
             <AlertTriangle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
             <p className='text-xs text-red-700 leading-relaxed'>
-              Unable to save changes.
+              {friendlyDateError(mut.error)}
             </p>
           </div>
         )}
+
         <div className='flex justify-end gap-2 pt-2'>
           <Button variant='secondary' onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mut.mutate()} loading={mut.isPending} disabled={!holidayDate || !timesValid}>
+          <Button
+            onClick={() => mut.mutate()}
+            loading={mut.isPending}
+            disabled={!holidayDate || !timesValid}
+          >
             {isEdit ? 'Save' : 'Add'}
           </Button>
         </div>

@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Pencil,
   X,
+  RefreshCw,
 } from 'lucide-react';
 
 // ─── Inline select ────────────────────────────────────────────────────────────
@@ -90,9 +91,6 @@ function SettingNumber({
         />
         {unit && <span className='text-sm text-gray-400'>{unit}</span>}
       </div>
-      {min !== undefined && max !== undefined && (
-        <p className='text-xs text-gray-400 mt-1'>Allowed range: {min} – {max}</p>
-      )}
     </div>
   );
 }
@@ -136,7 +134,6 @@ function SectionCard({
           <h2 className='text-base font-semibold text-[#1A0F00]'>{title}</h2>
           <p className='text-xs text-gray-400 mt-0.5'>{description}</p>
         </div>
-        {/* Edit / Close button top-right */}
         {!editing ? (
           <button
             onClick={onEditToggle}
@@ -217,17 +214,14 @@ const TIMEZONES = [
   { value: 'Africa/Johannesburg', label: 'Africa/Johannesburg — South Africa Standard Time (SAST)' },
 ];
 
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',] as const;
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 type Day = typeof DAYS[number];
 
-// Day-of-week index used by both the API (`time_guard_windows` keys) and
-// schedule_windows.day_of_week. ISO Monday-first to match the UI ordering.
 const DAY_TO_DOW: Record<Day, number> = {
   Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
   Thursday: 4, Friday: 5, Saturday: 6,
 };
 
-// Default time per day shown until a real config is loaded.
 const DEFAULT_DAY_TIMES: Record<Day, { start: string; end: string }> = {
   Sunday:    { start: '00:00', end: '23:00' },
   Monday:    { start: '00:00', end: '23:00' },
@@ -238,8 +232,6 @@ const DEFAULT_DAY_TIMES: Record<Day, { start: string; end: string }> = {
   Saturday:  { start: '00:00', end: '23:00' },
 };
 
-// Derive UI state from a SystemConfig payload. Days absent from the JSONB
-// blob are not permitted while the guard is on.
 function deriveGuardState(cfg: SystemConfig) {
   const days: Day[] = [];
   const times: Record<Day, { start: string; end: string }> = { ...DEFAULT_DAY_TIMES };
@@ -262,7 +254,7 @@ export default function SystemConfigurationPage() {
     queryFn: getSystemConfig,
   });
 
-  // ── Timezone (display-only placeholder; not persisted on system_config) ─
+  // ── Timezone ───────────────────────────────────────────────────────────
   const [timezone, setTimezone] = useState('UTC');
   const [tzEdit, setTzEdit] = useState(false);
   const [tzDraft, setTzDraft] = useState('UTC');
@@ -282,7 +274,7 @@ export default function SystemConfigurationPage() {
     }, 800);
   };
 
-  // ── Time Guard (server-backed) ─────────────────────────────────────────
+  // ── Time Guard ─────────────────────────────────────────────────────────
   const [guardEnabled, setGuardEnabled] = useState(true);
   const [guardDays, setGuardDays] = useState<Day[]>([...DAYS]);
   const [dayTimes, setDayTimes] = useState<Record<Day, { start: string; end: string }>>(DEFAULT_DAY_TIMES);
@@ -294,17 +286,25 @@ export default function SystemConfigurationPage() {
   const [tgSaved, setTgSaved] = useState(false);
   const [tgError, setTgError] = useState<string | null>(null);
 
-  // ── Injection Interval (server-backed) ─────────────────────────────────
+  // ── Injection Interval ─────────────────────────────────────────────────
   const [injectInterval, setInjectInterval] = useState('5');
   const [intEdit, setIntEdit] = useState(false);
   const [intDraft, setIntDraft] = useState('5');
   const [intSaved, setIntSaved] = useState(false);
   const [intError, setIntError] = useState<string | null>(null);
 
-  // Hydrate local state once the fetch resolves (or after a successful save).
+  // ── Recheck Interval ───────────────────────────────────────────────────
+  const [recheckInterval, setRecheckInterval] = useState('60');
+  const [rcEdit, setRcEdit] = useState(false);
+  const [rcDraft, setRcDraft] = useState('60');
+  const [rcSaved, setRcSaved] = useState(false);
+  const [rcError, setRcError] = useState<string | null>(null);
+
+  // Hydrate local state once the fetch resolves.
   useEffect(() => {
     if (!config) return;
     setInjectInterval(String(config.inject_poll_minutes));
+    setRecheckInterval(String(config.recheck_interval));
     const g = deriveGuardState(config);
     setGuardEnabled(g.enabled);
     setGuardDays(g.days);
@@ -318,6 +318,7 @@ export default function SystemConfigurationPage() {
     },
   });
 
+  // ── Time Guard handlers ────────────────────────────────────────────────
   const openTgEdit = () => {
     setTgDraftEnabled(guardEnabled);
     setTgDraftDays([...guardDays]);
@@ -357,6 +358,7 @@ export default function SystemConfigurationPage() {
   const updateDraftTime = (day: Day, field: 'start' | 'end', val: string) =>
     setTgDraftTimes((prev) => ({ ...prev, [day]: { ...prev[day], [field]: val } }));
 
+  // ── Injection Interval handlers ────────────────────────────────────────
   const openIntEdit = () => { setIntDraft(injectInterval); setIntError(null); setIntEdit(true); };
   const cancelIntEdit = () => { setIntError(null); setIntEdit(false); };
   const saveInt = async () => {
@@ -373,6 +375,26 @@ export default function SystemConfigurationPage() {
       setTimeout(() => setIntSaved(false), 3000);
     } catch (e: any) {
       setIntError(e?.response?.data?.error || 'Failed to save interval.');
+    }
+  };
+
+  // ── Recheck Interval handlers ──────────────────────────────────────────
+  const openRcEdit = () => { setRcDraft(recheckInterval); setRcError(null); setRcEdit(true); };
+  const cancelRcEdit = () => { setRcError(null); setRcEdit(false); };
+  const saveRc = async () => {
+    setRcError(null);
+    const n = parseInt(rcDraft, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setRcError('Recheck interval must be a positive number.');
+      return;
+    }
+    try {
+      await updateMut.mutateAsync({ recheck_interval: n });
+      setRcSaved(true);
+      setRcEdit(false);
+      setTimeout(() => setRcSaved(false), 3000);
+    } catch (e: any) {
+      setRcError(e?.response?.data?.error || 'Failed to save recheck interval.');
     }
   };
 
@@ -445,7 +467,6 @@ export default function SystemConfigurationPage() {
 
           return (
             <>
-              {/* Enable toggle */}
               <label className='flex items-center gap-3 cursor-pointer'>
                 <div
                   onClick={() => editing && setTgDraftEnabled((v) => !v)}
@@ -473,32 +494,31 @@ export default function SystemConfigurationPage() {
 
               {activeEnabled && (
                 <>
-                  {/* Day selection + per-day times — compact card, not full-width rows */}
                   <div className='rounded-xl bg-gray-50 border border-gray-100 p-4'>
-                   <div className='flex items-center justify-between mb-3'>
-  <p className='text-sm font-medium text-gray-800'>Permitted Days & Hours</p>
-  {editing && (
-    <button
-      type='button'
-      onClick={() =>
-        tgDraftDays.length === DAYS.length
-          ? setTgDraftDays([])
-          : setTgDraftDays([...DAYS])
-      }
-      className='inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition'
-      style={{
-        background: '#EEEDFE',
-        color: '#3C3489',
-        border: '0.5px solid #AFA9EC',
-      }}
-    >
-      <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 14 14' stroke='currentColor' strokeWidth='1.8'>
-        <path strokeLinecap='round' strokeLinejoin='round' d='M2 4h10M2 7h6M2 10h4' />
-      </svg>
-      {tgDraftDays.length === DAYS.length ? 'Deselect all' : 'Select all'}
-    </button>
-  )}
-</div>
+                    <div className='flex items-center justify-between mb-3'>
+                      <p className='text-sm font-medium text-gray-800'>Permitted Days & Hours</p>
+                      {editing && (
+                        <button
+                          type='button'
+                          onClick={() =>
+                            tgDraftDays.length === DAYS.length
+                              ? setTgDraftDays([])
+                              : setTgDraftDays([...DAYS])
+                          }
+                          className='inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition'
+                          style={{
+                            background: '#EEEDFE',
+                            color: '#3C3489',
+                            border: '0.5px solid #AFA9EC',
+                          }}
+                        >
+                          <svg className='w-3.5 h-3.5' fill='none' viewBox='0 0 14 14' stroke='currentColor' strokeWidth='1.8'>
+                            <path strokeLinecap='round' strokeLinejoin='round' d='M2 4h10M2 7h6M2 10h4' />
+                          </svg>
+                          {tgDraftDays.length === DAYS.length ? 'Deselect all' : 'Select all'}
+                        </button>
+                      )}
+                    </div>
                     <div className='inline-flex flex-col gap-2 min-w-0'>
                       {DAYS.map((day) => {
                         const active = activeDays.includes(day);
@@ -512,7 +532,6 @@ export default function SystemConfigurationPage() {
                                 : 'bg-gray-100 border-gray-200'
                             }`}
                           >
-                            {/* Checkbox — always clickable */}
                             <button
                               onClick={() => editing && toggleDraftDay(day)}
                               className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition ${
@@ -527,13 +546,9 @@ export default function SystemConfigurationPage() {
                                 </svg>
                               )}
                             </button>
-
-                            {/* Day name */}
                             <span className={`text-sm font-medium w-10 flex-shrink-0 ${active ? 'text-gray-800' : 'text-gray-400'}`}>
                               {day.slice(0, 3)}
                             </span>
-
-                            {/* Time inputs — no disabled, always styled cleanly */}
                             <div className='flex items-center gap-2'>
                               <input
                                 type='time'
@@ -571,7 +586,6 @@ export default function SystemConfigurationPage() {
                     )}
                   </div>
 
-                  {/* Active windows summary — strong readable colors */}
                   <div className='rounded-xl bg-violet-400 px-4 py-3'>
                     <p className='text-xs font-semibold text-white mb-1.5'>Active windows</p>
                     {activeDays.length === 0 ? (
@@ -629,6 +643,45 @@ export default function SystemConfigurationPage() {
               </p>
               <p className='text-xs text-green-600 mt-0.5'>
                 Lower values = faster pickup of new contacts; higher values = less frequent polling overhead.
+              </p>
+            </div>
+          </>
+        )}
+      </SectionCard>
+
+      {/* ── 4. Recheck Interval ───────────────────────────────────────────── */}
+      <SectionCard
+        icon={<RefreshCw className='w-5 h-5 text-white' />}
+        iconColor='bg-sky-500'
+        title='Empty Queue Recheck Interval'
+        description='How long the backend waits before rechecking the queue after all contacts have been exhausted by agents.'
+        editing={rcEdit}
+        onEditToggle={openRcEdit}
+        onSave={saveRc}
+        onCancel={cancelRcEdit}
+        saving={updateMut.isPending}
+        saved={rcSaved}
+      >
+        {(editing) => (
+          <>
+            <SettingNumber
+              label='Recheck Interval'
+              description='Wait time before the backend re-scans the queue once it is fully exhausted.'
+              value={editing ? rcDraft : recheckInterval}
+              onChange={setRcDraft}
+              unit='seconds'
+              disabled={!editing}
+            />
+            {editing && rcError && (
+              <p className='text-xs text-red-600'>{rcError}</p>
+            )}
+            <div className='rounded-lg bg-sky-50 border border-sky-100 px-4 py-3'>
+              <p className='text-xs text-sky-700'>
+                <span className='font-semibold'>Current interval:</span>{' '}
+                {recheckInterval || '—'} second{recheckInterval === '1' ? '' : 's'}
+              </p>
+              <p className='text-xs text-sky-600 mt-0.5'>
+                Once all queued contacts are completed, the backend will wait this duration before checking for new contacts again.
               </p>
             </div>
           </>

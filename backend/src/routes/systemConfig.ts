@@ -87,6 +87,15 @@ router.patch(
         sets.push(`time_guard_windows = $${params.length}::jsonb`);
       }
 
+            if ('recheck_interval' in req.body) {
+        const raw = req.body.recheck_interval;
+        const n = parseInt(String(raw), 10);
+        if (!Number.isFinite(n) || n < 1)
+          throw new AppError(400, 'recheck_interval must be a positive integer');
+        params.push(n);
+        sets.push(`recheck_interval = $${params.length}`);
+      }
+
       if (!sets.length) throw new AppError(400, 'no updatable fields supplied');
 
       params.push(req.user!.orgId);
