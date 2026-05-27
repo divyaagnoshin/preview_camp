@@ -800,6 +800,7 @@ router.post(
           is_read_only_agent: !!f.is_read_only_agent,
           is_masked_agent: !!f.is_masked_agent,
           is_masked_reports: !!f.is_masked_reports,
+          is_editable_agent: f.is_editable_agent !== false,
         };
       });
       const keys = cleaned.map((c) => c.field_key);
@@ -811,48 +812,50 @@ router.post(
       for (const c of cleaned) {
         nextOrder += 1;
         const { rows } = await client.query(
-          `INSERT INTO contact_list_custom_fields
-             (contact_list_id, name, field_key, data_type,
-              is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
-              display_order, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-           RETURNING *`,
-          [
-            req.params.id,
-            c.name,
-            c.field_key,
-            c.data_type,
-            c.is_private,
-            c.is_read_only_agent,
-            c.is_masked_agent,
-            c.is_masked_reports,
-            nextOrder,
-            req.user!.userId,
-          ],
-        );
+  `INSERT INTO contact_list_custom_fields
+     (contact_list_id, name, field_key, data_type,
+      is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
+      is_editable_agent, display_order, created_by)        -- ← add column
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)             -- ← add $9
+   RETURNING *`,
+  [
+    req.params.id,
+    c.name,
+    c.field_key,
+    c.data_type,
+    c.is_private,
+    c.is_read_only_agent,
+    c.is_masked_agent,
+    c.is_masked_reports,
+    c.is_editable_agent,  // ← add this
+    nextOrder,
+    req.user!.userId,
+  ],
+);
         inserted.push(rows[0]);
         // Mirror into the org-scoped library so the field is reusable across
         // lists in the same org. Conflicts (same field_key already present
         // in the org library) are no-ops — the existing row stays.
         await client.query(
-          `INSERT INTO org_field_library
-             (org_id, name, field_key, field_type, data_type,
-              is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
-              display_order, created_by)
-           VALUES ($1,$2,$3,'custom',$4,$5,$6,$7,$8,99,$9)
-           ON CONFLICT (org_id, field_key) DO NOTHING`,
-          [
-            req.user!.orgId,
-            c.name,
-            c.field_key,
-            c.data_type,
-            c.is_private,
-            c.is_read_only_agent,
-            c.is_masked_agent,
-            c.is_masked_reports,
-            req.user!.userId,
-          ],
-        );
+  `INSERT INTO org_field_library
+     (org_id, name, field_key, field_type, data_type,
+      is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
+      is_editable_agent, display_order, created_by)        -- ← add column
+   VALUES ($1,$2,$3,'custom',$4,$5,$6,$7,$8,$9,99,$10)    -- ← add $9
+   ON CONFLICT (org_id, field_key) DO NOTHING`,
+  [
+    req.user!.orgId,
+    c.name,
+    c.field_key,
+    c.data_type,
+    c.is_private,
+    c.is_read_only_agent,
+    c.is_masked_agent,
+    c.is_masked_reports,
+    c.is_editable_agent,  // ← add this
+    req.user!.userId,
+  ],
+);
       }
       await syncFieldDefinitions(client, req.params.id);
       await client.query('COMMIT');
@@ -899,26 +902,28 @@ router.patch(
 
       await client.query('BEGIN');
       const { rows } = await client.query(
-        `UPDATE contact_list_custom_fields SET
-           name               = COALESCE($1, name),
-           data_type          = COALESCE($2, data_type),
-           is_private         = COALESCE($3, is_private),
-           is_read_only_agent = COALESCE($4, is_read_only_agent),
-           is_masked_agent    = COALESCE($5, is_masked_agent),
-           is_masked_reports  = COALESCE($6, is_masked_reports)
-         WHERE id = $7 AND contact_list_id = $8
-         RETURNING *`,
-        [
-          name ?? null,
-          data_type ?? null,
-          b.is_private != null ? !!b.is_private : null,
-          b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
-          b.is_masked_agent != null ? !!b.is_masked_agent : null,
-          b.is_masked_reports != null ? !!b.is_masked_reports : null,
-          req.params.fid,
-          req.params.id,
-        ],
-      );
+  `UPDATE contact_list_custom_fields SET
+     name               = COALESCE($1, name),
+     data_type          = COALESCE($2, data_type),
+     is_private         = COALESCE($3, is_private),
+     is_read_only_agent = COALESCE($4, is_read_only_agent),
+     is_masked_agent    = COALESCE($5, is_masked_agent),
+     is_masked_reports  = COALESCE($6, is_masked_reports),
+     is_editable_agent  = COALESCE($7, is_editable_agent)  -- ← add this
+   WHERE id = $8 AND contact_list_id = $9                  -- ← bump param nums
+   RETURNING *`,
+  [
+    name ?? null,
+    data_type ?? null,
+    b.is_private != null ? !!b.is_private : null,
+    b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
+    b.is_masked_agent != null ? !!b.is_masked_agent : null,
+    b.is_masked_reports != null ? !!b.is_masked_reports : null,
+    b.is_editable_agent != null ? !!b.is_editable_agent : null, // ← add
+    req.params.fid,
+    req.params.id,
+  ],
+);
       if (!rows[0]) {
         await client.query('ROLLBACK');
         throw new AppError(404, 'Custom field not found');

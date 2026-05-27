@@ -117,7 +117,7 @@ dncRouter.post(
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, source = 'manual' } = req.body;
+      const { name } = req.body;
       if (!name) throw new AppError(400, 'name required');
       const owner = await pool.query(
         'SELECT id FROM dnc_groups WHERE id=$1 AND org_id=$2',
@@ -126,9 +126,9 @@ dncRouter.post(
       if (!owner.rowCount) throw new AppError(404, 'dnc group not found');
       try {
         const { rows } = await pool.query(
-          `INSERT INTO dnc_lists (dnc_group_id, name, source, created_by)
-           VALUES ($1,$2,$3,$4) RETURNING *`,
-          [req.params.id, name, source, req.user!.userId],
+        `INSERT INTO dnc_lists (dnc_group_id, name, created_by)
+        VALUES ($1,$2,$3) RETURNING *`,
+        [req.params.id, name, req.user!.userId],
         );
         res.status(201).json(rows[0]);
       } catch (e: any) {
@@ -297,32 +297,51 @@ dncListsRouter.post(
       const phones: string[] = [];
       const duplicatePhones: string[] = [];
       for (const n of numbers) {
-        try {
-          const result = await pool.query(
-            `INSERT INTO dnc_numbers
-               (dnc_list_id, dnc_group_id, phone_number, added_reason, added_by, notes)
-             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
-            [
-              list.id,
-              list.dnc_group_id,
-              n.phone_number,
-              n.added_reason,
-              req.user!.userId,
-              n.notes,
-            ],
-          );
-          if ((result.rowCount ?? 0) > 0) {
-            added++;
-            if (n.phone_number) phones.push(n.phone_number);
-          } else {
-            duplicates++;
-            if (n.phone_number) duplicatePhones.push(n.phone_number);
-          }
-        } catch {
-          failed++;
-        }
-      }
 
+  try {
+
+    const phoneRegex = /^\+?\d{7,15}$/;
+
+    if (!phoneRegex.test(n.phone_number)) {
+      failed++;
+      continue;
+    }
+
+    const result = await pool.query(
+      `INSERT INTO dnc_numbers
+         (dnc_list_id, dnc_group_id, phone_number, added_reason, added_by, notes)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT DO NOTHING`,
+      [
+        list.id,
+        list.dnc_group_id,
+        n.phone_number,
+        n.added_reason,
+        req.user!.userId,
+        n.notes,
+      ],
+    );
+
+    if ((result.rowCount ?? 0) > 0) {
+
+      added++;
+
+      if (n.phone_number)
+        phones.push(n.phone_number);
+
+    } else {
+
+      duplicates++;
+
+      if (n.phone_number)
+        duplicatePhones.push(n.phone_number);
+    }
+
+  } catch {
+
+    failed++;
+  }
+}
       // Propagate to campaign_contact_status: for every campaign linked to
       // the list's parent group, flip any active CCS row whose contact phone
       // matches one of the just-added numbers to status='dnc'.
@@ -410,7 +429,7 @@ dncListsRouter.patch(
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { name, source } = req.body;
+      const { name } = req.body;
       await loadList(req.params.id, req.user!.orgId);
       const sets: string[] = [];
       const vals: any[] = [];
@@ -419,10 +438,7 @@ dncListsRouter.patch(
         sets.push(`name=$${i++}`);
         vals.push(name);
       }
-      if (typeof source === 'string') {
-        sets.push(`source=$${i++}`);
-        vals.push(source);
-      }
+      
       if (!sets.length) {
         const { rows } = await pool.query(
           'SELECT * FROM dnc_lists WHERE id=$1',

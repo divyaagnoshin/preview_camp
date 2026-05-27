@@ -28,6 +28,7 @@ import {
   Hash,
   AlertCircle,
   X,
+  Download,
 } from 'lucide-react';
 import { deleteAllDncNumbers, deleteDncNumbersBulk } from '../api/client';
 
@@ -41,25 +42,69 @@ const getDncNumbers = (listId: string) =>
 
 // ─── CSV parser ───────────────────────────────────────────────────────────────
 
-function parseDncCsv(text: string): string[] {
+function parseDncCsv(
+  text: string,
+): { phone_number: string; notes: string }[] {
+
   const lines = text
     .split(/\r\n|\r|\n/)
     .map((l) => l.trim())
     .filter(Boolean);
+
   if (!lines.length) return [];
-  const firstCell = lines[0].split(',')[0].trim().replace(/^"|"$/g, '');
-  const isHeader = !/^\+?\d[\d\s\-().]{4,}$/.test(firstCell);
+
+  const firstCell = lines[0]
+    .split(',')[0]
+    .trim()
+    .replace(/^"|"$/g, '');
+
+  const isHeader =
+    !/^\+?\d[\d\s\-().]{4,}$/.test(firstCell);
+
   const rows = isHeader ? lines.slice(1) : lines;
+
   const seen = new Set<string>();
-  const out: string[] = [];
+
+  const out: {
+    phone_number: string;
+    notes: string;
+  }[] = [];
+
   for (const row of rows) {
-    const cell = row.split(',')[0].trim().replace(/^"|"$/g, '');
-    if (cell && !seen.has(cell)) {
-      seen.add(cell);
-      out.push(cell);
+
+    const cols = row.split(',');
+
+    const phone =
+      cols[0]?.trim().replace(/^"|"$/g, '');
+
+    const notes =
+      cols[1]?.trim().replace(/^"|"$/g, '') || '';
+
+    if (phone && !seen.has(phone)) {
+
+      seen.add(phone);
+
+      out.push({
+        phone_number: phone,
+        notes,
+      });
     }
   }
+
   return out;
+}
+
+// ─── CSV template downloader ──────────────────────────────────────────────────
+
+function downloadCsvTemplate() {
+  const content = 'phone_number,notes\n';
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dnc_import_template.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Safe date formatter ──────────────────────────────────────────────────────
@@ -76,6 +121,23 @@ function formatDateTime(value: string | null | undefined): string {
   const d = new Date(value);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleString();
+}
+
+function isValidPhone(raw: string): boolean {
+  const s = raw.trim();
+
+  if (!s) return false;
+
+  const digits = s.replace(/[\s\-().]/g, '');
+
+  if (!/^\+?\d+$/.test(digits)) {
+    return false;
+  }
+
+  const digitOnly = digits.replace('+', '');
+
+  return digitOnly.length >= 7 &&
+         digitOnly.length <= 15;
 }
 
 // ─── View stack type ──────────────────────────────────────────────────────────
@@ -133,7 +195,9 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
   const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
   const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
@@ -148,19 +212,19 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
     return allGroups.filter((r) => (r.name || '').toLowerCase().includes(q));
   }, [allGroups, search]);
 
-  const resetCreate = () => { setShowCreate(false); setGroupName(''); };
-  const resetEdit = () => { setEditTarget(null); setEditName(''); };
-  const openEdit = (g: any) => { setEditTarget(g); setEditName(g.name || ''); };
+  const resetCreate = () => { setShowCreate(false); setGroupName(''); setGroupDescription(''); };
+  const resetEdit = () => { setEditTarget(null); setEditName(''); setEditDescription(''); };
+  const openEdit = (g: any) => { setEditTarget(g); setEditName(g.name || ''); setEditDescription(g.description || ''); };
 
   const createMut = useMutation({
     mutationFn: () =>
-      api.post('/dnc-groups', { name: groupName }).then((r) => r.data),
+      api.post('/dnc-groups', { name: groupName, description: groupDescription || null }).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dnc-groups'] }); resetCreate(); },
   });
 
   const editMut = useMutation({
     mutationFn: () =>
-      api.patch(`/dnc-groups/${editTarget.id}`, { name: editName }).then((r) => r.data),
+      api.patch(`/dnc-groups/${editTarget.id}`, { name: editName, description: editDescription || null }).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dnc-groups'] }); resetEdit(); },
   });
 
@@ -224,6 +288,14 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
                 ),
               },
               {
+                header: 'Description',
+                render: (r: any) => (
+                  <span className='text-sm text-gray-500 truncate max-w-[220px] block'>
+                    {r.description || <span className='text-gray-300 italic'>—</span>}
+                  </span>
+                ),
+              },
+              {
                 header: 'Lists',
                 render: (r: any) => (
                   <span className='font-medium text-[#1A0F00]'>{r.list_count ?? 0}</span>
@@ -279,6 +351,16 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
             onChange={(e) => setGroupName(e.target.value)}
             placeholder='e.g. Federal DNC Registry'
           />
+          <div>
+            <label className='block text-xs font-medium text-gray-500 mb-1'>Description</label>
+            <textarea
+              value={groupDescription}
+              onChange={(e) => setGroupDescription(e.target.value)}
+              placeholder='Optional — describe the purpose of this group'
+              rows={3}
+              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none'
+            />
+          </div>
           <p className='text-xs text-gray-400'>
             After creating the group you can add lists and phone numbers inside it.
           </p>
@@ -305,6 +387,16 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
       <Modal title='Edit DNC Group' open={!!editTarget} onClose={resetEdit}>
         <div className='space-y-4'>
           <Input label='Group Name *' value={editName} onChange={(e) => setEditName(e.target.value)} />
+          <div>
+            <label className='block text-xs font-medium text-gray-500 mb-1'>Description</label>
+            <textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder='Optional — describe the purpose of this group'
+              rows={3}
+              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none'
+            />
+          </div>
           {editMut.isError && (
             <p className='text-xs text-red-500'>
               {(editMut.error as any)?.response?.data?.error || 'Update failed'}
@@ -372,11 +464,8 @@ function DncListsView({
   const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [listName, setListName] = useState('');
-  const [listSource, setListSource] = useState('manual');
   const [editName, setEditName] = useState('');
-  const [editSource, setEditSource] = useState('manual');
   const [search, setSearch] = useState('');
-  const [filterSource, setFilterSource] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['dnc-lists', group.id],
@@ -388,24 +477,19 @@ function DncListsView({
     const q = search.trim().toLowerCase();
     return allLists.filter((r) => {
       if (q && !(r.name || '').toLowerCase().includes(q)) return false;
-      if (filterSource && r.source !== filterSource) return false;
       return true;
     });
-  }, [allLists, search, filterSource]);
-  const hasActiveFilters = !!(search || filterSource);
-  const clearAll = () => { setSearch(''); setFilterSource(''); };
+  }, [allLists, search]);
+  const hasActiveFilters = !!search;
+  const clearAll = () => { setSearch(''); };
 
-  const resetCreate = () => { setShowCreate(false); setListName(''); setListSource('manual'); };
-  const resetEdit = () => { setEditTarget(null); setEditName(''); setEditSource('manual'); };
-  const openEdit = (l: any) => {
-    setEditTarget(l);
-    setEditName(l.name || '');
-    setEditSource(l.source || 'manual');
-  };
+  const resetCreate = () => { setShowCreate(false); setListName(''); };
+  const resetEdit = () => { setEditTarget(null); setEditName(''); };
+  const openEdit = (l: any) => { setEditTarget(l); setEditName(l.name || ''); };
 
   const createMut = useMutation({
     mutationFn: () =>
-      api.post(`/dnc-groups/${group.id}/lists`, { name: listName, source: listSource }).then((r) => r.data),
+      api.post(`/dnc-groups/${group.id}/lists`, { name: listName }).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
       qc.invalidateQueries({ queryKey: ['dnc-groups'] });
@@ -415,7 +499,7 @@ function DncListsView({
 
   const editMut = useMutation({
     mutationFn: () =>
-      api.patch(`/dnc-lists/${editTarget.id}`, { name: editName, source: editSource }).then((r) => r.data),
+      api.patch(`/dnc-lists/${editTarget.id}`, { name: editName }).then((r) => r.data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] }); resetEdit(); },
   });
 
@@ -462,23 +546,12 @@ function DncListsView({
         <div className='space-y-3'>
           <div className='filter-bar'>
             <SearchInput value={search} onChange={setSearch} placeholder='Search lists…' />
-            <FilterDropdown
-              label='Source'
-              value={filterSource}
-              onChange={setFilterSource}
-              color='indigo'
-              options={[
-                { value: 'manual', label: 'Manual' },
-                { value: 'import', label: 'Import' },
-              ]}
-            />
             {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
           </div>
           {hasActiveFilters && (
             <div className='flex items-center gap-2 flex-wrap'>
               <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
               {search && <FilterPill label={`Search: "${search}"`} onRemove={() => setSearch('')} />}
-              {filterSource && <FilterPill label={`Source: ${filterSource.replace(/_/g, ' ')}`} onRemove={() => setFilterSource('')} />}
             </div>
           )}
         </div>
@@ -507,14 +580,6 @@ function DncListsView({
                     <List className='w-4 h-4 text-indigo-500' />
                     <span className='font-medium text-gray-900'>{r.name}</span>
                   </div>
-                ),
-              },
-              {
-                header: 'Source',
-                render: (r: any) => (
-                  <span className='text-gray-600 capitalize'>
-                    {(r.source || '').replace(/_/g, ' ') || '—'}
-                  </span>
                 ),
               },
               {
@@ -602,17 +667,6 @@ function DncListsView({
       <Modal title='Edit List' open={!!editTarget} onClose={resetEdit}>
         <div className='space-y-4'>
           <Input label='List Name *' value={editName} onChange={(e) => setEditName(e.target.value)} />
-          <div>
-            <label className='block text-xs text-gray-500 mb-1'>Source *</label>
-            <select
-              value={editSource}
-              onChange={(e) => setEditSource(e.target.value)}
-              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
-            >
-              <option value='manual'>Manual</option>
-              <option value='import'>Import</option>
-            </select>
-          </div>
           {editMut.isError && (
             <p className='text-xs text-red-500'>
               {(editMut.error as any)?.response?.data?.error || 'Update failed'}
@@ -682,11 +736,14 @@ function DncNumbersView({
   const [showAddNumbers, setShowAddNumbers] = useState(false);
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
   const [singlePhone, setSinglePhone] = useState('');
-  const [bulkRows, setBulkRows] = useState<{ phone_number: string }[]>([
-    { phone_number: '' },
-    { phone_number: '' },
-    { phone_number: '' },
-  ]);
+  const [singleNotes, setSingleNotes] = useState('');
+  const [bulkRows, setBulkRows] = useState<
+  { phone_number: string; notes: string }[]
+>([
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+]);
   const [bulkProgress, setBulkProgress] = useState<{
     done: number; failed: number; total: number;
     errors: { row: number; error: string }[];
@@ -794,7 +851,13 @@ function DncNumbersView({
     setShowAddNumbers(false);
     setAddMode('single');
     setSinglePhone('');
-    setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
+setSingleNotes('');
+
+setBulkRows([
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+]);
     setBulkProgress(null);
     setUploadStatus('');
   };
@@ -819,7 +882,13 @@ function DncNumbersView({
         if (headerCsvRef.current) headerCsvRef.current.value = '';
         return;
       }
-      const numbers = nums.map((phone) => ({ phone_number: phone, added_reason: 'import' }));
+      const numbers = nums
+  .filter((r) => isValidPhone(r.phone_number))
+  .map((r) => ({
+    phone_number: r.phone_number,
+    notes: r.notes || null,
+    added_reason: 'import',
+  }));
       const result = await api
         .post(`/dnc-lists/${list.id}/numbers`, { numbers })
         .then((r) => r.data);
@@ -840,35 +909,67 @@ function DncNumbersView({
 
   // ── Single add mutation ───────────────────────────────────────────────────
   const addSingleMut = useMutation({
-    mutationFn: () =>
-      api.post(`/dnc-lists/${list.id}/numbers`, {
-        numbers: [{ phone_number: singlePhone.trim(), added_reason: 'manual' }],
-      }).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
-      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
-      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
-      resetAddModal();
-    },
-    onError: (err: any) => {
-      setUploadStatus(`Error: ${err.response?.data?.error || 'Add failed'}`);
-    },
+    mutationFn: () => {
+
+  if (!isValidPhone(singlePhone)) {
+    setUploadStatus('Please enter a valid phone number');
+    return Promise.reject();
+  }
+
+  return api.post(`/dnc-lists/${list.id}/numbers`, {
+    numbers: [
+      {
+        phone_number: singlePhone.trim(),
+        added_reason: 'manual',
+        notes: singleNotes.trim() || null,
+      },
+    ],
+  }).then((r) => r.data);
+},
   });
 
   // ── Bulk add mutation ─────────────────────────────────────────────────────
   const bulkMut = useMutation({
     mutationFn: async () => {
       const candidates = bulkRows
-        .map((r, i) => ({ phone: r.phone_number.trim(), idx: i }))
+        .map((r, i) => ({
+  phone: r.phone_number.trim(),
+  notes: r.notes?.trim() || null,
+  idx: i,
+}))
         .filter(({ phone }) => phone !== '');
       const total = candidates.length;
       setBulkProgress({ done: 0, failed: 0, total, errors: [] });
       let done = 0; let failed = 0;
       const errors: { row: number; error: string }[] = [];
-      for (const { phone, idx } of candidates) {
+      for (const { phone, notes, idx } of candidates){
+        if (!isValidPhone(phone)) {
+
+            failed += 1;
+
+            errors.push({
+              row: idx + 1,
+              error: 'Invalid phone number',
+            });
+
+            setBulkProgress({
+              done,
+              failed,
+              total,
+              errors,
+            });
+
+            continue;
+          }
         try {
           await api.post(`/dnc-lists/${list.id}/numbers`, {
-            numbers: [{ phone_number: phone, added_reason: 'manual' }],
+            numbers: [
+  {
+    phone_number: phone,
+    added_reason: 'manual',
+    notes,
+  },
+],
           });
           done += 1;
         } catch (e: any) {
@@ -917,7 +1018,7 @@ function DncNumbersView({
     },
   });
 
-  // ── Delete selected mutation — loops through selected IDs sequentially ────
+  // ── Delete selected mutation ──────────────────────────────────────────────
   const deleteSelectedMut = useMutation({
     mutationFn: () => deleteDncNumbersBulk(list.id, Array.from(selectedIds)),
     onSuccess: () => {
@@ -928,12 +1029,10 @@ function DncNumbersView({
       setSelectedIds(new Set());
     },
     onError: () => {
-      // Fallback: loop delete if bulk-delete endpoint not yet available
       deleteSelectedFallback();
     },
   });
 
-  // Fallback sequential delete when no bulk endpoint exists on backend yet
   const deleteSelectedFallback = async () => {
     const ids = Array.from(selectedIds);
     for (const id of ids) {
@@ -961,12 +1060,10 @@ function DncNumbersView({
       setSelectedIds(new Set());
     },
     onError: () => {
-      // Fallback: loop delete all
       deleteAllFallback();
     },
   });
 
-  // Fallback sequential delete-all when no endpoint exists yet
   const deleteAllFallback = async () => {
     for (const num of numbers) {
       try {
@@ -1004,15 +1101,19 @@ function DncNumbersView({
           <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             {list.name}
           </h1>
-          {list.source && (
-            <p className='text-sm text-[#7A5C44] mt-0.5 capitalize'>
-              {list.source.replace(/_/g, ' ')}
-            </p>
-          )}
         </div>
 
         {/* Action buttons */}
         <div className='flex items-center gap-2 flex-wrap justify-end'>
+          {/* CSV Template download */}
+          <Button
+            variant='secondary'
+            icon={<Download className='w-4 h-4' />}
+            onClick={downloadCsvTemplate}
+            title='Download CSV Template'
+          >
+            CSV Template
+          </Button>
           <Button
             variant='secondary'
             icon={<Upload className='w-4 h-4' />}
@@ -1055,7 +1156,7 @@ function DncNumbersView({
       )}
 
       {/* Stat cards */}
-      <div className='grid grid-cols-2 gap-4'>
+      <div className='grid grid-cols-2 gap-4'>  
         <StatCard label='Total Numbers' value={totalNumbers.toLocaleString()} color='red' />
         <StatCard label='Last Added' value={formatDateTime(lastAddedDate)} color='orange' />
       </div>
@@ -1094,7 +1195,6 @@ function DncNumbersView({
 
       {/* Numbers table */}
       <Card>
-        {/* Toolbar — shown when there are numbers */}
         {numbers.length > 0 && (
           <div className='flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-wrap'>
             <div className='flex items-center gap-3 flex-1 min-w-0'>
@@ -1141,7 +1241,6 @@ function DncNumbersView({
             <table className='w-full text-sm'>
               <thead>
                 <tr className='border-b border-gray-100 bg-gray-50/50'>
-                  {/* Checkbox column header */}
                   <th className='w-10 px-4 py-2.5 text-left'>
                     {anySelected && (
                       <input
@@ -1156,6 +1255,9 @@ function DncNumbersView({
                   <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
                     Phone Number
                   </th>
+                                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                  Notes
+                </th>
                   <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
                     Added Reason
                   </th>
@@ -1190,7 +1292,6 @@ function DncNumbersView({
                         isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''
                       }`}
                     >
-                      {/* Checkbox cell */}
                       <td className='px-4 py-2.5 w-10'>
                         {checkboxVisible ? (
                           <input
@@ -1206,6 +1307,11 @@ function DncNumbersView({
                       <td className='px-4 py-2.5'>
                         <span className='font-mono font-medium text-gray-900'>{r.phone_number}</span>
                       </td>
+                      <td className='px-4 py-2.5'>
+  <span className='text-sm text-gray-600'>
+    {r.notes || '—'}
+  </span>
+</td>
                       <td className='px-4 py-2.5'>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${reasonCls}`}>
                           {reason.replace(/_/g, ' ')}
@@ -1256,7 +1362,11 @@ function DncNumbersView({
               onChange={(e) => {
                 setAddMode(e.target.value as 'single' | 'bulk');
                 setSinglePhone('');
-                setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
+                setBulkRows([
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+  { phone_number: '', notes: '' },
+]);
                 setBulkProgress(null);
                 setUploadStatus('');
               }}
@@ -1275,6 +1385,19 @@ function DncNumbersView({
                 onChange={(e) => setSinglePhone(e.target.value)}
                 placeholder='+12125550101'
               />
+              <div>
+  <label className='block text-xs font-medium text-gray-500 mb-1'>
+    Notes
+  </label>
+
+  <textarea
+    value={singleNotes}
+    onChange={(e) => setSingleNotes(e.target.value)}
+    placeholder='Optional notes'
+    rows={3}
+    className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
+  />
+</div>
               <p className='text-xs text-gray-400'>
                 Saved with reason <span className='font-medium text-blue-600'>manual</span>.
               </p>
@@ -1486,6 +1609,19 @@ function DncNumbersView({
             required
             autoFocus
           />
+          <div>
+        <label className='block text-xs font-medium text-gray-500 mb-1'>
+          Notes
+        </label>
+
+        <textarea
+          value={editNotes}
+          onChange={(e) => setEditNotes(e.target.value)}
+          placeholder='Optional notes'
+          rows={3}
+          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
+        />
+      </div>
           {editNumMut.isError && (
             <p className='text-xs text-red-500'>
               {(editNumMut.error as any)?.response?.data?.error || 'Save failed'}
@@ -1515,14 +1651,53 @@ function DncBulkGrid({
   progress,
   disabled,
 }: {
-  rows: { phone_number: string }[];
-  setRows: React.Dispatch<React.SetStateAction<{ phone_number: string }[]>>;
+  rows: {
+  phone_number: string;
+  notes: string;
+}[];
+  setRows: React.Dispatch<
+  React.SetStateAction<
+    {
+      phone_number: string;
+      notes: string;
+    }[]
+  >
+>;
   progress: { done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null;
   disabled: boolean;
 }) {
-  const updateCell = (i: number, value: string) =>
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { phone_number: value } : r)));
-  const addRow = () => setRows((rs) => [...rs, { phone_number: '' }]);
+ const updatePhone = (
+  i: number,
+  value: string,
+) =>
+  setRows((rs) =>
+    rs.map((r, idx) =>
+      idx === i
+        ? { ...r, phone_number: value }
+        : r
+    )
+  );
+
+const updateNotes = (
+  i: number,
+  value: string,
+) =>
+  setRows((rs) =>
+    rs.map((r, idx) =>
+      idx === i
+        ? { ...r, notes: value }
+        : r
+    )
+  );
+
+const addRow = () =>
+  setRows((rs) => [
+    ...rs,
+    {
+      phone_number: '',
+      notes: '',
+    },
+  ]);
   const removeRow = (i: number) =>
     setRows((rs) => (rs.length === 1 ? rs : rs.filter((_, idx) => idx !== i)));
 
@@ -1555,6 +1730,9 @@ function DncBulkGrid({
             <tr>
               <th className={thCls + ' w-10'}>#</th>
               <th className={thCls + ' min-w-[220px]'}>Phone Number *</th>
+              <th className={thCls + ' min-w-[220px]'}>
+              Notes
+            </th>
               <th className={thCls + ' w-10'}></th>
             </tr>
           </thead>
@@ -1566,12 +1744,26 @@ function DncBulkGrid({
                   <input
                     type='tel'
                     value={row.phone_number}
-                    onChange={(e) => updateCell(i, e.target.value)}
+                    onChange={(e) =>
+                      updatePhone(i, e.target.value)
+                    }
                     placeholder='+12125550101'
                     disabled={disabled}
                     className={cellCls}
                   />
                 </td>
+                <td className={tdCls}>
+                <input
+                  type='text'
+                  value={row.notes}
+                  onChange={(e) =>
+                    updateNotes(i, e.target.value)
+                  }
+                  placeholder='Optional notes'
+                  disabled={disabled}
+                  className={cellCls}
+                />
+              </td>
                 <td className={tdCls + ' px-2 py-1.5 text-right'}>
                   <button
                     onClick={() => removeRow(i)}

@@ -73,3 +73,10 @@ CREATE INDEX IF NOT EXISTS idx_ccs_archive_job
 CREATE INDEX IF NOT EXISTS idx_ccs_archive_campaign
   ON ccs_archive(campaign_id, archived_at DESC);
 
+  ALTER TABLE system_config
+  ADD COLUMN IF NOT EXISTS recheck_interval INTEGER NOT NULL DEFAULT 60
+  
+  #delete the dnc list source column
+
+  ALTER TABLE dnc_lists DROP COLUMN IF EXISTS source;
+

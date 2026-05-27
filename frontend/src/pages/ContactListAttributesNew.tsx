@@ -23,6 +23,7 @@ interface DraftRow {
   is_read_only_agent: boolean;
   is_masked_agent: boolean;
   is_masked_reports: boolean;
+  is_editable_agent: boolean;
 }
 
 const blankRow = (): DraftRow => ({
@@ -32,6 +33,7 @@ const blankRow = (): DraftRow => ({
   is_read_only_agent: false,
   is_masked_agent: false,
   is_masked_reports: false,
+  is_editable_agent: true,
 });
 
 const toFieldKey = (name: string) =>
@@ -85,6 +87,7 @@ export default function ContactListAttributesNewPage() {
           is_read_only_agent: r.is_read_only_agent,
           is_masked_agent: r.is_masked_agent,
           is_masked_reports: r.is_masked_reports,
+          is_editable_agent: r.is_editable_agent,
         })),
       );
       qc.invalidateQueries({ queryKey: ['contact-list-attributes', id] });
@@ -239,7 +242,7 @@ function RowEditor({
           <label className='block text-xs font-medium text-gray-600 mb-2'>
             Permissions
           </label>
-          <div className='grid grid-cols-2 sm:grid-cols-4 gap-2'>
+          <div className='grid grid-cols-2 sm:grid-cols-3 gap-2'>
             <CheckCell
               label='Private'
               hint='Hidden from agents'
@@ -264,6 +267,13 @@ function RowEditor({
               checked={row.is_masked_reports}
               onChange={(v) => onChange({ is_masked_reports: v })}
             />
+           <CheckCell
+  label='Agent Can Edit'
+  hint='Allow agents to modify this field'
+  checked={row.is_editable_agent}
+  onChange={(v) => onChange({ is_editable_agent: v })}
+/>
+            
           </div>
         </div>
       </div>
@@ -307,3 +317,4 @@ function CheckCell({
     </label>
   );
 }
+

@@ -110,6 +110,7 @@ export default function ContactListAttributesPage() {
     is_read_only_agent: boolean;
     is_masked_agent: boolean;
     is_masked_reports: boolean;
+    is_editable_agent: boolean;
   } | null>(null);
 
   const openEdit = (row: any) => {
@@ -121,6 +122,7 @@ export default function ContactListAttributesPage() {
       is_read_only_agent: !!row.is_read_only_agent,
       is_masked_agent: !!row.is_masked_agent,
       is_masked_reports: !!row.is_masked_reports,
+      is_editable_agent: !!row.is_editable_agent,
     });
   };
   const closeEdit = () => {
@@ -460,45 +462,48 @@ export default function ContactListAttributesPage() {
               </div>
 
               <div>
-                <div className='text-xs font-medium text-gray-600 mb-2'>
-                  Permissions
-                </div>
-                <div className='grid grid-cols-2 gap-2'>
-                  {(
-                    [
-                      ['is_private', 'Private'],
-                      ['is_read_only_agent', 'Read Only (Agent)'],
-                      ['is_masked_agent', 'Masked (Agent)'],
-                      ['is_masked_reports', 'Masked (Reports)'],
-                    ] as const
-                  ).map(([key, label]) => {
-                    const checked = (editForm as any)[key] as boolean;
-                    return (
-                      <label
-                        key={key}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-lg cursor-pointer ${
-                          checked
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input
-                          type='checkbox'
-                          checked={checked}
-                          onChange={(e) =>
-                            setEditForm({
-                              ...editForm,
-                              [key]: e.target.checked,
-                            } as any)
-                          }
-                          className='rounded text-indigo-600'
-                        />
-                        {label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+  <div className='text-xs font-medium text-gray-600 mb-2'>
+    Permissions
+  </div>
+  <div className='grid grid-cols-2 sm:grid-cols-3 gap-2'>
+    {(
+      [
+        ['is_private', 'Private', 'Hidden from agents'],
+        ['is_masked_reports', 'Masked for Users', 'Hidden in reports'],
+        ['is_editable_agent', 'Agent Can Edit', 'Allow agents to modify this field'],
+      ] as const
+    ).map(([key, label, hint]) => {
+      const checked = (editForm as any)[key] as boolean;
+      return (
+        <label
+          key={key}
+          className={`flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer transition ${
+            checked
+              ? 'border-indigo-200 bg-indigo-50/60'
+              : 'border-gray-200 hover:bg-gray-50'
+          }`}
+        >
+          <input
+            type='checkbox'
+            className='w-4 h-4 accent-indigo-600 mt-0.5 shrink-0'
+            checked={checked}
+            onChange={(e) =>
+              setEditForm({ ...editForm, [key]: e.target.checked } as any)
+            }
+          />
+          <span className='min-w-0'>
+            <span className='block text-xs font-medium text-gray-800 leading-tight'>
+              {label}
+            </span>
+            <span className='block text-[10px] text-gray-400 mt-0.5'>
+              {hint}
+            </span>
+          </span>
+        </label>
+      );
+    })}
+  </div>
+</div>
 
               {updateCustomMut.isError && (
                 <div className='flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg'>
