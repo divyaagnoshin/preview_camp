@@ -591,29 +591,113 @@ export default function ContactListDetailPage() {
   // ── Mutations ─────────────────────────────────────────────────────────────
 
   // CSV upload — uses existing fileRef + uploadCSV API exactly like old code
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadStatus('Uploading…');
-    setUploadErrors([]);
-    setShowUploadErrors(false);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('contact_list_id', id!);
-      const result = await uploadCSV(fd);
-      const errs = (result.errors || []) as { row: number; phone: string; error: string }[];
-      setUploadErrors(errs);
-      setShowUploadErrors(errs.length > 0 && errs.length <= 50);
-      const prefix = result.imported_rows > 0 ? '✓' : '⚠';
-      setUploadStatus(`${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts${result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''}`);
-      qc.invalidateQueries({ queryKey: ['contacts', id] });
-      qc.invalidateQueries({ queryKey: ['contact-list', id] });
-    } catch (err: any) {
-      setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
+  const handleFileUpload = async (
+  e: React.ChangeEvent<HTMLInputElement>,
+) => {
+
+  console.log('================ FRONTEND CSV UPLOAD START ================');
+
+  const file = e.target.files?.[0];
+
+  console.log('Selected File:', file);
+
+  if (!file) {
+    console.error('No file selected');
+    return;
+  }
+
+  setUploadStatus('Uploading…');
+  setUploadErrors([]);
+  setShowUploadErrors(false);
+
+  try {
+
+    const fd = new FormData();
+
+    fd.append('file', file);
+    fd.append('contact_list_id', id!);
+
+    console.log('FormData Created');
+
+    // DEBUG FORM DATA
+    for (const pair of fd.entries()) {
+      console.log('FormData Entry:', pair[0], pair[1]);
     }
-    if (fileRef.current) fileRef.current.value = '';
-  };
+
+    console.log('Calling uploadCSV API...');
+
+    const result = await uploadCSV(fd);
+
+    console.log('================ API RESPONSE ================');
+
+    console.log('Full Response:', result);
+
+    console.log('Imported Rows:', result.imported_rows);
+    console.log('Failed Rows:', result.failed_rows);
+    console.log('Total Rows:', result.total_rows);
+
+    console.log('Validation Errors:', result.errors);
+
+    const errs = (result.errors || []) as {
+      row: number;
+      phone: string;
+      error: string;
+    }[];
+
+    setUploadErrors(errs);
+
+    setShowUploadErrors(errs.length > 0 && errs.length <= 50);
+
+    const prefix = result.imported_rows > 0 ? '✓' : '⚠';
+
+    setUploadStatus(
+      `${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts${
+        result.failed_rows > 0
+          ? `, ${result.failed_rows} failed`
+          : ''
+      }`,
+    );
+
+    console.log('Refreshing queries...');
+
+    qc.invalidateQueries({ queryKey: ['contacts', id] });
+
+    qc.invalidateQueries({ queryKey: ['contact-list', id] });
+
+    console.log('================ FRONTEND CSV SUCCESS ================');
+
+  } catch (err: any) {
+
+    console.error('================ FRONTEND CSV ERROR ================');
+
+    console.error('Full Error Object:', err);
+
+    console.error('Axios Error Response:', err?.response);
+
+    console.error('Backend Response Data:', err?.response?.data);
+
+    console.error('Backend Error Message:',
+      err?.response?.data?.error
+    );
+
+    console.error('Status Code:',
+      err?.response?.status
+    );
+
+    setUploadStatus(
+      `Error: ${
+        err.response?.data?.error || 'Upload failed'
+      }`,
+    );
+
+  }
+
+  if (fileRef.current) {
+    fileRef.current.value = '';
+  }
+
+  console.log('================ FRONTEND CSV END ================');
+};
 
   const addMut = useMutation({
     mutationFn: () => {
@@ -849,13 +933,25 @@ export default function ContactListDetailPage() {
                           : <span className='inline-block w-4 h-4' />}
                       </td>
                       <td className='px-4 py-2.5 text-gray-900 font-medium whitespace-nowrap'>{c.phone_number}</td>
-                      {attrColumns.map((col) => (
-                        <td key={col.key} className='px-4 py-2.5 text-gray-600 whitespace-nowrap'>
-                          {c[col.key] != null && c[col.key] !== ''
-                            ? (typeof c[col.key] === 'object' ? JSON.stringify(c[col.key]) : String(c[col.key]))
+                     {attrColumns.map((col) => {
+
+                      const value =
+                        c[col.key] ??
+                        c.custom_fields?.[col.key];
+
+                      return (
+                        <td
+                          key={col.key}
+                          className='px-4 py-2.5 text-gray-600 whitespace-nowrap'
+                        >
+                          {value != null && value !== ''
+                            ? (typeof value === 'object'
+                                ? JSON.stringify(value)
+                                : String(value))
                             : <span className='text-gray-300'>—</span>}
                         </td>
-                      ))}
+                      );
+                    })}
                       <td className='px-4 py-2.5'>
                         <div className='flex items-center gap-1'>
                           <button onClick={() => navigate(`/contact-lists/${id}/contacts/${c.id}/edit`)} className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'><Pencil className='w-3 h-3' />Edit</button>

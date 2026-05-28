@@ -173,6 +173,7 @@ export async function importCsvRecords(
       contactListId,
     );
     if (headerErrs.length) {
+      
       for (const msg of headerErrs)
         errors.push({ row: 0, phone: '', error: msg });
       return { imported: 0, failed: records.length, errors };
@@ -218,6 +219,13 @@ export async function importCsvRecords(
     const phoneRaw = row.phone_number || row.phone || '';
     const phoneErr = validatePhoneFormat(phoneRaw);
     if (phoneErr) {
+      console.error('PHONE VALIDATION FAILED');
+      console.error({
+        
+        phone: phoneRaw,
+        error: phoneErr,
+        fullRow: row,
+      });
       failed++;
       errors.push({ row: i + 1, phone: String(phoneRaw), error: phoneErr });
       continue;
@@ -256,6 +264,13 @@ export async function importCsvRecords(
       }
     }
     if (reqErr) {
+      console.error('REQUIRED FIELD VALIDATION FAILED');
+console.error({
+
+  phone: phoneNorm,
+  error: reqErr,
+  fullRow: row,
+});
       failed++;
       errors.push({ row: i + 1, phone: phoneNorm, error: reqErr });
       continue;
@@ -434,8 +449,16 @@ async function tryCopyChunkBisect(
     await client.query(`RELEASE SAVEPOINT ${sp}`);
     return { imported: rows.length, failures: [] };
   } catch (err: any) {
+    console.error('========= COPY FAILED =========');
+
+    console.error('Error Message:', err?.message);
+    console.error('Error Detail:', err?.detail);
+    console.error('Error Code:', err?.code);
+    console.error('Constraint:', err?.constraint);
     await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
     if (rows.length === 1) {
+      console.error('FAILED SINGLE ROW');
+      console.error(rows[0]);
       return {
         imported: 0,
         failures: [
@@ -523,9 +546,11 @@ export async function importCsvStream(
   let chunk: ValidRowForCopy[] = [];
   let headerChecked = false;
   let headerFailed = false;
-
+  console.log(`Flushing chunk with ${chunk.length} records...`);
   const flushChunk = async (client: PoolClient) => {
+    
     if (chunk.length === 0) return;
+    console.log('Flushing chunk:', chunk.length); 
     const { imported: imp, failures } = await tryCopyChunkBisect(
       client,
       chunk,
@@ -534,6 +559,7 @@ export async function importCsvStream(
       ingestionMethod,
     );
     imported += imp;
+    console.log('Inserted rows:', imp);
     failed += failures.length;
     for (const f of failures) errors.push(f);
     chunk = [];
@@ -573,6 +599,12 @@ export async function importCsvStream(
       const phoneRaw = row.phone_number || row.phone || '';
       const phoneErr = validatePhoneFormat(phoneRaw);
       if (phoneErr) {
+        console.error('PHONE ERROR');
+        console.error({
+          row: totalRows,
+          phone: phoneRaw,
+          error: phoneErr,
+        });
         failed++;
         errors.push({
           row: totalRows,
@@ -610,6 +642,13 @@ export async function importCsvStream(
         }
       }
       if (reqErr) {
+        console.error('REQUIRED FIELD ERROR');
+console.error({
+  row: totalRows,
+  phone: phoneNorm,
+  error: reqErr,
+  rowData: row,
+});
         failed++;
         errors.push({ row: totalRows, phone: phoneNorm, error: reqErr });
         continue;
@@ -628,6 +667,11 @@ export async function importCsvStream(
       const alternatePhoneNumber = altTop ?? altCf ?? null;
       delete customFields.alternate_phone_number;
 
+      console.log('VALID ROW READY FOR INSERT:', {
+        row: totalRows,
+        phone: phoneNorm,
+      });
+
       chunk.push({
         rowIdx: totalRows,
         phone_number: phoneNorm,
@@ -645,7 +689,14 @@ export async function importCsvStream(
     }
     await flushChunk(client);
   });
+  console.log('=========== IMPORT SUMMARY ===========');
 
+      console.log({
+        totalRows,
+        imported,
+        failed,
+        errors,
+      });
   return { imported, failed, totalRows, errors };
 }
 
@@ -830,6 +881,14 @@ router.post(
         delimiter = ',',
         on_duplicate = 'skip',
       } = req.body;
+
+      console.log('================ CSV UPLOAD START ================');
+      console.log('File Name:', req.file?.originalname);
+      console.log('File Size:', req.file?.size);
+      console.log('Contact List ID:', contact_list_id);
+      console.log('User ID:', req.user?.userId);
+      console.log('Has Header:', has_header);
+      console.log('Delimiter:', delimiter);
       if (!contact_list_id) throw new AppError(400, 'contact_list_id required');
       if (!req.file) throw new AppError(400, 'CSV file required');
 
