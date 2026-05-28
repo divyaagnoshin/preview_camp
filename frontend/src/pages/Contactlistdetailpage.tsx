@@ -10,6 +10,7 @@ import {
   deleteAllContacts,
   deleteContactsBulk,
   uploadCSV,
+  updateContact,
   downloadContactListCsvTemplate,
   cloudImportContacts,
   listCloudImportConfigs,
@@ -20,7 +21,7 @@ import {
   type CloudImportConfig,
   type CloudProvider,
 } from '../api/client';
-import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState } from '../components/ui';
+import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState, Pagination  } from '../components/ui';
 import {
   ArrowLeft,
   Search,
@@ -36,9 +37,9 @@ import {
   MoreVertical,
   Power,
   PowerOff,
-  ChevronLeft,
-  ChevronRight,
+  Save,
 } from 'lucide-react';
+
 
 // ─── Cron helpers ────────────────────────────────────────────────────────────
 
@@ -281,7 +282,6 @@ function CloudConfigEditor({
       onClose={onClose}
       size='lg'
     >
-      {/* Step indicator */}
       <div className='flex items-center gap-2 mb-4 text-xs'>
         {(['1. Connection', '2. Schedule'] as const).map((label, i) => (
           <React.Fragment key={label}>
@@ -437,30 +437,28 @@ export default function ContactListDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  // ── File ref for CSV upload ───────────────────────────────────────────────
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Upload state ──────────────────────────────────────────────────────────
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadErrors, setUploadErrors] = useState<{ row: number; phone: string; error: string }[]>([]);
   const [showUploadErrors, setShowUploadErrors] = useState(false);
 
-  // ── Contacts pagination + search ──────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(20);
 
-  // ── Gmail-style checkbox select ───────────────────────────────────────────
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const anySelected = selectedContactIds.size > 0;
 
-  // ── Delete modals ─────────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [showDeleteSelected, setShowDeleteSelected] = useState(false);
 
-  // ── Add Contact modal ─────────────────────────────────────────────────────
+  // ── Edit contact modal state ──────────────────────────────────────────────
+  const [editContactTarget, setEditContactTarget] = useState<any | null>(null);
+  const [editContactForm, setEditContactForm] = useState<Record<string, any>>({});
+
   const [showAddContact, setShowAddContact] = useState(false);
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
   const [contact, setContact] = useState({ phone_number: '', first_name: '', last_name: '', email: '', timezone: '', priority: '100' });
@@ -468,7 +466,6 @@ export default function ContactListDetailPage() {
   const [bulkRows, setBulkRows] = useState<Record<string, any>[]>([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null>(null);
 
-  // ── Cloud Import modal ────────────────────────────────────────────────────
   const [showCloudImport, setShowCloudImport] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [showCfgEditor, setShowCfgEditor] = useState(false);
@@ -501,7 +498,7 @@ export default function ContactListDetailPage() {
   });
 
   const { data: contactsData, isLoading: contactsLoading } = useQuery<any>({
-    queryKey: ['contacts', id, page, search],
+    queryKey: ['contacts', id, page, search, pageSize],
     queryFn: () => getContacts(id!, { page, page_size: pageSize, search }),
     placeholderData: keepPreviousData,
   });
@@ -516,7 +513,6 @@ export default function ContactListDetailPage() {
   const total: number = contactsData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // ── Attribute columns — only selected, non-system attrs ───────────────────
   const RESERVED_SYSTEM_KEYS = new Set(['phone_number', 'first_name', 'last_name', 'email', 'timezone', 'alternate_phone_number', 'priority', 'assigned_agent_id']);
   const SYSTEM_KEYS = new Set(['id', 'phone_number', 'contact_list_id', 'created_at', 'updated_at']);
 
@@ -531,7 +527,6 @@ export default function ContactListDetailPage() {
     (attrData?.data || []).filter((r: any) => r.is_selected && !RESERVED_SYSTEM_KEYS.has(r.field_key)),
     [attrData]);
 
-  // ── Coerce custom field values ────────────────────────────────────────────
   const coerceCustom = (def: any, raw: any) => {
     if (raw === '' || raw == null) return undefined;
     const t = String(def.data_type).toUpperCase();
@@ -541,7 +536,6 @@ export default function ContactListDetailPage() {
     return raw;
   };
 
-  // ── Add contact helpers ───────────────────────────────────────────────────
   const closeAddContact = () => {
     setShowAddContact(false);
     setAddMode('single');
@@ -551,7 +545,25 @@ export default function ContactListDetailPage() {
     setBulkProgress(null);
   };
 
-  // ── Cloud import helpers ──────────────────────────────────────────────────
+  // ── Close edit contact modal ───────────────────────────────────────────────
+  const closeEditContact = () => {
+    setEditContactTarget(null);
+    setEditContactForm({});
+  };
+
+  // ── Open edit contact modal — seeds form from contact row ─────────────────
+  const openEditContact = (c: any) => {
+    const form: Record<string, any> = {
+      phone_number: c.phone_number ?? '',
+    };
+    for (const def of customFieldDefs) {
+      const val = c[def.field_key] ?? c.custom_fields?.[def.field_key] ?? '';
+      form[def.field_key] = val;
+    }
+    setEditContactTarget(c);
+    setEditContactForm(form);
+  };
+
   const resetCfgForm = () => {
     setEditingCfg(null); setCfgName(''); setCfgProvider('s3'); setCfgStep(1); setSavedCfgId(null);
     setSchedFreq('daily'); setSchedTime('09:00'); setSchedDow('1'); setSchedDom('1');
@@ -590,114 +602,31 @@ export default function ContactListDetailPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  // CSV upload — uses existing fileRef + uploadCSV API exactly like old code
-  const handleFileUpload = async (
-  e: React.ChangeEvent<HTMLInputElement>,
-) => {
-
-  console.log('================ FRONTEND CSV UPLOAD START ================');
-
-  const file = e.target.files?.[0];
-
-  console.log('Selected File:', file);
-
-  if (!file) {
-    console.error('No file selected');
-    return;
-  }
-
-  setUploadStatus('Uploading…');
-  setUploadErrors([]);
-  setShowUploadErrors(false);
-
-  try {
-
-    const fd = new FormData();
-
-    fd.append('file', file);
-    fd.append('contact_list_id', id!);
-
-    console.log('FormData Created');
-
-    // DEBUG FORM DATA
-    for (const pair of fd.entries()) {
-      console.log('FormData Entry:', pair[0], pair[1]);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadStatus('Uploading…');
+    setUploadErrors([]);
+    setShowUploadErrors(false);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('contact_list_id', id!);
+      const result = await uploadCSV(fd);
+      const errs = (result.errors || []) as { row: number; phone: string; error: string }[];
+      setUploadErrors(errs);
+      setShowUploadErrors(errs.length > 0 && errs.length <= 50);
+      const prefix = result.imported_rows > 0 ? '✓' : '⚠';
+      setUploadStatus(
+        `${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts${result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''}`,
+      );
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+    } catch (err: any) {
+      setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
     }
-
-    console.log('Calling uploadCSV API...');
-
-    const result = await uploadCSV(fd);
-
-    console.log('================ API RESPONSE ================');
-
-    console.log('Full Response:', result);
-
-    console.log('Imported Rows:', result.imported_rows);
-    console.log('Failed Rows:', result.failed_rows);
-    console.log('Total Rows:', result.total_rows);
-
-    console.log('Validation Errors:', result.errors);
-
-    const errs = (result.errors || []) as {
-      row: number;
-      phone: string;
-      error: string;
-    }[];
-
-    setUploadErrors(errs);
-
-    setShowUploadErrors(errs.length > 0 && errs.length <= 50);
-
-    const prefix = result.imported_rows > 0 ? '✓' : '⚠';
-
-    setUploadStatus(
-      `${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts${
-        result.failed_rows > 0
-          ? `, ${result.failed_rows} failed`
-          : ''
-      }`,
-    );
-
-    console.log('Refreshing queries...');
-
-    qc.invalidateQueries({ queryKey: ['contacts', id] });
-
-    qc.invalidateQueries({ queryKey: ['contact-list', id] });
-
-    console.log('================ FRONTEND CSV SUCCESS ================');
-
-  } catch (err: any) {
-
-    console.error('================ FRONTEND CSV ERROR ================');
-
-    console.error('Full Error Object:', err);
-
-    console.error('Axios Error Response:', err?.response);
-
-    console.error('Backend Response Data:', err?.response?.data);
-
-    console.error('Backend Error Message:',
-      err?.response?.data?.error
-    );
-
-    console.error('Status Code:',
-      err?.response?.status
-    );
-
-    setUploadStatus(
-      `Error: ${
-        err.response?.data?.error || 'Upload failed'
-      }`,
-    );
-
-  }
-
-  if (fileRef.current) {
-    fileRef.current.value = '';
-  }
-
-  console.log('================ FRONTEND CSV END ================');
-};
+    if (fileRef.current) fileRef.current.value = '';
+  };
 
   const addMut = useMutation({
     mutationFn: () => {
@@ -708,7 +637,11 @@ export default function ContactListDetailPage() {
       }
       return addContact({ contact_list_id: id, ...contact, priority: parseInt(contact.priority), custom_fields: cf });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts', id] }); qc.invalidateQueries({ queryKey: ['contact-list', id] }); closeAddContact(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      closeAddContact();
+    },
   });
 
   const bulkMut = useMutation({
@@ -728,22 +661,63 @@ export default function ContactListDetailPage() {
       }
       return { done, failed, total, errors };
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts', id] }); qc.invalidateQueries({ queryKey: ['contact-list', id] }); closeAddContact();},
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      closeAddContact();
+    },
+  });
+
+  // ── Edit contact mutation — calls PATCH /contacts/:id ─────────────────────
+  const editContactMut = useMutation({
+    mutationFn: () => {
+      if (!editContactTarget) throw new Error('No contact selected');
+      // Build custom_fields payload from form, coercing types
+      const cf: Record<string, any> = {};
+      for (const def of customFieldDefs) {
+        const raw = editContactForm[def.field_key];
+        const v = coerceCustom(def, raw);
+        if (v !== undefined) cf[def.field_key] = v;
+      }
+      return updateContact(editContactTarget.id, {
+        phone_number: editContactForm.phone_number,
+        custom_fields: cf,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      closeEditContact();
+    },
   });
 
   const deleteMut = useMutation({
     mutationFn: (cid: string) => deleteContact(id!, cid),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts', id] }); qc.invalidateQueries({ queryKey: ['contact-list', id] }); setDeleteTarget(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      setDeleteTarget(null);
+    },
   });
 
   const deleteAllMut = useMutation({
     mutationFn: () => deleteAllContacts(id!),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts', id] }); qc.invalidateQueries({ queryKey: ['contact-list', id] }); setShowDeleteAll(false); setSelectedContactIds(new Set()); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      setShowDeleteAll(false);
+      setSelectedContactIds(new Set());
+    },
   });
 
   const deleteSelectedMut = useMutation({
     mutationFn: () => deleteContactsBulk(id!, Array.from(selectedContactIds)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['contacts', id] }); qc.invalidateQueries({ queryKey: ['contact-list', id] }); setShowDeleteSelected(false); setSelectedContactIds(new Set()); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      setShowDeleteSelected(false);
+      setSelectedContactIds(new Set());
+    },
   });
 
   const saveCfgMut = useMutation({
@@ -751,7 +725,12 @@ export default function ContactListDetailPage() {
       const body = { name: cfgName.trim(), provider: cfgProvider, ...buildCfgPayload() };
       return editingCfg ? updateCloudImportConfig(editingCfg.id, body) : createCloudImportConfig(body);
     },
-    onSuccess: (saved: CloudImportConfig) => { qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }); setSavedCfgId(saved.id); setEditingCfg(saved); setCfgStep(2); },
+    onSuccess: (saved: CloudImportConfig) => {
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
+      setSavedCfgId(saved.id);
+      setEditingCfg(saved);
+      setCfgStep(2);
+    },
   });
 
   const saveSchedMut = useMutation({
@@ -760,7 +739,12 @@ export default function ContactListDetailPage() {
       if (!cfgId) throw new Error('No config to schedule');
       return updateCloudImportConfigSchedule(cfgId, { enabled: true, cron_expression: cronPreview, timezone: schedTz || 'UTC', contact_list_id: id! });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }); setShowCfgEditor(false); resetCfgForm(); saveCfgMut.reset(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
+      setShowCfgEditor(false);
+      resetCfgForm();
+      saveCfgMut.reset();
+    },
   });
 
   const deleteCfgMut = useMutation({
@@ -771,7 +755,10 @@ export default function ContactListDetailPage() {
   const toggleScheduleMut = useMutation({
     mutationFn: ({ cfg, enabled }: { cfg: CloudImportConfig; enabled: boolean }) =>
       updateCloudImportConfigSchedule(cfg.id, { enabled, cron_expression: enabled ? cfg.cron_expression || undefined : undefined, timezone: cfg.timezone || 'UTC', contact_list_id: enabled ? cfg.contact_list_id || id! : undefined }),
-    onSuccess: (_data, vars) => { qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }); setCloudStatus(`✓ Schedule ${vars.enabled ? 'activated' : 'deactivated'}.`); },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
+      setCloudStatus(`✓ Schedule ${vars.enabled ? 'activated' : 'deactivated'}.`);
+    },
     onError: (err: any) => setCloudStatus(`Error: ${err.response?.data?.error || err.message || 'Failed'}`),
   });
 
@@ -791,8 +778,11 @@ export default function ContactListDetailPage() {
   // ── Select helpers ────────────────────────────────────────────────────────
   const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selectedContactIds.has(c.id));
   const toggleSelectAll = () => {
-    if (allOnPageSelected) { setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.delete(c.id)); return next; }); }
-    else { setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.add(c.id)); return next; }); }
+    if (allOnPageSelected) {
+      setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.delete(c.id)); return next; });
+    } else {
+      setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.add(c.id)); return next; });
+    }
   };
   const toggleOne = (cid: string) => {
     setSelectedContactIds((prev) => { const next = new Set(prev); next.has(cid) ? next.delete(cid) : next.add(cid); return next; });
@@ -815,9 +805,7 @@ export default function ContactListDetailPage() {
         </div>
         <div className='flex items-center gap-2 flex-wrap justify-end'>
           <Button variant='secondary' icon={<Settings2 className='w-4 h-4' />} onClick={() => navigate(`/contact-lists/${id}/attributes`)}>Manage Attributes</Button>
-          {/* CSV Template — calls downloadContactListCsvTemplate from api/client exactly like old code */}
           <Button variant='secondary' icon={<Download className='w-4 h-4' />} onClick={() => downloadContactListCsvTemplate(id!, listData?.name || 'contacts')}>CSV Template</Button>
-          {/* Upload CSV — triggers hidden file input, handler posts FormData via uploadCSV */}
           <Button variant='secondary' icon={<Upload className='w-4 h-4' />} onClick={() => fileRef.current?.click()}>Upload CSV</Button>
           <input ref={fileRef} type='file' accept='.csv' className='hidden' onChange={handleFileUpload} />
           <Button variant='secondary' icon={<Cloud className='w-4 h-4' />} onClick={() => setShowCloudImport(true)}>Cloud Import</Button>
@@ -881,8 +869,19 @@ export default function ContactListDetailPage() {
             <h3 className='font-semibold text-gray-900 text-sm whitespace-nowrap'>Contacts ({total})</h3>
             <div className='relative w-64'>
               <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none' />
-              <input type='text' value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder='Search contacts…' className='w-full pl-9 pr-8 py-1.5 text-sm rounded-xl transition placeholder:text-[#C09070]' style={{ border: '2px solid #FFD0B0', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', color: '#1A0F00' }} />
-              {search && <button onClick={() => { setSearch(''); setPage(1); }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'><X className='w-3.5 h-3.5' /></button>}
+              <input
+                type='text'
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                placeholder='Search contacts…'
+                className='w-full pl-9 pr-8 py-1.5 text-sm rounded-xl transition placeholder:text-[#C09070]'
+                style={{ border: '2px solid #FFD0B0', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', color: '#1A0F00' }}
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1); }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'>
+                  <X className='w-3.5 h-3.5' />
+                </button>
+              )}
             </div>
           </div>
           <div className='flex items-center gap-2'>
@@ -897,7 +896,7 @@ export default function ContactListDetailPage() {
           </div>
         </div>
 
-        {/* Table body */}
+        {/* ── Fixed-height scrollable table ─────────────────────────────── */}
         {contactsLoading ? (
           <div className='py-12 text-center text-sm text-gray-400'>Loading…</div>
         ) : contacts.length === 0 ? (
@@ -906,18 +905,29 @@ export default function ContactListDetailPage() {
             <p className='text-xs text-gray-400 mt-1'>{search ? 'Try a different search term' : 'Upload a CSV or add contacts manually'}</p>
           </div>
         ) : (
-          <div className='overflow-x-auto'>
+          <div className='overflow-x-auto overflow-y-auto' style={{ maxHeight: '565px' }}>
             <table className='w-full text-sm'>
-              <thead>
-                <tr className='border-b border-gray-100 bg-gray-50/50'>
-                  <th className='w-10 px-4 py-2.5 text-left'>
-                    {anySelected && <input type='checkbox' checked={allOnPageSelected} onChange={toggleSelectAll} className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer' title='Select / deselect all on this page' />}
+              {/* Sticky header stays visible while scrolling */}
+              <thead className='sticky top-0 z-10'>
+                <tr className='border-b border-gray-100 bg-gray-50'>
+                  <th className='w-10 px-4 py-2.5 text-left bg-gray-50'>
+                    {anySelected && (
+                      <input
+                        type='checkbox'
+                        checked={allOnPageSelected}
+                        onChange={toggleSelectAll}
+                        className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer'
+                        title='Select / deselect all on this page'
+                      />
+                    )}
                   </th>
-                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>Phone</th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>Phone</th>
                   {attrColumns.map((col) => (
-                    <th key={col.key} className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap'>{col.label}</th>
+                    <th key={col.key} className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50'>
+                      {col.label}
+                    </th>
                   ))}
-                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>Actions</th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>Actions</th>
                 </tr>
               </thead>
               <tbody className='divide-y divide-gray-50'>
@@ -926,36 +936,43 @@ export default function ContactListDetailPage() {
                   const isHovered = hoveredId === c.id;
                   const checkboxVisible = anySelected || isHovered;
                   return (
-                    <tr key={c.id} onMouseEnter={() => setHoveredId(c.id)} onMouseLeave={() => setHoveredId(null)} className={`transition-colors ${isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''}`}>
+                    <tr
+                      key={c.id}
+                      onMouseEnter={() => setHoveredId(c.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      className={`transition-colors ${isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''}`}
+                    >
                       <td className='px-4 py-2.5 w-10'>
                         {checkboxVisible
                           ? <input type='checkbox' checked={isSelected} onChange={() => toggleOne(c.id)} className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer' />
                           : <span className='inline-block w-4 h-4' />}
                       </td>
                       <td className='px-4 py-2.5 text-gray-900 font-medium whitespace-nowrap'>{c.phone_number}</td>
-                     {attrColumns.map((col) => {
-
-                      const value =
-                        c[col.key] ??
-                        c.custom_fields?.[col.key];
-
-                      return (
-                        <td
-                          key={col.key}
-                          className='px-4 py-2.5 text-gray-600 whitespace-nowrap'
-                        >
-                          {value != null && value !== ''
-                            ? (typeof value === 'object'
-                                ? JSON.stringify(value)
-                                : String(value))
-                            : <span className='text-gray-300'>—</span>}
-                        </td>
-                      );
-                    })}
+                      {attrColumns.map((col) => {
+                        const value = c[col.key] ?? c.custom_fields?.[col.key];
+                        return (
+                          <td key={col.key} className='px-4 py-2.5 text-gray-600 whitespace-nowrap'>
+                            {value != null && value !== ''
+                              ? (typeof value === 'object' ? JSON.stringify(value) : String(value))
+                              : <span className='text-gray-300'>—</span>}
+                          </td>
+                        );
+                      })}
                       <td className='px-4 py-2.5'>
                         <div className='flex items-center gap-1'>
-                          <button onClick={() => navigate(`/contact-lists/${id}/contacts/${c.id}/edit`)} className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'><Pencil className='w-3 h-3' />Edit</button>
-                          <button onClick={() => setDeleteTarget(c)} className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'><Trash2 className='w-3 h-3' />Delete</button>
+                          {/* Edit button — opens inline modal, no navigation */}
+                          <button
+                            onClick={() => openEditContact(c)}
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
+                          >
+                            <Pencil className='w-3 h-3' />Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(c)}
+                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                          >
+                            <Trash2 className='w-3 h-3' />Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -968,14 +985,14 @@ export default function ContactListDetailPage() {
 
         {/* Pagination */}
         {total > 0 && (
-          <div className='flex items-center justify-between px-4 py-3 border-t border-gray-100'>
-            <span className='text-xs text-gray-500'>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}</span>
-            <div className='flex items-center gap-2'>
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className='flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition'>‹ Prev</button>
-              <span className='text-xs text-gray-500'>Page {page} of {totalPages}</span>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className='flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition'>Next ›</button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalItems={total}
+            pageSize={pageSize as any}
+            onPageChange={(p) => setPage(p)}
+            onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }}
+          />
         )}
       </Card>
 
@@ -1029,10 +1046,12 @@ export default function ContactListDetailPage() {
             <Button className='flex-1' loading={bulkMut.isPending} disabled={bulkRows.every((r) => String(r.phone_number || '').trim() === '')} onClick={() => bulkMut.mutate()}>Import Contacts</Button>
           )}
         </div>
-        {addMut.isError && addMode === 'single' && <p className='text-xs text-red-500 mt-2'>{(addMut.error as any)?.response?.data?.error}</p>}
+        {addMut.isError && addMode === 'single' && (
+          <p className='text-xs text-red-500 mt-2'>{(addMut.error as any)?.response?.data?.error}</p>
+        )}
       </Modal>
 
-      {/* ── Cloud Import modal — table of saved profiles ──────────────────── */}
+      {/* ── Cloud Import modal ────────────────────────────────────────────── */}
       <Modal title='Cloud Import' open={showCloudImport} onClose={() => { setShowCloudImport(false); setCloudStatus(null); }} size='xl'>
         <div className='space-y-4'>
           <div className='flex items-center justify-between'>
@@ -1089,7 +1108,6 @@ export default function ContactListDetailPage() {
             />
           )}
 
-          {/* Kebab dropdown (fixed position to escape overflow clips) */}
           {rowMenu && (() => {
             const r = (cloudConfigsQ.data || []).find((c: CloudImportConfig) => c.id === rowMenu.id);
             if (!r) return null;
@@ -1110,7 +1128,7 @@ export default function ContactListDetailPage() {
         </div>
       </Modal>
 
-      {/* ── Cloud Config Editor (Add / Edit wizard) ───────────────────────── */}
+      {/* ── Cloud Config Editor ───────────────────────────────────────────── */}
       <CloudConfigEditor
         open={showCfgEditor} editing={editingCfg}
         name={cfgName} setName={setCfgName}
@@ -1134,16 +1152,130 @@ export default function ContactListDetailPage() {
         onSaveStep2={() => saveSchedMut.mutate()}
       />
 
+      {/* ── Edit Contact modal ────────────────────────────────────────────── */}
+      {editContactTarget && (
+        <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
+          <div className='bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden'>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Edit Contact</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>{editContactTarget.phone_number}</p>
+              </div>
+              <button
+                onClick={() => { closeEditContact(); editContactMut.reset(); }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+
+            <div className='p-5 space-y-4 max-h-[60vh] overflow-y-auto'>
+              {/* Phone number field */}
+              <div>
+                <label className='block text-xs font-medium text-gray-600 mb-1'>Phone Number *</label>
+                <input
+                  value={editContactForm.phone_number ?? ''}
+                  onChange={(e) => setEditContactForm((f) => ({ ...f, phone_number: e.target.value }))}
+                  placeholder='+12125550101'
+                  className='w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                />
+              </div>
+
+              {/* Dynamic custom fields */}
+              {customFieldDefs.length > 0 && (
+                <div className='grid grid-cols-2 gap-3'>
+                  {customFieldDefs.map((def: any) => {
+                    const t = String(def.data_type).toUpperCase();
+                    const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                    const isDate = t === 'TIMESTAMP';
+                    const isBool = t === 'BOOLEAN';
+                    if (isBool) {
+                      return (
+                        <label key={def.id} className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'>
+                          <input
+                            type='checkbox'
+                            checked={!!editContactForm[def.field_key]}
+                            onChange={(e) => setEditContactForm((f) => ({ ...f, [def.field_key]: e.target.checked }))}
+                            className='rounded text-indigo-600'
+                          />
+                          {def.name}
+                        </label>
+                      );
+                    }
+                    return (
+                      <div key={def.id}>
+                        <label className='block text-xs text-gray-500 mb-1'>{def.name}</label>
+                        <input
+                          type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
+                          value={editContactForm[def.field_key] ?? ''}
+                          onChange={(e) => setEditContactForm((f) => ({ ...f, [def.field_key]: e.target.value }))}
+                          placeholder={def.field_key}
+                          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Error message */}
+              {editContactMut.isError && (
+                <div className='flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-300'>
+                  <AlertCircle className='w-4 h-4 text-red-700 shrink-0' />
+                  <p className='text-sm font-medium text-red-800'>
+                    {(editContactMut.error as any)?.response?.data?.error || 'Failed to update contact. Please try again.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button
+                variant='secondary'
+                onClick={() => { closeEditContact(); editContactMut.reset(); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                icon={<Save className='w-4 h-4' />}
+                loading={editContactMut.isPending}
+                disabled={!editContactForm.phone_number?.trim()}
+                onClick={() => editContactMut.mutate()}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete single contact ─────────────────────────────────────────── */}
       {deleteTarget && (
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
-            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'><div><h3 className='text-base font-semibold text-gray-900'>Delete Contact</h3><p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p></div><button onClick={() => { setDeleteTarget(null); deleteMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'><X className='w-5 h-5' /></button></div>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete Contact</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button onClick={() => { setDeleteTarget(null); deleteMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+                <X className='w-5 h-5' />
+              </button>
+            </div>
             <div className='p-5 space-y-4'>
-              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'><AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' /><div><p className='text-sm font-semibold text-red-800'>Delete contact {deleteTarget.phone_number}?</p><p className='text-xs text-red-600 mt-1'>This contact will be permanently removed from the list.</p></div></div>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>Delete contact {deleteTarget.phone_number}?</p>
+                  <p className='text-xs text-red-600 mt-1'>This contact will be permanently removed from the list.</p>
+                </div>
+              </div>
               {deleteMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
             </div>
-            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'><Button variant='secondary' onClick={() => { setDeleteTarget(null); deleteMut.reset(); }}>Cancel</Button><Button loading={deleteMut.isPending} onClick={() => deleteMut.mutate(deleteTarget.id)} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete Contact</Button></div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button variant='secondary' onClick={() => { setDeleteTarget(null); deleteMut.reset(); }}>Cancel</Button>
+              <Button loading={deleteMut.isPending} onClick={() => deleteMut.mutate(deleteTarget.id)} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete Contact</Button>
+            </div>
           </div>
         </div>
       )}
@@ -1152,12 +1284,31 @@ export default function ContactListDetailPage() {
       {showDeleteSelected && (
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
-            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'><div><h3 className='text-base font-semibold text-gray-900'>Delete Selected Contacts</h3><p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p></div><button onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'><X className='w-5 h-5' /></button></div>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete Selected Contacts</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+                <X className='w-5 h-5' />
+              </button>
+            </div>
             <div className='p-5 space-y-4'>
-              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'><AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' /><div><p className='text-sm font-semibold text-red-800'>Delete {selectedContactIds.size} selected contact{selectedContactIds.size !== 1 ? 's' : ''}?</p><p className='text-xs text-red-600 mt-1'>These contacts will be permanently removed.</p></div></div>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>Delete {selectedContactIds.size} selected contact{selectedContactIds.size !== 1 ? 's' : ''}?</p>
+                  <p className='text-xs text-red-600 mt-1'>These contacts will be permanently removed.</p>
+                </div>
+              </div>
               {deleteSelectedMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
             </div>
-            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'><Button variant='secondary' onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }}>Cancel</Button><Button loading={deleteSelectedMut.isPending} onClick={() => deleteSelectedMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete {selectedContactIds.size} Contact{selectedContactIds.size !== 1 ? 's' : ''}</Button></div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button variant='secondary' onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }}>Cancel</Button>
+              <Button loading={deleteSelectedMut.isPending} onClick={() => deleteSelectedMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>
+                Delete {selectedContactIds.size} Contact{selectedContactIds.size !== 1 ? 's' : ''}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -1166,12 +1317,29 @@ export default function ContactListDetailPage() {
       {showDeleteAll && (
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
-            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'><div><h3 className='text-base font-semibold text-gray-900'>Delete All Contacts</h3><p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p></div><button onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'><X className='w-5 h-5' /></button></div>
+            <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
+              <div>
+                <h3 className='text-base font-semibold text-gray-900'>Delete All Contacts</h3>
+                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+              </div>
+              <button onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+                <X className='w-5 h-5' />
+              </button>
+            </div>
             <div className='p-5 space-y-4'>
-              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'><AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' /><div><p className='text-sm font-semibold text-red-800'>Delete all {total} contact{total !== 1 ? 's' : ''} from this list?</p><p className='text-xs text-red-600 mt-1 leading-relaxed'>Every contact in <strong>{listData?.name}</strong> will be permanently deleted. The contact list itself will remain.</p></div></div>
+              <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
+                <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
+                <div>
+                  <p className='text-sm font-semibold text-red-800'>Delete all {total} contact{total !== 1 ? 's' : ''} from this list?</p>
+                  <p className='text-xs text-red-600 mt-1 leading-relaxed'>Every contact in <strong>{listData?.name}</strong> will be permanently deleted. The contact list itself will remain.</p>
+                </div>
+              </div>
               {deleteAllMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
             </div>
-            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'><Button variant='secondary' onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }}>Cancel</Button><Button loading={deleteAllMut.isPending} onClick={() => deleteAllMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete All Contacts</Button></div>
+            <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
+              <Button variant='secondary' onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }}>Cancel</Button>
+              <Button loading={deleteAllMut.isPending} onClick={() => deleteAllMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete All Contacts</Button>
+            </div>
           </div>
         </div>
       )}

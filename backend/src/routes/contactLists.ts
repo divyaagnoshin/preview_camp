@@ -105,7 +105,6 @@ router.delete(
   '/:id',
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Check no active jobs using this list
       const active = await pool.query(
         `SELECT 1 FROM campaign_contact_lists ccl
        JOIN campaign_jobs cj ON cj.campaign_id = ccl.campaign_id
@@ -146,13 +145,8 @@ router.post(
         throw new AppError(400, "field_type must be 'predefined' or 'custom'");
 
       const reserved = [
-        'phone_number',
-        'first_name',
-        'last_name',
-        'email',
-        'timezone',
-        'assigned_agent_id',
-        'priority',
+        'phone_number', 'first_name', 'last_name', 'email',
+        'timezone', 'assigned_agent_id', 'priority',
       ];
       if (reserved.includes(field_key))
         throw new AppError(400, `field_key '${field_key}' is system reserved`);
@@ -163,13 +157,9 @@ router.post(
           is_required, display_order, is_visible_to_agent)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
-          req.params.id,
-          field_key,
-          field_label,
-          data_type || 'text',
-          field_type || 'predefined',
-          is_required || false,
-          display_order || 99,
+          req.params.id, field_key, field_label,
+          data_type || 'text', field_type || 'predefined',
+          is_required || false, display_order || 99,
           is_visible_to_agent !== false,
         ],
       );
@@ -186,111 +176,45 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
-
       const perPage = Math.min(
-        parseInt(
-          (req.query.per_page as string) ||
-            (req.query.page_size as string),
-        ) || 50,
+        parseInt((req.query.per_page as string) || (req.query.page_size as string)) || 50,
         200,
       );
-
       const offset = (page - 1) * perPage;
-
       const search = String(req.query.search || '').trim();
-
       const searchClause = search
-        ? `AND (
-            c.phone_number ILIKE $4
-            OR c.first_name ILIKE $4
-            OR c.last_name ILIKE $4
-            OR c.email ILIKE $4
-          )`
+        ? `AND (c.phone_number ILIKE $4 OR c.first_name ILIKE $4 OR c.last_name ILIKE $4 OR c.email ILIKE $4)`
         : '';
-
       const params: any[] = [req.params.id, perPage, offset];
-
-      if (search) {
-        params.push(`%${search}%`);
-      }
-
-      console.log(
-        '[contacts] fetching - list_id:',
-        req.params.id,
-        'page:',
-        page,
-        'perPage:',
-        perPage,
-        'search:',
-        search,
-      );
+      if (search) params.push(`%${search}%`);
 
       const { rows } = await pool.query(
-        `
-        SELECT
-          c.*,
-          u.first_name || ' ' || u.last_name AS assigned_agent_name
-        FROM contacts c
-        LEFT JOIN users u
-          ON u.id = c.assigned_agent_id
-        WHERE c.contact_list_id = $1::uuid
-        ${searchClause}
-        ORDER BY c.priority ASC, c.created_at ASC
-        LIMIT $2 OFFSET $3
-        `,
+        `SELECT c.*, u.first_name || ' ' || u.last_name AS assigned_agent_name
+         FROM contacts c
+         LEFT JOIN users u ON u.id = c.assigned_agent_id
+         WHERE c.contact_list_id = $1::uuid
+         ${searchClause}
+         ORDER BY c.priority ASC, c.created_at ASC
+         LIMIT $2 OFFSET $3`,
         params,
       );
 
-      console.log('[contacts] rows fetched:', rows.length);
-
       const countParams: any[] = [req.params.id];
-
-      if (search) {
-        countParams.push(`%${search}%`);
-      }
-
+      if (search) countParams.push(`%${search}%`);
       const total = await pool.query(
-        `
-        SELECT COUNT(*)::int
-        FROM contacts c
-        WHERE c.contact_list_id = $1::uuid
-        ${
-          search
-            ? `AND (
-                c.phone_number ILIKE $2
-                OR c.first_name ILIKE $2
-                OR c.last_name ILIKE $2
-                OR c.email ILIKE $2
-              )`
-            : ''
-        }
-        `,
+        `SELECT COUNT(*)::int FROM contacts c
+         WHERE c.contact_list_id = $1::uuid
+         ${search ? `AND (c.phone_number ILIKE $2 OR c.first_name ILIKE $2 OR c.last_name ILIKE $2 OR c.email ILIKE $2)` : ''}`,
         countParams,
       );
 
-      console.log(
-        '[contacts] total count:',
-        total.rows[0].count,
-      );
-
-      res.json({
-        data: rows,
-        total: total.rows[0].count,
-        page,
-        per_page: perPage,
-      });
+      res.json({ data: rows, total: total.rows[0].count, page, per_page: perPage });
     } catch (err) {
-      console.error('[contacts] ERROR:', err);
       next(err);
     }
   },
 );
 
-
-// Shared purger — wipes operational state referencing the supplied contacts
-// then deletes them. Mirrors DELETE /contacts/:id semantics so dropping one
-// contact through the list-scoped route behaves identically. Returns the
-// number of `contacts` rows deleted.
 async function purgeContacts(listId: string, contactIds: string[]): Promise<number> {
   if (!contactIds.length) return 0;
   let deleted = 0;
@@ -304,8 +228,7 @@ async function purgeContacts(listId: string, contactIds: string[]): Promise<numb
       [contactIds],
     );
     await client.query(
-      `UPDATE agent_sessions SET current_contact_id = NULL
-         WHERE current_contact_id = ANY($1::uuid[])`,
+      `UPDATE agent_sessions SET current_contact_id = NULL WHERE current_contact_id = ANY($1::uuid[])`,
       [contactIds],
     );
     const { rowCount } = await client.query(
@@ -317,9 +240,6 @@ async function purgeContacts(listId: string, contactIds: string[]): Promise<numb
   return deleted;
 }
 
-// DELETE /contact-lists/:id/contacts/:contactId — remove a single contact.
-// List-scoped sibling of DELETE /contacts/:id so the UI can keep paths
-// list-relative. Org ownership is verified via the parent list.
 router.delete(
   '/:id/contacts/:contactId',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -345,9 +265,6 @@ router.delete(
   },
 );
 
-// DELETE /contact-lists/:id/contacts — wipe every contact in the list. The
-// list shell itself stays. Blocked when an active job references the list
-// to avoid yanking rows out from under a live dialer.
 router.delete(
   '/:id/contacts',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -384,9 +301,6 @@ router.delete(
   },
 );
 
-// POST /contact-lists/:id/contacts/bulk-delete — wipe the supplied ids only.
-// POST (not DELETE) because we need a body, and not every HTTP client/proxy
-// stack supports bodies on DELETE. Body: { ids: string[] }.
 router.post(
   '/:id/contacts/bulk-delete',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -421,13 +335,8 @@ router.post(
   },
 );
 
-// Field keys that must always be attached to every contact list.
 const REQUIRED_FIELD_KEYS = ['system_contact_id'];
 
-// Synthetic attribute representing the real `contacts.phone_number` column.
-// It's not stored in org_field_library / contact_list_custom_fields — it's
-// always selected, always first, and surfaces in the CSV header + UI so users
-// can see/manage it like any other attribute.
 const SYSTEM_PHONE_ATTR_ID = '00000000-0000-0000-0000-000000000001';
 const SYSTEM_PHONE_ATTR = {
   id: SYSTEM_PHONE_ATTR_ID,
@@ -439,17 +348,16 @@ const SYSTEM_PHONE_ATTR = {
   is_read_only_agent: false,
   is_masked_agent: false,
   is_masked_reports: false,
+  is_editable_agent: false,
   org_id: null,
   source: 'system',
   is_selected: true,
   list_display_order: 0,
 };
-// Used to safely cast user-supplied ids before passing to UUID columns.
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Map our library/custom data_type → contact_list_field_definitions.data_type
-// (the input shape: text | number | date | boolean | url).
 const DATA_TYPE_TO_INPUT_TYPE: Record<string, string> = {
   STRING: 'text',
   PHONE: 'text',
@@ -461,42 +369,27 @@ const DATA_TYPE_TO_INPUT_TYPE: Record<string, string> = {
   BOOLEAN: 'boolean',
 };
 
-// Rebuilds contact_list_field_definitions for a given list from the union of
-// attached library fields + list-scoped custom fields. phone_number is
-// pre-seeded separately as display_order=1, so it's skipped in the loop to
-// avoid the (contact_list_id, field_key) UNIQUE violation. System keys
-// (first_name, last_name, email, timezone, assigned_agent_id, priority) are
-// included here when selected — downstream ingestion/agent code treats them
-// as real columns on `contacts` instead of custom_fields JSONB.
-// Each row carries data_type (input shape) and field_type (predefined|custom),
-// the latter sourced from whether the row originated in org_field_library
-// (predefined) or contact_list_custom_fields (custom).
 async function syncFieldDefinitions(client: any, listId: string) {
   const { rows } = await client.query(
-    `
-    SELECT field_key, name, data_type, display_order, field_type FROM (
-      SELECT fl.field_key, fl.name, fl.data_type, cla.display_order,
-             'predefined'::text AS field_type
-        FROM contact_list_attributes cla
-        JOIN org_field_library fl ON fl.id = cla.field_library_id
-       WHERE cla.contact_list_id = $1
-      UNION ALL
-      SELECT cf.field_key, cf.name, cf.data_type, cf.display_order,
-             'custom'::text AS field_type
-        FROM contact_list_custom_fields cf
-       WHERE cf.contact_list_id = $1
-    ) t
-    ORDER BY display_order ASC, field_key ASC
-    `,
+    `SELECT field_key, name, data_type, display_order, field_type FROM (
+       SELECT fl.field_key, fl.name, fl.data_type, cla.display_order,
+              'predefined'::text AS field_type
+         FROM contact_list_attributes cla
+         JOIN org_field_library fl ON fl.id = cla.field_library_id
+        WHERE cla.contact_list_id = $1
+       UNION ALL
+       SELECT cf.field_key, cf.name, cf.data_type, cf.display_order,
+              'custom'::text AS field_type
+         FROM contact_list_custom_fields cf
+        WHERE cf.contact_list_id = $1
+     ) t
+     ORDER BY display_order ASC, field_key ASC`,
     [listId],
   );
   await client.query(
     `DELETE FROM contact_list_field_definitions WHERE contact_list_id = $1`,
     [listId],
   );
-  // Always seed phone_number as the first definition row — it's the dialing
-  // target and must appear in the CSV header / agent UI even though it lives
-  // as a real column on contacts (not in field_library / custom_fields).
   await client.query(
     `INSERT INTO contact_list_field_definitions
        (contact_list_id, field_key, field_label, data_type, field_type,
@@ -508,32 +401,22 @@ async function syncFieldDefinitions(client: any, listId: string) {
   for (const r of rows) {
     if (r.field_key === 'phone_number') continue;
     pos += 1;
-    const inputType =
-      DATA_TYPE_TO_INPUT_TYPE[String(r.data_type).toUpperCase()] || 'text';
+    const inputType = DATA_TYPE_TO_INPUT_TYPE[String(r.data_type).toUpperCase()] || 'text';
     await client.query(
       `INSERT INTO contact_list_field_definitions
          (contact_list_id, field_key, field_label, data_type, field_type,
           is_required, display_order, is_visible_to_agent)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        listId,
-        r.field_key,
-        r.name,
-        inputType,
-        r.field_type,
-        REQUIRED_FIELD_KEYS.includes(r.field_key),
-        pos,
-        true,
-      ],
+      [listId, r.field_key, r.name, inputType, r.field_type,
+       REQUIRED_FIELD_KEYS.includes(r.field_key), pos, true],
     );
   }
   return pos;
 }
 
-// GET /contact-lists/:id/attributes
-// Returns a unified list of attributes available for this list:
-//   • source='library'     → predefined / org library fields (selectable)
-//   • source='custom_list' → list-scoped custom fields (always selected)
+// ─── GET /contact-lists/:id/attributes ────────────────────────────────────────
+// FIX: both branches of the UNION now explicitly select is_editable_agent so
+// the frontend edit modal receives the real stored value instead of undefined.
 router.get(
   '/:id/attributes',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -548,7 +431,9 @@ router.get(
         `
         SELECT fl.id, fl.name, fl.field_key, fl.field_type, fl.data_type,
                fl.is_private, fl.is_read_only_agent, fl.is_masked_agent,
-               fl.is_masked_reports, fl.org_id,
+               fl.is_masked_reports,
+               COALESCE(fl.is_editable_agent, true) AS is_editable_agent,
+               fl.org_id,
                'library'::text AS source,
                (cla.contact_list_id IS NOT NULL) AS is_selected,
                cla.display_order AS list_display_order
@@ -561,7 +446,9 @@ router.get(
         SELECT cf.id, cf.name, cf.field_key, 'custom'::text AS field_type,
                cf.data_type,
                cf.is_private, cf.is_read_only_agent, cf.is_masked_agent,
-               cf.is_masked_reports, NULL::uuid AS org_id,
+               cf.is_masked_reports,
+               COALESCE(cf.is_editable_agent, true) AS is_editable_agent,
+               NULL::uuid AS org_id,
                'custom_list'::text AS source,
                TRUE AS is_selected,
                cf.display_order AS list_display_order
@@ -571,8 +458,6 @@ router.get(
         `,
         [req.params.id, req.user!.orgId],
       );
-      // Prepend the synthetic phone_number row (real column on contacts; not
-      // stored as a library/custom field but always required for dialing).
       res.json({ data: [SYSTEM_PHONE_ATTR, ...rows] });
     } catch (err) {
       next(err);
@@ -581,9 +466,6 @@ router.get(
 );
 
 // PUT /contact-lists/:id/attributes
-// Body: { ids: string[] } — ordered list of attribute IDs from either source.
-// Server resolves each ID against org_field_library and contact_list_custom_fields.
-// Library IDs replace contact_list_attributes; custom IDs only get re-ordered.
 router.put(
   '/:id/attributes',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -594,8 +476,6 @@ router.put(
         : Array.isArray(req.body?.field_library_ids)
           ? req.body.field_library_ids
           : [];
-      // Drop the synthetic phone_number id and any non-UUID input before
-      // touching UUID-typed columns.
       const rawIds = rawIdsAll.filter(
         (id) => id !== SYSTEM_PHONE_ATTR_ID && UUID_RE.test(id),
       );
@@ -606,31 +486,22 @@ router.put(
       );
       if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
 
-      // Resolve each ID to its source table.
       const libRes = await client.query(
         `SELECT id FROM org_field_library
           WHERE id = ANY($1::uuid[]) AND (org_id = $2 OR org_id IS NULL)`,
-        [
-          rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'],
-          req.user!.orgId,
-        ],
+        [rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'], req.user!.orgId],
       );
       const libSet = new Set<string>(libRes.rows.map((r: any) => r.id));
 
       const cusRes = await client.query(
         `SELECT id FROM contact_list_custom_fields
           WHERE id = ANY($1::uuid[]) AND contact_list_id = $2`,
-        [
-          rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'],
-          req.params.id,
-        ],
+        [rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'], req.params.id],
       );
       const cusSet = new Set<string>(cusRes.rows.map((r: any) => r.id));
 
-      // Force-include required library fields.
       const reqRes = await client.query(
-        `SELECT id FROM org_field_library
-          WHERE field_key = ANY($1::text[]) AND org_id IS NULL`,
+        `SELECT id FROM org_field_library WHERE field_key = ANY($1::text[]) AND org_id IS NULL`,
         [REQUIRED_FIELD_KEYS],
       );
       const requiredIds: string[] = reqRes.rows.map((r: any) => r.id);
@@ -638,8 +509,7 @@ router.put(
       const orderedCus: string[] = [];
       for (const id of rawIds) {
         if (libSet.has(id) && !orderedLib.includes(id)) orderedLib.push(id);
-        else if (cusSet.has(id) && !orderedCus.includes(id))
-          orderedCus.push(id);
+        else if (cusSet.has(id) && !orderedCus.includes(id)) orderedCus.push(id);
       }
       for (const rid of requiredIds)
         if (!orderedLib.includes(rid)) orderedLib.unshift(rid);
@@ -649,7 +519,6 @@ router.put(
         `DELETE FROM contact_list_attributes WHERE contact_list_id = $1`,
         [req.params.id],
       );
-      // Combined order so library + custom interleave consistently.
       let pos = 0;
       for (const lid of orderedLib) {
         pos += 1;
@@ -667,15 +536,9 @@ router.put(
           [pos, cid, req.params.id],
         );
       }
-      // Mirror the unified selection into contact_list_field_definitions so the
-      // legacy ingest path (validateContact) sees the same set of fields.
       const defs = await syncFieldDefinitions(client, req.params.id);
       await client.query('COMMIT');
-      res.json({
-        attached_library: orderedLib.length,
-        attached_custom: orderedCus.length,
-        field_definitions: defs,
-      });
+      res.json({ attached_library: orderedLib.length, attached_custom: orderedCus.length, field_definitions: defs });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       next(err);
@@ -686,7 +549,6 @@ router.put(
 );
 
 // GET /contact-lists/:id/csv-template
-// Returns a CSV file with one header row of the attached attributes' field_keys.
 router.get(
   '/:id/csv-template',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -698,35 +560,23 @@ router.get(
       if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
 
       const { rows } = await pool.query(
-        `
-        SELECT field_key, display_order FROM (
-          SELECT fl.field_key, cla.display_order
-            FROM contact_list_attributes cla
-            JOIN org_field_library fl ON fl.id = cla.field_library_id
-           WHERE cla.contact_list_id = $1
-          UNION ALL
-          SELECT cf.field_key, cf.display_order
-            FROM contact_list_custom_fields cf
-           WHERE cf.contact_list_id = $1
-        ) t
-        ORDER BY display_order ASC, field_key ASC
-        `,
+        `SELECT field_key, display_order FROM (
+           SELECT fl.field_key, cla.display_order
+             FROM contact_list_attributes cla
+             JOIN org_field_library fl ON fl.id = cla.field_library_id
+            WHERE cla.contact_list_id = $1
+           UNION ALL
+           SELECT cf.field_key, cf.display_order
+             FROM contact_list_custom_fields cf
+            WHERE cf.contact_list_id = $1
+         ) t
+         ORDER BY display_order ASC, field_key ASC`,
         [req.params.id],
       );
-      // Always prepend phone_number — it's the dialing target and lives as a
-      // real column on contacts (never in field_library / field_definitions).
-      const header = ['phone_number', ...rows.map((r) => r.field_key)].join(
-        ',',
-      );
-      const safeName = (list.rows[0].name || 'contacts').replace(
-        /[^a-z0-9_-]+/gi,
-        '_',
-      );
+      const header = ['phone_number', ...rows.map((r) => r.field_key)].join(',');
+      const safeName = (list.rows[0].name || 'contacts').replace(/[^a-z0-9_-]+/gi, '_');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${safeName}_template.csv"`,
-      );
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}_template.csv"`);
       res.send(header + '\n');
     } catch (err) {
       next(err);
@@ -734,37 +584,21 @@ router.get(
   },
 );
 
-// Allowed data types for list-scoped custom fields.
 const CUSTOM_DATA_TYPES = new Set([
-  'STRING',
-  'INTEGER',
-  'FLOAT',
-  'LONG',
-  'PHONE',
-  'EMAIL',
-  'TIMESTAMP',
-  'BOOLEAN',
+  'STRING', 'INTEGER', 'FLOAT', 'LONG', 'PHONE', 'EMAIL', 'TIMESTAMP', 'BOOLEAN',
 ]);
 
 const toFieldKey = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
+  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
 // POST /contact-lists/:id/custom-fields
-// Bulk-create list-scoped custom field definitions.
-// Body: { fields: [{ name, data_type, is_private?, is_read_only_agent?,
-//                    is_masked_agent?, is_masked_reports? }] }
 router.post(
   '/:id/custom-fields',
   async (req: Request, res: Response, next: NextFunction) => {
     const client = await pool.connect();
+    let cleaned: any[] = [];
     try {
-      const fields: any[] = Array.isArray(req.body?.fields)
-        ? req.body.fields
-        : [];
+      const fields: any[] = Array.isArray(req.body?.fields) ? req.body.fields : [];
       if (!fields.length) throw new AppError(400, 'fields array required');
 
       const list = await client.query(
@@ -773,20 +607,17 @@ router.post(
       );
       if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
 
-      // Compute next display_order = max across both attribute sources + 1.
       const maxRes = await client.query(
-        `
-        SELECT COALESCE(MAX(display_order), 0) AS m FROM (
-          SELECT display_order FROM contact_list_attributes WHERE contact_list_id = $1
-          UNION ALL
-          SELECT display_order FROM contact_list_custom_fields WHERE contact_list_id = $1
-        ) t
-        `,
+        `SELECT COALESCE(MAX(display_order), 0) AS m FROM (
+           SELECT display_order FROM contact_list_attributes WHERE contact_list_id = $1
+           UNION ALL
+           SELECT display_order FROM contact_list_custom_fields WHERE contact_list_id = $1
+         ) t`,
         [req.params.id],
       );
       let nextOrder = Number(maxRes.rows[0].m) || 0;
 
-      const cleaned = fields.map((f: any) => {
+      cleaned = fields.map((f: any) => {
         const name = String(f.name || '').trim();
         if (!name) throw new AppError(400, 'Each field requires a name');
         const data_type = String(f.data_type || 'STRING').toUpperCase();
@@ -803,72 +634,70 @@ router.post(
           is_editable_agent: f.is_editable_agent !== false,
         };
       });
-      const keys = cleaned.map((c) => c.field_key);
-      if (new Set(keys).size !== keys.length)
-        throw new AppError(400, 'Duplicate field names in request');
+
+      const requestKeys = cleaned.map((c) => c.field_key);
+      const requestDupes = requestKeys.filter((k, i) => requestKeys.indexOf(k) !== i);
+      if (requestDupes.length > 0) {
+        throw new AppError(
+          400,
+          `Duplicate field names in request: "${[...new Set(requestDupes)].join('", "')}"`,
+        );
+      }
+
+      const existingRes = await client.query(
+        `SELECT field_key, name FROM contact_list_custom_fields
+          WHERE contact_list_id = $1 AND field_key = ANY($2::text[])`,
+        [req.params.id, requestKeys],
+      );
+      if (existingRes.rows.length > 0) {
+        const dupKeys = existingRes.rows.map((r: any) => `"${r.field_key}"`).join(', ');
+        return next(
+          new AppError(
+            409,
+            existingRes.rows.length === 1
+              ? `A custom field with key ${dupKeys} already exists for this list`
+              : `Custom fields with keys ${dupKeys} already exist for this list`,
+          ),
+        );
+      }
 
       await client.query('BEGIN');
       const inserted: any[] = [];
       for (const c of cleaned) {
         nextOrder += 1;
         const { rows } = await client.query(
-  `INSERT INTO contact_list_custom_fields
-     (contact_list_id, name, field_key, data_type,
-      is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
-      is_editable_agent, display_order, created_by)        -- ← add column
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)             -- ← add $9
-   RETURNING *`,
-  [
-    req.params.id,
-    c.name,
-    c.field_key,
-    c.data_type,
-    c.is_private,
-    c.is_read_only_agent,
-    c.is_masked_agent,
-    c.is_masked_reports,
-    c.is_editable_agent,  // ← add this
-    nextOrder,
-    req.user!.userId,
-  ],
-);
+          `INSERT INTO contact_list_custom_fields
+             (contact_list_id, name, field_key, data_type,
+              is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
+              is_editable_agent, display_order, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           RETURNING *`,
+          [
+            req.params.id, c.name, c.field_key, c.data_type,
+            c.is_private, c.is_read_only_agent, c.is_masked_agent,
+            c.is_masked_reports, c.is_editable_agent, nextOrder, req.user!.userId,
+          ],
+        );
         inserted.push(rows[0]);
-        // Mirror into the org-scoped library so the field is reusable across
-        // lists in the same org. Conflicts (same field_key already present
-        // in the org library) are no-ops — the existing row stays.
         await client.query(
-  `INSERT INTO org_field_library
-     (org_id, name, field_key, field_type, data_type,
-      is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
-      is_editable_agent, display_order, created_by)        -- ← add column
-   VALUES ($1,$2,$3,'custom',$4,$5,$6,$7,$8,$9,99,$10)    -- ← add $9
-   ON CONFLICT (org_id, field_key) DO NOTHING`,
-  [
-    req.user!.orgId,
-    c.name,
-    c.field_key,
-    c.data_type,
-    c.is_private,
-    c.is_read_only_agent,
-    c.is_masked_agent,
-    c.is_masked_reports,
-    c.is_editable_agent,  // ← add this
-    req.user!.userId,
-  ],
-);
+          `INSERT INTO org_field_library
+             (org_id, name, field_key, field_type, data_type,
+              is_private, is_read_only_agent, is_masked_agent, is_masked_reports,
+              is_editable_agent, display_order, created_by)
+           VALUES ($1,$2,$3,'custom',$4,$5,$6,$7,$8,$9,99,$10)
+           ON CONFLICT (org_id, field_key) DO NOTHING`,
+          [
+            req.user!.orgId, c.name, c.field_key, c.data_type,
+            c.is_private, c.is_read_only_agent, c.is_masked_agent,
+            c.is_masked_reports, c.is_editable_agent, req.user!.userId,
+          ],
+        );
       }
       await syncFieldDefinitions(client, req.params.id);
       await client.query('COMMIT');
       res.status(201).json({ data: inserted });
     } catch (err: any) {
       await client.query('ROLLBACK').catch(() => {});
-      if (err.code === '23505')
-        return next(
-          new AppError(
-            409,
-            'A custom field with this key already exists for this list',
-          ),
-        );
       next(err);
     } finally {
       client.release();
@@ -876,9 +705,9 @@ router.post(
   },
 );
 
-// PATCH /contact-lists/:id/custom-fields/:fid
-// Edit a saved list-scoped custom field. field_key is immutable (it's the
-// JSONB key in contacts.custom_fields — renaming would orphan stored values).
+// ─── PATCH /contact-lists/:id/custom-fields/:fid ──────────────────────────────
+// FIX: removed inline SQL comments (-- ...) that were on the same line as
+// parameter placeholders $8 and $9, causing PostgreSQL to discard them.
 router.patch(
   '/:id/custom-fields/:fid',
   async (req: Request, res: Response, next: NextFunction) => {
@@ -902,28 +731,28 @@ router.patch(
 
       await client.query('BEGIN');
       const { rows } = await client.query(
-  `UPDATE contact_list_custom_fields SET
-     name               = COALESCE($1, name),
-     data_type          = COALESCE($2, data_type),
-     is_private         = COALESCE($3, is_private),
-     is_read_only_agent = COALESCE($4, is_read_only_agent),
-     is_masked_agent    = COALESCE($5, is_masked_agent),
-     is_masked_reports  = COALESCE($6, is_masked_reports),
-     is_editable_agent  = COALESCE($7, is_editable_agent)  -- ← add this
-   WHERE id = $8 AND contact_list_id = $9                  -- ← bump param nums
-   RETURNING *`,
-  [
-    name ?? null,
-    data_type ?? null,
-    b.is_private != null ? !!b.is_private : null,
-    b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
-    b.is_masked_agent != null ? !!b.is_masked_agent : null,
-    b.is_masked_reports != null ? !!b.is_masked_reports : null,
-    b.is_editable_agent != null ? !!b.is_editable_agent : null, // ← add
-    req.params.fid,
-    req.params.id,
-  ],
-);
+        `UPDATE contact_list_custom_fields SET
+           name               = COALESCE($1, name),
+           data_type          = COALESCE($2, data_type),
+           is_private         = COALESCE($3, is_private),
+           is_read_only_agent = COALESCE($4, is_read_only_agent),
+           is_masked_agent    = COALESCE($5, is_masked_agent),
+           is_masked_reports  = COALESCE($6, is_masked_reports),
+           is_editable_agent  = COALESCE($7, is_editable_agent)
+         WHERE id = $8 AND contact_list_id = $9
+         RETURNING *`,
+        [
+          name ?? null,
+          data_type ?? null,
+          b.is_private != null ? !!b.is_private : null,
+          b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
+          b.is_masked_agent != null ? !!b.is_masked_agent : null,
+          b.is_masked_reports != null ? !!b.is_masked_reports : null,
+          b.is_editable_agent != null ? !!b.is_editable_agent : null,
+          req.params.fid,
+          req.params.id,
+        ],
+      );
       if (!rows[0]) {
         await client.query('ROLLBACK');
         throw new AppError(404, 'Custom field not found');
@@ -954,8 +783,7 @@ router.delete(
 
       await client.query('BEGIN');
       const { rowCount } = await client.query(
-        `DELETE FROM contact_list_custom_fields
-          WHERE id = $1 AND contact_list_id = $2`,
+        `DELETE FROM contact_list_custom_fields WHERE id = $1 AND contact_list_id = $2`,
         [req.params.fid, req.params.id],
       );
       if (!rowCount) {

@@ -139,6 +139,13 @@ export default function ContactListAttributesPage() {
       setTimeout(() => setSavedMsg(null), 2500);
       closeEdit();
     },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.error || '';
+      if (msg) {
+        setSavedMsg(`⚠ ${msg}`);
+        setTimeout(() => setSavedMsg(null), 4000);
+      }
+    },
   });
 
   const byId = useMemo(() => {
@@ -248,12 +255,14 @@ export default function ContactListAttributesPage() {
           {savedMsg}
         </div>
       )}
-      {saveMut.isError && (
-        <div className='p-3 rounded-lg text-sm bg-red-50 text-red-700'>
-          {(saveMut.error as any)?.response?.data?.error || 'Save failed'}
-        </div>
-      )}
-
+     {saveMut.isError && (
+  <div className='flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-300'>
+    <AlertCircle className='w-4 h-4 text-red-700 shrink-0' />
+    <p className='text-sm font-medium text-red-800'>
+      {(saveMut.error as any)?.response?.data?.error || 'Failed to save attributes. Please try again.'}
+    </p>
+  </div>
+)}
       <p className='text-xs text-gray-500'>
         This page allows you to associate Attributes with selected Contact List.
       </p>
@@ -509,7 +518,7 @@ export default function ContactListAttributesPage() {
                 <div className='flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg'>
                   <AlertCircle className='w-4 h-4 text-red-500 flex-shrink-0 mt-0.5' />
                   <p className='text-xs text-red-700 leading-relaxed'>
-                    Could not save changes. Please try again.
+                    {(updateCustomMut.error as any)?.response?.data?.error || 'Could not save changes. Please try again.'}
                   </p>
                 </div>
               )}

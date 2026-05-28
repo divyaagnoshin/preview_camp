@@ -62,22 +62,29 @@ export default function ContactListAttributesNewPage() {
     setRows((rs) => (rs.length === 1 ? rs : rs.filter((_, idx) => idx !== i)));
   const addRow = () => setRows((rs) => [...rs, blankRow()]);
 
-  const handleSave = async () => {
+ const handleSave = async () => {
     setError(null);
     const cleaned = rows.filter((r) => r.name.trim());
     if (cleaned.length === 0) {
       setError('Add at least one attribute with a name');
       return;
     }
+    // Check duplicates within the form itself
     const keys = cleaned.map((r) => toFieldKey(r.name));
-    if (new Set(keys).size !== keys.length) {
-      setError('Attribute names must be unique');
+    const seen = new Set<string>();
+    const internalDupes: string[] = [];
+    keys.forEach((k) => {
+      if (seen.has(k)) internalDupes.push(k);
+      else seen.add(k);
+    });
+    if (internalDupes.length > 0) {
+      setError(
+        `Duplicate attribute names in this form: "${[...new Set(internalDupes)].join('", "')}" — please use unique names`,
+      );
       return;
     }
     setSaving(true);
     try {
-      // Custom fields are scoped to this contact list — they're stored in
-      // contact_list_custom_fields, NOT in org_field_library.
       await createContactListCustomFields(
         id!,
         cleaned.map((r) => ({
@@ -93,7 +100,8 @@ export default function ContactListAttributesNewPage() {
       qc.invalidateQueries({ queryKey: ['contact-list-attributes', id] });
       navigate(`/contact-lists/${id}/attributes`);
     } catch (e: any) {
-      setError(e?.response?.data?.error || 'Failed to create attributes');
+      const msg = e?.response?.data?.error || '';
+      setError(msg || 'Failed to create attributes');
     } finally {
       setSaving(false);
     }
