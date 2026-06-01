@@ -88,8 +88,7 @@ export function validatePhoneFormat(phone: any): string | null {
   if (!/^\+?[0-9]+$/.test(cleaned))
     return `phone_number contains invalid characters: "${phone}"`;
   const digits = cleaned.replace(/^\+/, '');
-  if (digits.length < 7 || digits.length > 15)
-    return `phone_number length must be 7-15 digits (got ${digits.length}: "${phone}")`;
+  
   return null;
 }
 
@@ -329,7 +328,7 @@ console.error({
     });
   }
 
-  return { imported, failed, errors };
+  return { imported, failed, skipped: 0, errors };
 }
 
 // ─── COPY FROM STDIN helpers ──────────────────────────────────────────────

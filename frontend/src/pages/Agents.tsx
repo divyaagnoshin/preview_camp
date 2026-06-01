@@ -383,7 +383,7 @@ function CreateAgentModal({
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'agent' | 'supervisor' | 'admin'>('agent');
+  const [role, setRole] = useState<'admin'>('admin');  // ← only admin
   const [error, setError] = useState('');
 
   const m = useMutation({
@@ -394,7 +394,7 @@ function CreateAgentModal({
   });
 
   return (
-    <Modal title='New agent' open={true} onClose={onClose}>
+    <Modal title='New user' open={true} onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -438,18 +438,15 @@ function CreateAgentModal({
           required
           minLength={8}
         />
-        <Select
-          label='Role'
-          value={role}
-          onChange={(e) =>
-            setRole(e.target.value as 'agent' | 'supervisor' | 'admin')
-          }
-          options={[
-            { value: 'agent', label: 'Agent' },
-            { value: 'supervisor', label: 'Supervisor' },
-            { value: 'admin', label: 'Admin' },
-          ]}
-        />
+
+        {/* Role is fixed to Admin — no dropdown shown */}
+        <div className='space-y-1'>
+          <label className='block text-xs text-gray-500'>Role</label>
+          <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500 capitalize'>
+            Admin
+          </div>
+        </div>
+
         {error && <p className='text-xs text-red-500'>{error}</p>}
         <div className='flex justify-end gap-2 pt-2'>
           <Button type='button' variant='secondary' onClick={onClose}>
@@ -467,7 +464,6 @@ function CreateAgentModal({
     </Modal>
   );
 }
-
 function EditAgentModal({
   target,
   onClose,

@@ -285,8 +285,8 @@ function ManageAttributesSection() {
 
   const allAttrs: any[] = attrData?.data || [];
   const systemAttrs = allAttrs.filter(
-    (a: any) => a.source === 'system' || (a.source === 'library' && a.field_type !== 'custom'),
-  );
+  (a: any) => a.field_type === 'predefined',
+);
   const customAttrs = allAttrs.filter(
     (a: any) => a.source === 'custom_list' || a.field_type === 'custom',
   );

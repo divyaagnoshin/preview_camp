@@ -46,22 +46,33 @@ async function downloadFromFtp(
   const collect = (name: string, buf: Buffer) =>
     out.push({ name, text: buf.toString('utf-8') });
 
+  console.log('=== downloadFromFtp CALLED ===');
+  console.log({ protocol, host: cred.host, port, folder, wantedFile });
+
   if (protocol === 'sftp') {
     const sftp = new SftpClient();
     try {
+      console.log('=== SFTP CONNECT ATTEMPT ===');
       await sftp.connect({
         host: cred.host,
         port,
         username: cred.username,
         password: cred.password,
       });
+      console.log('=== SFTP LOGIN SUCCESS ===');
+
       const targets: string[] = wantedFile
         ? [`${folder}/${wantedFile}`]
         : ((await sftp.list(folder)) as any[])
             .filter((e) => e.type === '-' && /\.csv$/i.test(e.name))
             .map((e) => `${folder}/${e.name}`);
+
+      console.log('=== SFTP FILES FOUND ===', targets);
+
       for (const path of targets) {
+        console.log('=== SFTP DOWNLOADING ===', path);
         const buf = (await sftp.get(path)) as Buffer;
+        console.log('=== SFTP DOWNLOAD COMPLETE ===', path, `${buf.length} bytes`);
         collect(path.split('/').pop() || path, buf);
       }
     } finally {
@@ -69,7 +80,11 @@ async function downloadFromFtp(
     }
   } else {
     const client = new FtpClient.Client();
+    client.ftp.verbose = true; // logs every FTP command/response to console
     try {
+      console.log('=== FTP CONNECT ATTEMPT ===');
+      console.log({ host: cred.host, port, user: cred.username, secure: false });
+
       await client.access({
         host: cred.host,
         port,
@@ -77,12 +92,19 @@ async function downloadFromFtp(
         password: cred.password,
         secure: false,
       });
+
+      console.log('=== FTP LOGIN SUCCESS ===');
+
       const targets: string[] = wantedFile
         ? [wantedFile]
         : (await client.list(folder))
             .filter((e: any) => e.isFile && /\.csv$/i.test(e.name))
             .map((e: any) => e.name);
+
+      console.log('=== FTP FILES FOUND ===', targets);
+
       for (const name of targets) {
+        console.log('=== FTP DOWNLOADING ===', name);
         const chunks: Buffer[] = [];
         const sink = new Writable({
           write(chunk, _enc, cb) {
@@ -91,15 +113,18 @@ async function downloadFromFtp(
           },
         });
         await client.downloadTo(sink, `${folder}/${name}`);
-        collect(name, Buffer.concat(chunks));
+        const buf = Buffer.concat(chunks);
+        console.log('=== FTP DOWNLOAD COMPLETE ===', name, `${buf.length} bytes`);
+        collect(name, buf);
       }
     } finally {
       client.close();
     }
   }
+
+  console.log('=== downloadFromFtp DONE === files collected:', out.length);
   return out;
 }
-
 const router = Router();
 router.use(authenticate);
 

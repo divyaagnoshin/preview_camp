@@ -121,11 +121,11 @@ export default function CampaignDetailPage() {
               gradient='linear-gradient(135deg,#F59E0B,#D97706)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E'/>
           </div>
 
-          <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
+          <div className='grid grid-cols-2 lg:grid-cols-3 gap-4'>
             <StatCard label='Attempted' value={report.attempted || 0} icon={Phone}
               gradient='linear-gradient(135deg,#8B5CF6,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6'/>
-            <StatCard label='Connected' value={report.connected || 0} icon={CheckCircle}
-              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/>
+           {/*  <StatCard label='Connected' value={report.connected || 0} icon={CheckCircle}
+              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/> */}
             <StatCard label='Completed' value={report.completed_total || 0} icon={TrendingUp}
               gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' tint='linear-gradient(135deg,#EFF6FF,#DBEAFE)' border='#BFDBFE' textColor='#1E40AF'/>
             <StatCard label='DNC' value={report.dnc || 0} icon={XCircle}

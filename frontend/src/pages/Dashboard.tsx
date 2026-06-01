@@ -87,14 +87,15 @@ export default function DashboardPage() {
           cols={[
             { header: 'Campaign', render: (r: any) => <span className='font-semibold text-[#1A0F00]'>{r.campaign_name}</span> },
             { header: 'Run #', key: 'job_run_number', width: '70px' },
-            {
-              header: 'Progress', render: (r: any) => (
-                <div className='flex items-center gap-2 min-w-[120px]'>
-                  <Progress value={r.prcnt_complete} />
-                  <span className='text-xs text-[#7A5C44] w-9 text-right'>{r.prcnt_complete?.toFixed(0)}%</span>
-                </div>
-              )
-            },
+            { header: 'Progress', render: (r: any) => {
+  const pct = parseFloat(r.prcnt_complete) || 0;
+  return (
+    <div className='flex items-center gap-2 min-w-[120px]'>
+      <Progress value={pct} />
+      <span className='text-xs text-[#7A5C44] w-9 text-right'>{pct.toFixed(0)}%</span>
+    </div>
+  );
+}},
             { header: 'Contacts', render: (r: any) => <span className='text-[#5C4030]'>{r.processed_contacts} / {r.total_contacts}</span> },
             { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
           ]}

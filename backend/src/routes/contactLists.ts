@@ -14,15 +14,28 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const offset = (page - 1) * perPage;
 
     const { rows } = await pool.query(
-      `SELECT cl.*, COUNT(c.id)::int AS contact_count
-       FROM contact_lists cl
-       LEFT JOIN contacts c ON c.contact_list_id = cl.id
-       WHERE cl.org_id = $1
-       GROUP BY cl.id
-       ORDER BY cl.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [req.user!.orgId, perPage, offset],
-    );
+  `SELECT cl.*,
+          COUNT(DISTINCT c.id)::int AS contact_count,
+          (
+            SELECT COUNT(*)::int
+            FROM (
+              SELECT cla.field_library_id AS fid
+                FROM contact_list_attributes cla
+               WHERE cla.contact_list_id = cl.id
+              UNION ALL
+              SELECT cf.id AS fid
+                FROM contact_list_custom_fields cf
+               WHERE cf.contact_list_id = cl.id
+            ) f
+          ) AS field_count
+   FROM contact_lists cl
+   LEFT JOIN contacts c ON c.contact_list_id = cl.id
+   WHERE cl.org_id = $1
+   GROUP BY cl.id
+   ORDER BY cl.created_at DESC
+   LIMIT $2 OFFSET $3`,
+  [req.user!.orgId, perPage, offset],
+);
     const total = await pool.query(
       'SELECT COUNT(*)::int FROM contact_lists WHERE org_id = $1',
       [req.user!.orgId],
@@ -58,13 +71,26 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-      `SELECT cl.*, COUNT(c.id)::int AS contact_count
-       FROM contact_lists cl
-       LEFT JOIN contacts c ON c.contact_list_id = cl.id
-       WHERE cl.id = $1 AND cl.org_id = $2
-       GROUP BY cl.id`,
-      [req.params.id, req.user!.orgId],
-    );
+  `SELECT cl.*,
+          COUNT(DISTINCT c.id)::int AS contact_count,
+          (
+            SELECT COUNT(*)::int
+            FROM (
+              SELECT cla.field_library_id AS fid
+                FROM contact_list_attributes cla
+               WHERE cla.contact_list_id = cl.id
+              UNION ALL
+              SELECT cf.id AS fid
+                FROM contact_list_custom_fields cf
+               WHERE cf.contact_list_id = cl.id
+            ) f
+          ) AS field_count
+   FROM contact_lists cl
+   LEFT JOIN contacts c ON c.contact_list_id = cl.id
+   WHERE cl.id = $1 AND cl.org_id = $2
+   GROUP BY cl.id`,
+  [req.params.id, req.user!.orgId],
+);
     if (!rows[0]) throw new AppError(404, 'Contact list not found');
 
     const fields = await pool.query(

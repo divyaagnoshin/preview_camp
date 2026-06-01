@@ -91,13 +91,16 @@ export function JobsPage() {
           cols={[
             { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
             { header: 'Run #', key: 'job_run_number', width: '70px' },
-            { header: 'Progress', render: (r: any) => (
-              <div className="flex items-center gap-2">
-                <Progress value={r.prcnt_complete} />
-                <span className="text-xs text-gray-400 w-12">{r.prcnt_complete?.toFixed(1)}%</span>
-              </div>
-            )},
-            { header: 'Contacts', render: (r: any) => `${r.processed_contacts} / ${r.total_contacts}` },
+            { header: 'Progress', render: (r: any) => {
+              const pct = parseFloat(r.prcnt_complete) || 0;
+              return (
+                <div className="flex items-center gap-2">
+                  <Progress value={pct} />
+                  <span className="text-xs text-gray-400 w-12">{pct.toFixed(1)}%</span>
+                </div>
+              );
+            }},
+            { header: 'Contacts', render: (r: any) => `${r.processed_contacts ?? 0} / ${r.total_contacts ?? 0}` },
             { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
             { header: 'Started', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
             { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
@@ -124,16 +127,43 @@ export function JobDetailPage() {
   const [newAgent, setNewAgent] = useState('');
   const [newPriority, setNewPriority] = useState('');
 
-  const { data: job, isLoading: loadJ } = useQuery({
-    queryKey: ['job', id], queryFn: () => getJob(id!),
+  // Job polls while running — now returns live-computed progress from backend
+  const { data: job, isLoading: loadJ, refetch: refetchJob } = useQuery({
+    queryKey: ['job', id],
+    queryFn: () => getJob(id!),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'active' || status === 'preparing' || status === 'pending') return 5000;
+      if (status === 'paused') return 10000;
+      return false;
+    },
   });
+
+  // Stats also poll and now return live-computed progress from backend
   const { data: stats, refetch: refetchStats } = useQuery({
-    queryKey: ['job-stats', id], queryFn: () => getJobStats(id!),
-    refetchInterval: job?.status === 'active' ? 10000 : false,
+    queryKey: ['job-stats', id],
+    queryFn: () => getJobStats(id!),
+    refetchInterval: (query) => {
+      const status = job?.status;
+      if (status === 'active' || status === 'preparing' || status === 'pending') return 5000;
+      if (status === 'paused') return 15000;
+      if (status === 'completed' || status === 'stopped') {
+        if ((query.state.dataUpdateCount ?? 0) < 1) return 2000;
+      }
+      return false;
+    },
   });
-  const { data: contacts, isLoading: loadC } = useQuery({
+
+  // Contacts poll while running
+  const { data: contacts, isLoading: loadC, refetch: refetchContacts } = useQuery({
     queryKey: ['job-contacts', id, statusFilter],
     queryFn: () => getJobContacts(id!, { status: statusFilter || undefined, per_page: 100 }),
+    refetchInterval: () => {
+      const status = job?.status;
+      if (status === 'active' || status === 'preparing') return 8000;
+      if (status === 'paused') return 20000;
+      return false;
+    },
   });
 
   const updateMut = useMutation({
@@ -152,6 +182,16 @@ export function JobDetailPage() {
 
   const byStatus = stats?.by_status || {};
 
+  // --- PROGRESS SOURCE OF TRUTH ---
+  // Prefer live-computed values from stats (which counts directly from CCS rows).
+  // Fall back to job fields so the page works even before stats loads.
+  const totalContacts     = stats?.total_contacts     ?? job.total_contacts     ?? 0;
+  const processedContacts = stats?.processed_contacts ?? job.processed_contacts ?? 0;
+  const prcntComplete     = stats?.prcnt_complete     ?? job.prcnt_complete     ?? 0;
+  const isFinished        = job.status === 'completed' || job.status === 'stopped';
+  // When the job is marked completed, clamp to 100% visually
+  const displayPrcnt      = job.status === 'completed' ? 100 : prcntComplete;
+
   return (
     <div className="p-6 space-y-5">
       {/* Header */}
@@ -169,19 +209,39 @@ export function JobDetailPage() {
             <p className="text-xs text-indigo-600 mt-0.5">Agent priority enabled</p>
           )}
         </div>
-        <Button variant="secondary" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={() => refetchStats()} size="sm">
+        <Button
+          variant="secondary"
+          icon={<RefreshCw className="w-3.5 h-3.5" />}
+          onClick={() => { refetchJob(); refetchStats(); refetchContacts(); }}
+          size="sm"
+        >
           Refresh
         </Button>
       </div>
 
-      {/* Progress */}
+      {/* Progress — uses live-computed values */}
       <Card className="p-5">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-gray-600">Overall progress</span>
-          <span className="text-sm font-medium text-gray-900">{job.prcnt_complete?.toFixed(1)}%</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-900">
+              {displayPrcnt.toFixed(1)}%
+            </span>
+            {isFinished && (
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                job.status === 'completed'
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-gray-100 text-gray-600'
+              }`}>
+                {job.status}
+              </span>
+            )}
+          </div>
         </div>
-        <Progress value={job.prcnt_complete} />
-        <div className="text-xs text-gray-400 mt-1">{job.processed_contacts} of {job.total_contacts} contacts processed</div>
+        <Progress value={displayPrcnt} />
+        <div className="text-xs text-gray-400 mt-1">
+          {processedContacts} of {totalContacts} contacts processed
+        </div>
       </Card>
 
       {/* Status breakdown */}
