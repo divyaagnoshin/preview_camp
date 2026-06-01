@@ -579,3 +579,39 @@ export const deleteDncNumbersBulk = (listId: string, ids: string[]) =>
   api
     .post(`/dnc-lists/${listId}/numbers/bulk-delete`, { ids })
     .then((r) => r.data);
+
+// ── Global Attributes (used by System Configuration → Manage Attributes) ──────
+// System attributes come from org_field_library where org_id IS NULL (source = 'system').
+// Custom attributes come from org_field_library where org_id = org  (source = 'library' / field_type = 'custom').
+// The GET /field-library endpoint already returns both — we just reuse it here.
+ 
+export const getGlobalAttributes = (): Promise<{ data: any[] }> =>
+  api.get('/field-library').then((r) => r.data);
+ 
+export const updateGlobalAttribute = (id: string, patch: {
+  name?: string;
+  data_type?: string;
+  is_private?: boolean;
+  is_masked_reports?: boolean;
+  is_editable_agent?: boolean;
+}) =>
+  api.patch(`/field-library/${id}`, patch).then((r) => r.data);
+ 
+export const deleteGlobalAttribute = (id: string): Promise<void> =>
+  api.delete(`/field-library/${id}`).then((r) => r.data);
+
+export const createGlobalAttribute = (body: {
+  name: string;
+  data_type?: string;
+  is_private?: boolean;
+  is_masked_reports?: boolean;
+  is_editable_agent?: boolean;
+}): Promise<any> => {
+  const field_key = body.name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  return api.post('/field-library', { ...body, field_key }).then((r) => r.data);
+};
+

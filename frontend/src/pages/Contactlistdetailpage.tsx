@@ -622,6 +622,7 @@ export default function ContactListDetailPage() {
       );
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
     } catch (err: any) {
       setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
     }
@@ -640,6 +641,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       closeAddContact();
     },
   });
@@ -664,6 +666,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       closeAddContact();
     },
   });
@@ -687,6 +690,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       closeEditContact();
     },
   });
@@ -696,6 +700,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       setDeleteTarget(null);
     },
   });
@@ -705,6 +710,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       setShowDeleteAll(false);
       setSelectedContactIds(new Set());
     },
@@ -715,6 +721,7 @@ export default function ContactListDetailPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       setShowDeleteSelected(false);
       setSelectedContactIds(new Set());
     },
@@ -770,6 +777,7 @@ export default function ContactListDetailPage() {
       setCloudStatus(`✓ Imported ${result.imported_rows} of ${result.total_rows} contacts from ${result.files?.length || 0} file(s)${failedNote}.`);
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
       qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
     },
     onError: (err: any) => setCloudStatus(`Error: ${err.response?.data?.error || err.message || 'Cloud import failed'}`),

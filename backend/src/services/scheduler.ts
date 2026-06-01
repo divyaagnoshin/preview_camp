@@ -1,4 +1,4 @@
-import pool from '../db/pool';
+/* import pool from '../db/pool';
 import { runCloudImport } from '../routes/cloudImport';
 import { computeNextRun } from '../routes/cloudImportConfigs';
 
@@ -86,3 +86,4 @@ async function runDueCloudImports() {
 }
 
 
+ */

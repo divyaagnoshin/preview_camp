@@ -378,9 +378,10 @@ function AddMappingModal({ campaigns, users, onSaved, onClose }: AddMappingModal
   }, [localAssigned, aSearch]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="relative z-10 w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col max-h-[85vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 rounded-t-2xl flex-shrink-0">
@@ -485,6 +486,7 @@ function AddMappingModal({ campaigns, users, onSaved, onClose }: AddMappingModal
         </div>
       </div>
     </div>
+     </div>
   );
 }
 

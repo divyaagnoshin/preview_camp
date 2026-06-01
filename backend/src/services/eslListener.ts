@@ -1,4 +1,4 @@
-// FreeSWITCH ESL listener. Subscribes to channel events and writes
+/* // FreeSWITCH ESL listener. Subscribes to channel events and writes
 // telephony lifecycle data back into contact_interactions so the call's
 // answered_at / disconnected_at / fs_uuid / call_status / recording_url
 // don't depend on the browser staying online for the duration of the call.
@@ -154,3 +154,4 @@ async function onRecordStop(evt: any) {
     console.error('ESL onRecordStop update failed:', err.message);
   }
 }
+ */

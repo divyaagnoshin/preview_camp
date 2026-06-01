@@ -8,6 +8,7 @@ import type { PoolClient } from 'pg';
 import pool, { withTransaction } from '../db/pool';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { buildSchemaMap, validateCustomFields, SchemaMap } from './fieldTypeValidator';
 
 const router = Router();
 router.use(authenticate);
@@ -525,6 +526,24 @@ export async function importCsvStream(
       WHERE contact_list_id = $1`,
     [contactListId],
   );
+
+  // Fetch data_type for each custom field once — used for in-memory type validation
+  const typeRes = await pool.query(
+    `SELECT field_key, data_type FROM (
+       SELECT fl.field_key, fl.data_type
+         FROM contact_list_attributes cla
+         JOIN org_field_library fl ON fl.id = cla.field_library_id
+        WHERE cla.contact_list_id = $1
+       UNION ALL
+       SELECT cf.field_key, cf.data_type
+         FROM contact_list_custom_fields cf
+        WHERE cf.contact_list_id = $1
+     ) t`,
+    [contactListId],
+  );
+  const schemaMap: SchemaMap = buildSchemaMap(typeRes.rows);
+
+  
   const customKeySet = new Set<string>(
     defsRes.rows
       .map((d: any) => d.field_key)
@@ -651,6 +670,12 @@ console.error({
 });
         failed++;
         errors.push({ row: totalRows, phone: phoneNorm, error: reqErr });
+        continue;
+      }
+      const typeErr = validateCustomFields(totalRows, customFields, schemaMap);
+      if (typeErr) {
+        failed++;
+        errors.push({ row: totalRows, phone: phoneNorm, error: typeErr });
         continue;
       }
 

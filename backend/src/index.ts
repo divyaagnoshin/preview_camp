@@ -30,8 +30,8 @@ import {
   timezonesRouter,
 } from './routes/other';
 import { errorHandler } from './middleware/errorHandler';
-import { startScheduler } from './services/scheduler';
-import { startEslListener } from './services/eslListener';
+//import { startScheduler } from './services/scheduler';
+//import { startEslListener } from './services/eslListener';
 import { seedTimezones } from './db/seedTimezones';
 import { seedSuperadmin } from './db/seedSuperadmin';
 import { seedFieldLibrary } from './db/seedFieldLibrary';
@@ -101,8 +101,8 @@ app.use(errorHandler);
 // ── Start ─────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
-  startScheduler();
-  startEslListener();
+ // startScheduler();
+ // startEslListener();
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();
   seedSuperadmin();

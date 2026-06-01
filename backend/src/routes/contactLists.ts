@@ -708,7 +708,7 @@ router.post(
 // ─── PATCH /contact-lists/:id/custom-fields/:fid ──────────────────────────────
 // FIX: removed inline SQL comments (-- ...) that were on the same line as
 // parameter placeholders $8 and $9, causing PostgreSQL to discard them.
-router.patch(
+/* router.patch(
   '/:id/custom-fields/:fid',
   async (req: Request, res: Response, next: NextFunction) => {
     const client = await pool.connect();
@@ -760,6 +760,112 @@ router.patch(
       await syncFieldDefinitions(client, req.params.id);
       await client.query('COMMIT');
       res.json({ data: rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      next(err);
+    } finally {
+      client.release();
+    }
+  },
+); */
+
+
+
+// PATCH /contact-lists/:id/custom-fields/:fid
+router.patch(
+  '/:id/custom-fields/:fid',
+  async (req: Request, res: Response, next: NextFunction) => {
+    const client = await pool.connect();
+    try {
+      const list = await client.query(
+        `SELECT id FROM contact_lists WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!list.rows[0]) throw new AppError(404, 'Contact list not found');
+
+      const b = req.body || {};
+      const name = b.name != null ? String(b.name).trim() : undefined;
+      if (name === '') throw new AppError(400, 'name cannot be empty');
+      let data_type: string | undefined;
+      if (b.data_type != null) {
+        data_type = String(b.data_type).toUpperCase();
+        if (!CUSTOM_DATA_TYPES.has(data_type))
+          throw new AppError(400, `Invalid data_type: ${data_type}`);
+      }
+
+      await client.query('BEGIN');
+
+      // First try contact_list_custom_fields (field owned by this list)
+      const ownedRes = await client.query(
+        `SELECT id FROM contact_list_custom_fields WHERE id = $1 AND contact_list_id = $2`,
+        [req.params.fid, req.params.id],
+      );
+
+      let updatedRow: any;
+
+      if (ownedRes.rows[0]) {
+        // Field is owned by this list — update contact_list_custom_fields
+        const { rows } = await client.query(
+          `UPDATE contact_list_custom_fields SET
+             name               = COALESCE($1, name),
+             data_type          = COALESCE($2, data_type),
+             is_private         = COALESCE($3, is_private),
+             is_read_only_agent = COALESCE($4, is_read_only_agent),
+             is_masked_agent    = COALESCE($5, is_masked_agent),
+             is_masked_reports  = COALESCE($6, is_masked_reports),
+             is_editable_agent  = COALESCE($7, is_editable_agent)
+           WHERE id = $8 AND contact_list_id = $9
+           RETURNING *`,
+          [
+            name ?? null,
+            data_type ?? null,
+            b.is_private != null ? !!b.is_private : null,
+            b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
+            b.is_masked_agent != null ? !!b.is_masked_agent : null,
+            b.is_masked_reports != null ? !!b.is_masked_reports : null,
+            b.is_editable_agent != null ? !!b.is_editable_agent : null,
+            req.params.fid,
+            req.params.id,
+          ],
+        );
+        updatedRow = rows[0];
+      } else {
+        // Field is from org_field_library (custom field created on another list,
+        // appearing here via the library). Update the library record directly,
+        // but only if it belongs to this org.
+        const { rows } = await client.query(
+          `UPDATE org_field_library SET
+             name               = COALESCE($1, name),
+             data_type          = COALESCE($2, data_type),
+             is_private         = COALESCE($3, is_private),
+             is_read_only_agent = COALESCE($4, is_read_only_agent),
+             is_masked_agent    = COALESCE($5, is_masked_agent),
+             is_masked_reports  = COALESCE($6, is_masked_reports),
+             is_editable_agent  = COALESCE($7, is_editable_agent)
+           WHERE id = $8 AND org_id = $9
+           RETURNING *`,
+          [
+            name ?? null,
+            data_type ?? null,
+            b.is_private != null ? !!b.is_private : null,
+            b.is_read_only_agent != null ? !!b.is_read_only_agent : null,
+            b.is_masked_agent != null ? !!b.is_masked_agent : null,
+            b.is_masked_reports != null ? !!b.is_masked_reports : null,
+            b.is_editable_agent != null ? !!b.is_editable_agent : null,
+            req.params.fid,
+            req.user!.orgId,
+          ],
+        );
+        if (!rows[0]) {
+          await client.query('ROLLBACK');
+          throw new AppError(404, 'Custom field not found');
+        }
+        updatedRow = rows[0];
+      }
+
+      await syncFieldDefinitions(client, req.params.id);
+      await client.query('COMMIT');
+      res.json({ data: updatedRow });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       next(err);
