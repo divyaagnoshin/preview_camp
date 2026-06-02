@@ -121,13 +121,21 @@ export default function ContactListsPage() {
   });
 
   const createMut = useMutation({
-    mutationFn: () => createContactList({ name }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['contact-lists'] });
-      setShowCreate(false);
-      setName('');
-    },
-  });
+  mutationFn: () => createContactList({ name }),
+  onSuccess: (newList: any) => {
+    // The API returns the newly created list object with its id
+    // We invalidate the cache so the list page is fresh when user comes back
+    qc.invalidateQueries({ queryKey: ['contact-lists'] });
+    setShowCreate(false);
+    setName('');
+
+    // KEY CONCEPT: navigate to attributes page, passing state so attributes
+    // page knows this is a "new list" flow and can show "Go to List" after save
+    navigate(`/contact-lists/${newList.id}/attributes`, {
+      state: { fromCreate: true }  // ← this is the secret envelope
+    });
+  },
+});
 
   const deleteListMut = useMutation({
     mutationFn: (lid: string) => deleteContactList(lid),

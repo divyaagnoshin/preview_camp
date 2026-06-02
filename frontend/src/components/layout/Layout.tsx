@@ -48,12 +48,53 @@ const navItems: NavItem[] = [
       { to: '/supervisor-teams',  icon: UserCheck,   label: 'Supervisor Teams',  roles: ['admin', 'supervisor', 'superadmin'] },
     ],
   },
-  { to: '/reports', icon: BarChart2, label: 'Reports', roles: ['admin', 'supervisor', 'superadmin'] },
+  {
+  to: '/reports-group',
+  icon: BarChart2,
+  label: 'Reports',
+  roles: ['admin', 'supervisor', 'superadmin'],
+  children: [
+    {
+      to: '/reports/active-campaigns',
+      icon: BarChart2,
+      label: 'Active Campaigns',
+      roles: ['admin', 'supervisor', 'superadmin'],
+    },
+    {
+      to: '/reports/staffed-agents',
+      icon: Users,
+      label: 'Staffed Agents (Live)',
+      roles: ['admin', 'supervisor', 'superadmin'],
+    },
+    {
+      to: '/reports/disposition-report',
+      icon: Settings2,
+      label: 'Disposition Report',
+      roles: ['admin', 'supervisor', 'superadmin'],
+    },
+    {
+      to: '/reports/interaction-report',
+      icon: List,
+      label: 'Interaction Report',
+      roles: ['admin', 'supervisor', 'superadmin'],
+    },
+    {
+      to: '/reports/agent-login-report',
+      icon: UserCheck,
+      label: 'Agent Login Report',
+      roles: ['admin', 'supervisor', 'superadmin'],
+    },
+  ],
+},
   { to: '/system-configuration', icon: Cog, label: 'System Configuration', roles: ['admin', 'supervisor', 'superadmin'] },
 ];
 
 // Sentinels that are group-only (no real page — clicking just toggles accordion)
-const GROUP_ONLY = new Set(['/users-group', '/campaigns-group']);
+const GROUP_ONLY = new Set([
+  '/users-group',
+  '/campaigns-group',
+  '/reports-group',
+]);
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout, isSuperadmin, orgContext } = useAuth();

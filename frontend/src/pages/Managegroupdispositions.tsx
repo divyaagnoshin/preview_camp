@@ -24,9 +24,11 @@ const capabilityBadge: Record<string, string> = {
 interface Props {
   group: any;
   onBack: () => void;
+  onDone?: (group: any) => void;   // ← add this
+  fromCreate?: boolean;             // ← add this
 }
 
-export default function ManageGroupDispositions({ group, onBack }: Props) {
+export default function ManageGroupDispositions({ group, onBack, onDone, fromCreate }: Props) {
   const qc = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -115,14 +117,20 @@ export default function ManageGroupDispositions({ group, onBack }: Props) {
 
   // ── mutations ─────────────────────────────────────────────────
   const saveMut = useMutation({
-    mutationFn: () => setDispositionGroupCodes(group.id, selectedIds),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['disposition-group-codes', group.id] });
-      qc.invalidateQueries({ queryKey: ['disposition-codes-available', group.id] });
-      qc.invalidateQueries({ queryKey: ['disposition-groups'] });
-      onBack();
-    },
-  });
+  mutationFn: () => setDispositionGroupCodes(group.id, selectedIds),
+  onSuccess: () => {
+    qc.invalidateQueries({ queryKey: ['disposition-group-codes', group.id] });
+    qc.invalidateQueries({ queryKey: ['disposition-codes-available', group.id] });
+    qc.invalidateQueries({ queryKey: ['disposition-groups'] });
+
+    // KEY DECISION: where to go after saving?
+    if (fromCreate && onDone) {
+      onDone(group);  // → parent sets view to 'codes' (inside the group)
+    } else {
+      onBack();       // → existing behavior: go back to codes view
+    }
+  },
+});
 
   // ── create custom code ────────────────────────────────────────
   const blank = { code: '', label: '', capability: 'CLOSED', retry_delay_min: '', notes_required: false, display_order: '99' };

@@ -1,442 +1,296 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getCampaigns, getCampaignReport, getInteractions } from '../api/client';
-import { StatusBadge, PageLoader, Badge } from '../components/ui';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart2, ChevronDown, ChevronUp, Calendar, Search,
-  Users, CheckCircle, XCircle, Phone, TrendingUp, Clock, Filter,
+  getCampaigns, getInteractions,
+  listAgentSessions, listAgents, getJobs,
+} from '../api/client';
+import {
+  BarChart2, Phone, Users, ClipboardList, LogIn,
+  CheckCircle, Clock, Settings, LayoutDashboard,
+  TrendingUp, Activity,
 } from 'lucide-react';
 
-/* ─── palette ───────────────────────────────────────────────────── */
+import ActiveCampaignsReport  from './Reports/active-campaigns';
+import StaffedAgentsReport    from './Reports/staffed-agents';
+import DispositionReport      from './Reports/disposition-report';
+import InteractionReport      from './Reports/interaction-report';
+import AgentLoginReport       from './Reports/agent-login-repor';
+
+function fmtNum(v: any) { return v == null ? '—' : Number(v).toLocaleString(); }
+function fmtPct(v: any) { return v == null ? '—' : `${Number(v).toFixed(1)}%`; }
+
 const PALETTE = [
-  { accent: '#6366f1', light: '#eef2ff', muted: '#c7d2fe', label: '#4338ca' },
-  { accent: '#0ea5e9', light: '#f0f9ff', muted: '#bae6fd', label: '#0369a1' },
-  { accent: '#10b981', light: '#ecfdf5', muted: '#a7f3d0', label: '#047857' },
-  { accent: '#f59e0b', light: '#fffbeb', muted: '#fde68a', label: '#b45309' },
-  { accent: '#ec4899', light: '#fdf2f8', muted: '#f9a8d4', label: '#be185d' },
-  { accent: '#14b8a6', light: '#f0fdfa', muted: '#99f6e4', label: '#0f766e' },
-  { accent: '#f97316', light: '#fff7ed', muted: '#fed7aa', label: '#c2410c' },
-  { accent: '#8b5cf6', light: '#f5f3ff', muted: '#ddd6fe', label: '#6d28d9' },
+  { accent:'#6366f1', grad:'linear-gradient(135deg,#1e1b4b,#4338ca,#7c3aed)', border:'#c7d2fe', row:'#f0f4ff', hover:'#eef2ff' },
+  { accent:'#0ea5e9', grad:'linear-gradient(135deg,#0c4a6e,#0284c7,#38bdf8)', border:'#bae6fd', row:'#f0f9ff', hover:'#e0f2fe' },
+  { accent:'#10b981', grad:'linear-gradient(135deg,#064e3b,#059669,#34d399)', border:'#a7f3d0', row:'#f0fdf4', hover:'#dcfce7' },
+  { accent:'#f59e0b', grad:'linear-gradient(135deg,#78350f,#d97706,#fbbf24)', border:'#fde68a', row:'#fffbeb', hover:'#fef3c7' },
+  { accent:'#ec4899', grad:'linear-gradient(135deg,#831843,#be185d,#f472b6)', border:'#f9a8d4', row:'#fdf2f8', hover:'#fce7f3' },
 ];
-const pal = (i: number) => PALETTE[i % PALETTE.length];
 
-/* ─── status config ─────────────────────────────────────────────── */
-const ST: Record<string, { color: string; bg: string; dot: string }> = {
-  active:    { color: '#059669', bg: '#ecfdf5', dot: '#10b981' },
-  inactive:  { color: '#6b7280', bg: '#f9fafb', dot: '#9ca3af' },
-  paused:    { color: '#d97706', bg: '#fffbeb', dot: '#f59e0b' },
-  draft:     { color: '#7c3aed', bg: '#f5f3ff', dot: '#8b5cf6' },
-  completed: { color: '#1d4ed8', bg: '#eff6ff', dot: '#3b82f6' },
-};
+const TABS = [
+  { id:'active-campaigns',   label:'Active Campaigns',   icon: BarChart2,    pal: PALETTE[0] },
+  { id:'staffed-agents',     label:'Staffed Agents',     icon: Users,        pal: PALETTE[1] },
+  { id:'disposition-report', label:'Disposition Report', icon: ClipboardList, pal: PALETTE[2] },
+  { id:'interaction-report', label:'Interaction Report', icon: Phone,        pal: PALETTE[3] },
+  { id:'agent-login-report', label:'Agent Login Report', icon: LogIn,        pal: PALETTE[4] },
+] as const;
+type TabId = typeof TABS[number]['id'];
 
-/* ─── components ────────────────────────────────────────────────── */
-function Avatar({ name, color }: { name: string; color: string }) {
-  const init = name.trim().split(/\s+/).slice(0, 2).map((w: string) => w[0]?.toUpperCase()).join('');
+/* ── KPI Card ──────────────────────────────────────────────────────────── */
+function KpiCard({ label, value, sub, icon: Icon, grad, accent }:
+  { label: string; value: string | number; sub?: string; icon: any; grad: string; accent: string }) {
   return (
-    <div style={{
-      width: 32, height: 32, borderRadius: 10, background: color,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0,
-      letterSpacing: '0.02em',
-    }}>{init || '?'}</div>
-  );
-}
-
-function Pill({ status }: { status: string }) {
-  const s = ST[status?.toLowerCase()] || ST.inactive;
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      padding: '3px 10px', borderRadius: 999,
-      background: s.bg, color: s.color,
-      fontSize: 11, fontWeight: 600, letterSpacing: '0.01em',
-      border: `1px solid ${s.dot}33`,
-    }}>
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
-  );
-}
-
-function Metric({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color: string }) {
-  return (
-    <div style={{
-      background: '#fff', borderRadius: 12,
-      border: `1.5px solid ${color}22`,
-      padding: '14px 16px',
-      borderLeft: `3px solid ${color}`,
-    }}>
-      <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', marginBottom: 6, margin: '0 0 6px' }}>{label}</p>
-      <p style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, fontVariantNumeric: 'tabular-nums', margin: 0 }}>
-        {value}{sub && <span style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', marginLeft: 2 }}>{sub}</span>}
-      </p>
+    <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${accent}30`, boxShadow: `0 2px 14px ${accent}18`, background: '#fff' }}>
+      <div style={{ background: grad, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon size={16} color="#fff" />
+        </div>
+        <p style={{ fontSize: 22, fontWeight: 900, color: '#fff', margin: 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          {value}{sub && <span style={{ fontSize: 12, fontWeight: 500, marginLeft: 3, opacity: 0.7 }}>{sub}</span>}
+        </p>
+      </div>
+      <div style={{ padding: '8px 16px 10px' }}>
+        <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.09em', color: '#64748b', margin: 0 }}>{label}</p>
+      </div>
     </div>
   );
 }
 
-function SectionLabel({ label, color }: { label: string; color: string }) {
+/* ── Mini table card ────────────────────────────────────────────────────── */
+function MiniTable({
+  title, cols, rows, pal, emptyMsg = 'No data', onExpand,
+}: {
+  title: string; cols: string[];
+  rows: { cells: string[] }[];
+  pal: typeof PALETTE[0]; emptyMsg?: string; onExpand: () => void;
+}) {
   return (
-    <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color, margin: '0 0 10px' }}>{label}</p>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  height: 34, fontSize: 12.5, borderRadius: 8,
-  border: '1.5px solid rgba(255,255,255,0.25)',
-  background: 'rgba(255,255,255,0.12)',
-  color: '#fff', outline: 'none',
-  transition: 'border-color 0.15s',
-};
-
-const selectStyle: React.CSSProperties = {
-  ...inputStyle, paddingLeft: 12, paddingRight: 24,
-  appearance: 'none' as const, cursor: 'pointer', minWidth: 120,
-};
-
-/* ─── expanded detail ───────────────────────────────────────────── */
-function Detail({ id, idx }: { id: string; idx: number }) {
-  const p = pal(idx);
-  const { data: r, isLoading } = useQuery({
-    queryKey: ['campaign-report', id],
-    queryFn: () => getCampaignReport(id),
-    enabled: !!id,
-  });
-
-  if (isLoading) return (
-    <div style={{ padding: '32px 0', display: 'flex', justifyContent: 'center', background: p.light }}>
-      <PageLoader />
-    </div>
-  );
-  if (!r) return <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>No data</div>;
-
-  const tot = Math.max(r.total_contacts || 1, 1);
-
-  return (
-    <div style={{ padding: '24px 28px', background: p.light, borderTop: `1.5px solid ${p.muted}` }}>
-
-      <div style={{ marginBottom: 20 }}>
-        <SectionLabel label="Contact Summary" color={p.label} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-          <Metric label="Total" value={(r.total_contacts ?? 0).toLocaleString()} color="#64748b" />
-          <Metric label="Successful" value={(r.successful_contacts ?? 0).toLocaleString()} color="#10b981" />
-          <Metric label="Duplicates" value={(r.duplicate_contacts ?? 0).toLocaleString()} color="#f59e0b" />
-        </div>
+    <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${pal.border}`, boxShadow: `0 2px 16px ${pal.accent}18` }}>
+      <div style={{ background: pal.grad, padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: '#fff', letterSpacing: '-0.01em' }}>{title}</span>
+        <button
+          onClick={onExpand}
+          style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.18)', border: 'none', borderRadius: 7, padding: '4px 11px', cursor: 'pointer', letterSpacing: '0.04em' }}
+        >
+          Full Report →
+        </button>
       </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <SectionLabel label="Call Performance" color={p.label} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-          <Metric label="Attempted" value={(r.attempted ?? 0).toLocaleString()} color="#8b5cf6" />
-          <Metric label="Connected" value={(r.connected ?? 0).toLocaleString()} color="#10b981" />
-          <Metric label="Completed" value={(r.completed_total ?? 0).toLocaleString()} color="#3b82f6" />
-          <Metric label="DNC" value={(r.dnc ?? 0).toLocaleString()} color="#ef4444" />
-        </div>
+      {/* Col headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols.length}, minmax(60px,1fr))`, gap: 4, padding: '7px 16px', background: `${pal.accent}08`, borderBottom: `1px solid ${pal.accent}22` }}>
+        {cols.map(c => <span key={c} style={{ fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.09em', color: pal.accent }}>{c}</span>)}
       </div>
-
-      <div style={{ marginBottom: r.dispositions?.length > 0 ? 20 : 0 }}>
-        <SectionLabel label="Avg Timings" color={p.label} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
-          <Metric label="Preview" value={r.avg_preview_duration_sec ?? 0} sub="s" color="#f97316" />
-          <Metric label="Talk time" value={r.avg_talk_time_sec ?? 0} sub="s" color="#0ea5e9" />
-          <Metric label="Wrap-up" value={r.avg_wrapup_duration_sec ?? 0} sub="s" color="#14b8a6" />
-          <Metric label="Total" value={r.avg_total_handling_sec ?? 0} sub="s" color="#a855f7" />
+      {/* Rows */}
+      {rows.length === 0 ? (
+        <div style={{ padding: '20px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8', background: '#fff' }}>{emptyMsg}</div>
+      ) : rows.slice(0, 5).map((r, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: `repeat(${cols.length}, minmax(60px,1fr))`, gap: 4, padding: '8px 16px', borderBottom: `1px solid ${pal.accent}11`, background: i % 2 === 0 ? '#fff' : pal.row }}>
+          {r.cells.map((cell, j) => (
+            <span key={j} style={{ fontSize: 12, fontWeight: 500, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+              {cell}
+            </span>
+          ))}
         </div>
-      </div>
-
-      {r.dispositions?.length > 0 && (
-        <div>
-          <SectionLabel label="Dispositions" color={p.label} />
-          <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${p.muted}`, overflow: 'hidden' }}>
-            {r.dispositions.map((d: any, di: number) => {
-              const pct = Math.round((d.count / tot) * 100);
-              return (
-                <div key={d.code} style={{
-                  display: 'flex', alignItems: 'center', gap: 16,
-                  padding: '11px 16px',
-                  borderBottom: di < r.dispositions.length - 1 ? `1px solid ${p.muted}55` : 'none',
-                }}>
-                  <span style={{ fontSize: 12.5, color: '#475569', width: 140, flexShrink: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
-                  <div style={{ flex: 1, height: 4, background: '#f1f5f9', borderRadius: 999 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: p.accent, borderRadius: 999, transition: 'width 0.4s ease' }} />
-                  </div>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: p.label, width: 32, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{d.count}</span>
-                  <span style={{ fontSize: 11, color: '#94a3b8', width: 32, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
-                </div>
-              );
-            })}
-          </div>
+      ))}
+      {rows.length > 5 && (
+        <div style={{ padding: '6px 16px', textAlign: 'center', fontSize: 11, color: '#94a3b8', background: '#f8fafc' }}>
+          +{rows.length - 5} more rows
         </div>
       )}
     </div>
   );
 }
 
-/* ─── main page ─────────────────────────────────────────────────── */
+/* ── Main Page ──────────────────────────────────────────────────────────── */
 export default function ReportsPage() {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [campQ, setCampQ] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [statusF, setStatusF] = useState('');
-  const [prevF, setPrevF] = useState('');
-  const [callF, setCallF] = useState('');
-  const [intQ, setIntQ] = useState('');
+  const location = useLocation();
+  const navigate  = useNavigate();
 
-  const { data: campaigns } = useQuery({ queryKey: ['campaigns'], queryFn: getCampaigns });
-  const { data: interactions, isLoading: loadInt } = useQuery({
-    queryKey: ['interactions', prevF, callF],
-    queryFn: () => getInteractions({ preview_action: prevF || undefined, call_status: callF || undefined, per_page: 100 }),
-  });
+  const pathTab = location.pathname.replace(/^\/reports\/?/, '') as TabId | '';
+  const activeTab: TabId | null = (pathTab && TABS.some(t => t.id === pathTab)) ? pathTab as TabId : null;
+  const isOverview = activeTab === null && !location.pathname.includes('/settings');
+  const setActiveTab = (id: TabId | null) => navigate(id ? `/reports/${id}` : '/reports');
 
-  const camps = useMemo(() => {
-    let rows: any[] = campaigns?.data || [];
-    const q = campQ.trim().toLowerCase();
-    if (q) rows = rows.filter((c: any) => c.name?.toLowerCase().includes(q));
-    if (statusF) rows = rows.filter((c: any) => c.status?.toLowerCase() === statusF);
-    return rows;
-  }, [campaigns, campQ, statusF]);
+  // data queries
+  const { data: campData }  = useQuery({ queryKey: ['campaigns'], queryFn: getCampaigns });
+  const { data: jobData }   = useQuery({ queryKey: ['jobs-all'], queryFn: () => getJobs({ per_page: 500 }) });
+  const { data: sessData }  = useQuery({ queryKey: ['agent-sessions-live'], queryFn: listAgentSessions, refetchInterval: 15000 });
+  const { data: agentData } = useQuery({ queryKey: ['agents-list'], queryFn: listAgents });
+  const { data: intData }   = useQuery({ queryKey: ['interactions-all'], queryFn: () => getInteractions({ per_page: 500 }) });
 
-  const ints = useMemo(() => {
-    const rows = interactions?.data || [];
-    const q = intQ.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r: any) => {
-      const n = `${r.first_name || ''} ${r.last_name || ''}`.toLowerCase();
-      return n.includes(q) || (r.phone_number || '').toLowerCase().includes(q) || (r.agent_name || '').toLowerCase().includes(q);
-    });
-  }, [interactions, intQ]);
+  const campaigns: any[]    = campData?.data || [];
+  const jobs: any[]         = jobData?.data  || [];
+  const sessions: any[]     = sessData?.data || [];
+  const agents: any[]       = agentData?.data || [];
+  const interactions: any[] = intData?.data || [];
 
-  const CAMP_GRID = '2.5fr 1fr 90px 90px 90px 40px';
-  const INT_GRID  = '2fr 1.2fr 100px 110px 80px 100px 130px 140px';
+  // KPI stats
+  const activeCamps = campaigns.filter((c: any) => c.status === 'active').length;
+  const liveAgents  = sessions.filter((s: any) => s.status !== 'offline').length;
+  const totalInts   = interactions.length;
+  const connected   = interactions.filter((i: any) => i.call_status === 'connected').length;
+  const avgTalk     = interactions.length
+    ? Math.round(interactions.reduce((a: number, i: any) => a + (i.talk_time_sec || 0), 0) / interactions.length)
+    : 0;
+  const totalProcessed = jobs.reduce((a: number, j: any) => a + (j.processed_contacts || 0), 0);
 
-  const th: React.CSSProperties = {
-    fontSize: 10, fontWeight: 800, textTransform: 'uppercase' as const,
-    letterSpacing: '0.09em', color: 'rgba(255,255,255,0.7)',
-  };
+  // Mini-table rows
+  const campRows = useMemo(() =>
+    [...campaigns].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).map((c: any) => {
+      const job: any = jobs.find((j: any) => j.campaign_id === c.id) || {};
+      return { cells: [c.name || '—', c.status || '—', fmtNum(job.total_contacts ?? c.total_contacts), fmtPct(job.prcnt_complete)] };
+    }), [campaigns, jobs]);
+
+  const staffedRows = useMemo(() =>
+    sessions.filter((s: any) => s.status !== 'offline').map((s: any) => {
+      const ag: any = agents.find((a: any) => a.id === s.agent_id) || {};
+      const name = ag.first_name ? `${ag.first_name} ${ag.last_name}` : s.agent_id;
+      return { cells: [name, s.status?.replace(/_/g, ' ') || '—', s.current_contact_id ? 'On Call' : 'Idle'] };
+    }), [sessions, agents]);
+
+  const dispRows = useMemo(() =>
+    interactions.filter((i: any) => i.disposition_code_label).slice(0, 10).map((i: any) => {
+      const name = `${i.first_name || ''} ${i.last_name || ''}`.trim() || '—';
+      return { cells: [i.disposition_code_label || '—', name, i.call_status || '—', i.talk_time_sec ? `${i.talk_time_sec}s` : '—'] };
+    }), [interactions]);
+
+  const intRows = useMemo(() =>
+    [...interactions].sort((a: any, b: any) => new Date(b.given_at || 0).getTime() - new Date(a.given_at || 0).getTime())
+      .slice(0, 10).map((i: any) => {
+        const name = `${i.first_name || ''} ${i.last_name || ''}`.trim() || '—';
+        return { cells: [name, i.agent_name || '—', i.preview_action || '—', i.call_status || '—'] };
+      }), [interactions]);
+
+  const loginRows = useMemo(() =>
+    [...sessions].sort((a: any, b: any) => new Date(b.login_at || 0).getTime() - new Date(a.login_at || 0).getTime())
+      .slice(0, 10).map((s: any) => {
+        const ag: any = agents.find((a: any) => a.id === s.agent_id) || {};
+        const name = ag.first_name ? `${ag.first_name} ${ag.last_name}` : s.agent_id;
+        const t = s.login_at ? new Date(s.login_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '—';
+        return { cells: [name, s.status || '—', t] };
+      }), [sessions, agents]);
 
   return (
-    <div style={{ padding: '28px 32px', fontFamily: '"DM Sans", sans-serif', minHeight: '100%', background: '#f8fafc' }}>
+    <div style={{ padding: '24px 28px', fontFamily: '"DM Sans", sans-serif', minHeight: '100%', background: '#f8fafc' }}>
 
-      {/* ── Page header ── */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+      {/* ── Page header ─────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
           <h1 style={{
-            fontSize: 26, fontWeight: 800, margin: 0,
-            fontFamily: 'Sora, sans-serif', letterSpacing: '-0.02em',
-            background: 'linear-gradient(135deg, #F4521E 0%, #F5A623 55%, #FFD080 100%)',
+            fontSize: 24, fontWeight: 900, margin: 0, fontFamily: 'Sora, sans-serif', letterSpacing: '-0.02em',
+            background: 'linear-gradient(135deg,#F4521E 0%,#F5A623 55%,#FFD080 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>Reports</h1>
-          <span style={{ fontSize: 13, color: '#94a3b8' }}>Campaign performance &amp; interactions</span>
+          }}>
+            Reports
+          </h1>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '3px 0 0', fontWeight: 500 }}>
+            Campaign analytics, agent activity &amp; interaction data
+          </p>
         </div>
-        <div style={{ width: 36, height: 3, borderRadius: 99, background: 'linear-gradient(90deg,#F4521E,#F5A623)' }} />
+        {/* Settings icon top-right */}
+        <button
+          onClick={() => navigate('/reports/settings')}
+          title="Column Settings"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '9px 16px', borderRadius: 11,
+            border: '1.5px solid #e2e8f0',
+            background: '#fff', color: '#475569',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = '#F4521E'}
+          onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = '#e2e8f0'}
+        >
+          <Settings size={15} />
+          Column Settings
+        </button>
       </div>
 
-      {/* ══ CAMPAIGN REPORT ══════════════════════════════════════ */}
-      <div style={{
-        borderRadius: 18, overflow: 'hidden', marginBottom: 24,
-        boxShadow: '0 4px 24px rgba(99,102,241,0.12), 0 1px 3px rgba(0,0,0,0.05)',
-        border: '1.5px solid #e0e7ff',
-      }}>
+      {/* ── Tab nav ─────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 22, borderBottom: '2px solid #e2e8f0', flexWrap: 'wrap' }}>
+        {/* Dashboard / Overview icon tab */}
+        <button
+          onClick={() => setActiveTab(null)}
+          title="Dashboard Overview"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '9px 16px', fontSize: 13, fontWeight: 700,
+            borderRadius: '10px 10px 0 0', border: 'none', cursor: 'pointer',
+            background: isOverview ? '#fff' : 'transparent',
+            color: isOverview ? '#6366f1' : '#94a3b8',
+            borderBottom: isOverview ? '2px solid #6366f1' : '2px solid transparent',
+            marginBottom: -2, transition: 'all 0.15s',
+          }}
+        >
+          <LayoutDashboard size={14} />
+          <span>Dashboard</span>
+        </button>
 
-        {/* gradient header */}
-        <div style={{ background: 'linear-gradient(135deg,#1e1b4b 0%,#4338ca 45%,#7c3aed 100%)', padding: '18px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <BarChart2 style={{ width: 16, height: 16, color: '#fff' }} />
-              </div>
-              <div>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: 0 }}>Campaign Report</p>
-                <p style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', margin: 0 }}>{camps.length} campaign{camps.length !== 1 ? 's' : ''}</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative' }}>
-                <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
-                <input style={{ ...inputStyle, paddingLeft: 30, paddingRight: 10, width: 168 }} placeholder="Search campaigns…" value={campQ} onChange={e => setCampQ(e.target.value)} />
-              </div>
-              <div style={{ position: 'relative' }}>
-                <Calendar style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
-                <input type="date" style={{ ...inputStyle, paddingLeft: 30, paddingRight: 8 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-              </div>
-              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>→</span>
-              <div style={{ position: 'relative' }}>
-                <Calendar style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
-                <input type="date" style={{ ...inputStyle, paddingLeft: 30, paddingRight: 8 }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
-              </div>
-              <div style={{ position: 'relative' }}>
-                <Filter style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
-                <select style={{ ...selectStyle, paddingLeft: 30 }} value={statusF} onChange={e => setStatusF(e.target.value)}>
-                  <option value="">All statuses</option>
-                  {['active','inactive','paused','draft','completed'].map(s => (
-                    <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: CAMP_GRID, gap: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-            {['Campaign','Status','Contacts','Connected','Completed',''].map((l, i) => (
-              <span key={i} style={th}>{l}</span>
-            ))}
-          </div>
-        </div>
-
-        {/* rows */}
-        <div style={{ maxHeight: 520, overflowY: 'auto', background: '#fafbff' }}>
-          {camps.length === 0 ? (
-            <div style={{ padding: '56px 0', textAlign: 'center' }}>
-              <BarChart2 style={{ width: 32, height: 32, color: '#e2e8f0', margin: '0 auto 10px', display: 'block' }} />
-              <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No campaigns found</p>
-            </div>
-          ) : camps.map((c: any, idx: number) => {
-            const p = pal(idx);
-            const open = expanded === String(c.id);
-            return (
-              <div key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                <button
-                  onClick={() => setExpanded(open ? null : String(c.id))}
-                  style={{
-                    width: '100%', display: 'grid', gridTemplateColumns: CAMP_GRID,
-                    gap: 16, alignItems: 'center', padding: '13px 24px',
-                    textAlign: 'left', cursor: 'pointer', border: 'none',
-                    background: open ? p.light : '#fff',
-                    borderLeft: `3px solid ${open ? p.accent : 'transparent'}`,
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={e => { if (!open) { (e.currentTarget as HTMLElement).style.background = '#f8faff'; (e.currentTarget as HTMLElement).style.borderLeftColor = p.muted; } }}
-                  onMouseLeave={e => { if (!open) { (e.currentTarget as HTMLElement).style.background = '#fff'; (e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent'; } }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <Avatar name={c.name} color={p.accent} />
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 13.5, fontWeight: 600, color: open ? p.label : '#1e293b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
-                      {c.description && <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</p>}
-                    </div>
-                  </div>
-                  <div>{c.status ? <Pill status={c.status} /> : <span style={{ color: '#d1d5db' }}>—</span>}</div>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: '#334155', fontVariantNumeric: 'tabular-nums' }}>{(c.total_contacts ?? 0).toLocaleString()}</span>
-                  <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{c.connected != null ? c.connected.toLocaleString() : '—'}</span>
-                  <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{c.completed_total != null ? c.completed_total.toLocaleString() : '—'}</span>
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    {open
-                      ? <ChevronUp style={{ width: 15, height: 15, color: p.accent }} />
-                      : <ChevronDown style={{ width: 15, height: 15, color: '#cbd5e1' }} />}
-                  </div>
-                </button>
-                {open && <Detail id={String(c.id)} idx={idx} />}
-              </div>
-            );
-          })}
-        </div>
+        {TABS.map(t => {
+          const Icon = t.icon;
+          const active = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '9px 16px', fontSize: 13, fontWeight: 700,
+                borderRadius: '10px 10px 0 0', border: 'none', cursor: 'pointer',
+                background: active ? '#fff' : 'transparent',
+                color: active ? t.pal.accent : '#94a3b8',
+                borderBottom: active ? `2px solid ${t.pal.accent}` : '2px solid transparent',
+                marginBottom: -2, transition: 'all 0.15s',
+              }}
+            >
+              <Icon size={13} />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ══ INTERACTION LOG ══════════════════════════════════════ */}
-      <div style={{
-        borderRadius: 18, overflow: 'hidden',
-        boxShadow: '0 4px 24px rgba(14,165,233,0.10), 0 1px 3px rgba(0,0,0,0.05)',
-        border: '1.5px solid #bae6fd',
-      }}>
-
-        {/* gradient header */}
-        <div style={{ background: 'linear-gradient(135deg,#0c4a6e 0%,#0284c7 50%,#38bdf8 100%)', padding: '18px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Phone style={{ width: 16, height: 16, color: '#fff' }} />
-              </div>
-              <div>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: 0 }}>Interaction Log</p>
-                <p style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.5)', margin: 0 }}>All agent contact events</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative' }}>
-                <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
-                <input style={{ ...inputStyle, paddingLeft: 30, paddingRight: 10, width: 220 }} placeholder="Search contact, phone, agent…" value={intQ} onChange={e => setIntQ(e.target.value)} />
-              </div>
-              <select style={selectStyle} value={prevF} onChange={e => setPrevF(e.target.value)}>
-                <option value="">All actions</option>
-                <option value="accepted">Accepted</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <select style={selectStyle} value={callF} onChange={e => setCallF(e.target.value)}>
-                <option value="">All call statuses</option>
-                <option value="connected">Connected</option>
-                <option value="no_answer">No Answer</option>
-                <option value="busy">Busy</option>
-                <option value="voicemail">Voicemail</option>
-              </select>
-            </div>
+      {/* ── OVERVIEW / DASHBOARD ───────────────────────────────────── */}
+      {isOverview && (
+        <>
+          {/* KPI row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 12, marginBottom: 22 }}>
+            <KpiCard label="Active Campaigns"   value={activeCamps}   icon={BarChart2}     grad={PALETTE[0].grad} accent={PALETTE[0].accent} />
+            <KpiCard label="Live Agents"        value={liveAgents}    icon={Users}         grad={PALETTE[1].grad} accent={PALETTE[1].accent} />
+            <KpiCard label="Connected Calls"    value={connected}     icon={CheckCircle}   grad={PALETTE[2].grad} accent={PALETTE[2].accent} />
+            <KpiCard label="Total Interactions" value={totalInts}     icon={Phone}         grad={PALETTE[3].grad} accent={PALETTE[3].accent} />
+            <KpiCard label="Avg Talk Time"      value={avgTalk}       icon={Clock}    sub="s" grad={PALETTE[4].grad} accent={PALETTE[4].accent} />
+            <KpiCard label="Contacts Processed" value={totalProcessed} icon={TrendingUp}   grad="linear-gradient(135deg,#1e293b,#334155,#475569)" accent="#64748b" />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: INT_GRID, gap: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-            {['Contact','Agent','Action','Call status','Talk','Handle','Disposition','Time'].map((l, i) => (
-              <span key={i} style={th}>{l}</span>
-            ))}
+          {/* Top row: 3 tables */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 16 }}>
+            <MiniTable title="Active Campaigns"    cols={['Campaign','Status','Contacts','% Done']}
+              rows={campRows}  pal={PALETTE[0]} onExpand={() => setActiveTab('active-campaigns')}  emptyMsg="No campaigns" />
+            <MiniTable title="Staffed Agents (Live)" cols={['Agent','State','Call State']}
+              rows={staffedRows} pal={PALETTE[1]} onExpand={() => setActiveTab('staffed-agents')} emptyMsg="No active agents" />
+            <MiniTable title="Disposition Report"  cols={['Disposition','Contact','Status','Talk']}
+              rows={dispRows}  pal={PALETTE[2]} onExpand={() => setActiveTab('disposition-report')} emptyMsg="No dispositions" />
           </div>
-        </div>
 
-        {/* rows */}
-        <div style={{ background: '#f8fbff' }}>
-          {loadInt ? (
-            <div style={{ padding: '48px 0', display: 'flex', justifyContent: 'center' }}><PageLoader /></div>
-          ) : (
-            <div style={{ maxHeight: 520, overflowY: 'auto' }}>
-              {ints.length === 0 ? (
-                <div style={{ padding: '48px 0', textAlign: 'center', fontSize: 13, color: '#94a3b8' }}>
-                  {intQ ? `No results for "${intQ}"` : 'No interactions found'}
-                </div>
-              ) : ints.map((r: any, idx: number) => (
-                <div
-                  key={r.interaction_id}
-                  style={{
-                    display: 'grid', gridTemplateColumns: INT_GRID, gap: 12,
-                    alignItems: 'center', padding: '12px 24px',
-                    borderBottom: '1px solid #f1f5f9',
-                    background: idx % 2 === 0 ? '#fff' : '#f8fbff',
-                    transition: 'background 0.12s',
-                  }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#eff6ff'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = idx % 2 === 0 ? '#fff' : '#f8fbff'; }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#64748b,#475569)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 700, flexShrink: 0 }}>
-                      {[(r.first_name || '')[0], (r.last_name || '')[0]].filter(Boolean).join('').toUpperCase() || '?'}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.first_name} {r.last_name}</p>
-                      <p style={{ fontSize: 11, color: '#94a3b8', margin: '1px 0 0', fontVariantNumeric: 'tabular-nums' }}>{r.phone_number}</p>
-                    </div>
-                  </div>
+          {/* Bottom row: 2 tables */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 16 }}>
+            <MiniTable title="Interaction Report" cols={['Contact','Agent','Action','Status']}
+              rows={intRows}   pal={PALETTE[3]} onExpand={() => setActiveTab('interaction-report')} emptyMsg="No interactions" />
+            <MiniTable title="Agent Login Report" cols={['Agent','Status','Login Time']}
+              rows={loginRows} pal={PALETTE[4]} onExpand={() => setActiveTab('agent-login-report')} emptyMsg="No sessions" />
+          </div>
+        </>
+      )}
 
-                  {r.agent_name ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                      <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#94a3b8,#64748b)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>
-                        {(r.agent_name || '').trim().split(/\s+/).slice(0,2).map((w: string) => w[0]?.toUpperCase()).join('')}
-                      </div>
-                      <span style={{ fontSize: 12.5, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.agent_name}</span>
-                    </div>
-                  ) : <span style={{ color: '#d1d5db', fontSize: 13 }}>—</span>}
-
-                  <span>{r.preview_action ? <StatusBadge status={r.preview_action} /> : <span style={{ color: '#d1d5db' }}>—</span>}</span>
-                  <span>{r.call_status ? <StatusBadge status={r.call_status} /> : <span style={{ color: '#d1d5db' }}>—</span>}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{r.talk_time_sec ? `${r.talk_time_sec}s` : '—'}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{r.total_handling_sec ? `${r.total_handling_sec}s` : '—'}</span>
-                  <span>{r.disposition_code_label ? <Badge label={r.disposition_code_label} color="blue" /> : <span style={{ color: '#d1d5db' }}>—</span>}</span>
-                  <span style={{ fontSize: 11.5, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                    {new Date(r.given_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
+      {/* ── Individual tabs ─────────────────────────────────────────── */}
+      {activeTab === 'active-campaigns'   && <ActiveCampaignsReport />}
+      {activeTab === 'staffed-agents'     && <StaffedAgentsReport />}
+      {activeTab === 'disposition-report' && <DispositionReport />}
+      {activeTab === 'interaction-report' && <InteractionReport />}
+      {activeTab === 'agent-login-report' && <AgentLoginReport />}
     </div>
   );
 }

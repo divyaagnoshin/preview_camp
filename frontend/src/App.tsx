@@ -27,6 +27,7 @@ import UsersPage from './pages/Users';
 import CampaignMappingPage from './pages/CampaignMapping';
 import SupervisorTeamsPage from './pages/SupervisorTeams';
 import ReportsPage from './pages/Reports';
+import ReportSettingsPage from './pages/Reports/report-settings';
 import SystemConfigurationPage from './pages/SystemConfiguration';
 import OrganizationsPage from './pages/Organizations';
 import OrganizationDetailPage from './pages/OrganizationDetail';
@@ -268,6 +269,66 @@ function AppRoutes() {
           <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/active-campaigns'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/staffed-agents'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/disposition-report'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/interaction-report'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/agent-login-report'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/reports/settings'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportSettingsPage />
             </Layout>
           </PrivateRoute>
         }

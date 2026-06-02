@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import {useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   getContactList,
   getContactListAttributes,
@@ -27,7 +27,9 @@ const isEditableCustom = (r: any) =>
 export default function ContactListAttributesPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
+  const fromCreate = location.state?.fromCreate === true;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
@@ -142,8 +144,13 @@ export default function ContactListAttributesPage() {
         </button>
         <div className='flex-1'>
           <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
-            Manage Attributes
-          </h1>
+  {fromCreate ? 'Set Up Your List Fields' : 'Manage Attributes'}
+</h1>
+<p className='text-sm text-[#7A5C44]'>
+  {fromCreate
+    ? 'Choose which fields to include in your new list, then save to continue.'
+    : 'Add or remove fields for this contact list.'}
+</p>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {list?.name} · {selectedIds.length} of {data?.data?.length || 0} selected
           </p>
@@ -157,12 +164,12 @@ export default function ContactListAttributesPage() {
             New Attributes
           </Button>
           <Button
-            icon={<Save className='w-4 h-4' />}
-            loading={saveMut.isPending}
-            onClick={() => saveMut.mutate()}
-          >
-            Save
-          </Button>
+  icon={<Save className='w-4 h-4' />}
+  loading={saveMut.isPending}
+  onClick={() => saveMut.mutate()}
+>
+  {fromCreate ? 'Save & Go To List →' : 'Save Changes'}
+</Button>
         </div>
       </div>
 

@@ -217,10 +217,14 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
   const openEdit = (g: any) => { setEditTarget(g); setEditName(g.name || ''); setEditDescription(g.description || ''); };
 
   const createMut = useMutation({
-    mutationFn: () =>
-      api.post('/dnc-groups', { name: groupName, description: groupDescription || null }).then((r) => r.data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dnc-groups'] }); resetCreate(); },
-  });
+  mutationFn: () =>
+    api.post('/dnc-groups', { name: groupName, description: groupDescription || null }).then((r) => r.data),
+  onSuccess: (newGroup: any) => {
+    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+    resetCreate();
+    onOpenGroup(newGroup);  // ← go straight inside the new group
+  },
+});
 
   const editMut = useMutation({
     mutationFn: () =>
@@ -488,14 +492,15 @@ function DncListsView({
   const openEdit = (l: any) => { setEditTarget(l); setEditName(l.name || ''); };
 
   const createMut = useMutation({
-    mutationFn: () =>
-      api.post(`/dnc-groups/${group.id}/lists`, { name: listName }).then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
-      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
-      resetCreate();
-    },
-  });
+  mutationFn: () =>
+    api.post(`/dnc-groups/${group.id}/lists`, { name: listName }).then((r) => r.data),
+  onSuccess: (newList: any) => {
+    qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+    resetCreate();
+    onOpenList(newList);  // ← go straight inside the new list
+  },
+});
 
   const editMut = useMutation({
     mutationFn: () =>

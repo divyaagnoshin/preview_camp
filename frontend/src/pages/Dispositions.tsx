@@ -42,21 +42,28 @@ function formatDate(value: string | null | undefined): string {
 type View =
   | { level: 'groups' }
   | { level: 'codes'; group: any }
-  | { level: 'manage'; group: any };
+  | { level: 'manage'; group: any; fromCreate?: boolean };
 
 export default function DispositionsPage() {
   const [view, setView] = useState<View>({ level: 'groups' });
 
   if (view.level === 'groups')
-    return <GroupsView onOpenGroup={(group) => setView({ level: 'codes', group })} />;
+  return (
+    <GroupsView
+      onOpenGroup={(group) => setView({ level: 'codes', group })}
+      onOpenManage={(group) => setView({ level: 'manage', group, fromCreate: true })}
+    />
+  );
 
   if (view.level === 'manage')
-    return (
-      <ManageGroupDispositions
-        group={(view as any).group}
-        onBack={() => setView({ level: 'codes', group: (view as any).group })}
-      />
-    );
+  return (
+    <ManageGroupDispositions
+      group={(view as any).group}
+      fromCreate={(view as any).fromCreate === true}
+      onBack={() => setView({ level: 'codes', group: (view as any).group })}
+      onDone={(group: any) => setView({ level: 'codes', group })}
+    />
+  );
 
   return (
     <CodesView
@@ -71,7 +78,9 @@ export default function DispositionsPage() {
 // LEVEL 1 — Disposition Groups
 // ============================================================================
 
-function GroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
+function GroupsView({ onOpenGroup,  onOpenManage  }: { onOpenGroup: (g: any) => void;
+  onOpenManage: (g: any) => void;
+ }) {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
@@ -96,9 +105,13 @@ function GroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
   const openEdit = (g: any) => { setEditTarget(g); setName(g.name || ''); setDescription(g.description || ''); };
 
   const createMut = useMutation({
-    mutationFn: () => createDispositionGroup({ name, description: description || undefined }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['disposition-groups'] }); resetCreate(); },
-  });
+  mutationFn: () => createDispositionGroup({ name, description: description || undefined }),
+  onSuccess: (newGroup: any) => {
+  qc.invalidateQueries({ queryKey: ['disposition-groups'] });
+  resetCreate();
+  onOpenManage(newGroup);  // ← only this one
+},
+});
   const editMut = useMutation({
     mutationFn: () => updateDispositionGroup(editTarget.id, { name, description: description || null }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['disposition-groups'] }); resetEdit(); },
