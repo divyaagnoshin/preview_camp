@@ -85,22 +85,22 @@ export function CardHeader({
 // ── Badge ───────────────────────────────────────────────────────────────────
 type BadgeColor = 'gray' | 'green' | 'red' | 'yellow' | 'blue' | 'indigo' | 'orange' | 'purple';
 const badgeColors: Record<BadgeColor, string> = {
-  gray:   'bg-stone-100 text-stone-600',
-  green:  'bg-emerald-50 text-emerald-700 border border-emerald-100',
-  red:    'bg-red-50 text-red-700 border border-red-100',
+  gray: 'bg-stone-100 text-stone-600',
+  green: 'bg-emerald-50 text-emerald-700 border border-emerald-100',
+  red: 'bg-red-50 text-red-700 border border-red-100',
   yellow: 'bg-amber-50 text-amber-700 border border-amber-100',
-  blue:   'bg-sky-50 text-sky-700 border border-sky-100',
+  blue: 'bg-sky-50 text-sky-700 border border-sky-100',
   indigo: 'bg-violet-50 text-violet-700 border border-violet-100',
   orange: 'bg-orange-50 text-[#F4521E] border border-orange-100',
   purple: 'bg-purple-50 text-purple-700 border border-purple-100',
 };
-export function Badge({ label, color = 'gray' }: { label: string; color?: BadgeColor }) {
+export function Badge({ label, color = 'gray', children }: { label?: string; color?: BadgeColor; children?: React.ReactNode }) {
   return (
     <span className={clsx(
       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
       badgeColors[color],
     )}>
-      {label}
+      {children ?? label}
     </span>
   );
 }
@@ -203,12 +203,12 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
     <div className='fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1A0F00]/50 backdrop-blur-sm'
       onClick={onClose}>
       <div
-        className={clsx('bg-white shadow-2xl w-full border border-[#FFE0C8]', widths[size])}
-        style={{ borderRadius: '16px', overflow: 'visible' }}
+        className={clsx('bg-white shadow-2xl w-full border border-[#FFE0C8] flex flex-col max-h-[90vh]', widths[size])}
+        style={{ borderRadius: '16px' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6]'
+          className='flex items-center justify-between px-6 py-4 border-b border-[#FFE8D6] shrink-0'
           style={{ background: 'linear-gradient(135deg, #FFF4EE 0%, #FFE8D2 100%)', borderRadius: '16px 16px 0 0' }}
         >
           <h3 className='font-bold text-[#1A0F00]' style={{ fontFamily: 'Sora, sans-serif' }}>{title}</h3>
@@ -217,7 +217,7 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
             <X className='w-4 h-4' />
           </button>
         </div>
-        <div className='p-6' style={{ borderRadius: '0 0 16px 16px', overflow: 'visible', paddingRight: '2rem' }}>
+        <div className='p-6 overflow-y-auto' style={{ borderRadius: '0 0 16px 16px' }}>
           {children}
         </div>
       </div>
@@ -263,14 +263,14 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 // ── Stat card ─────────────────────────────────────────────────────────────
 const statCardColors: Record<string, { gradient: string; tint: string; border: string; textColor: string }> = {
-  gray:   { gradient: 'linear-gradient(135deg,#6B7280,#4B5563)', tint: 'linear-gradient(135deg,#F9FAFB,#F3F4F6)', border: '#E5E7EB', textColor: '#374151' },
-  green:  { gradient: 'linear-gradient(135deg,#10B981,#059669)', tint: 'linear-gradient(135deg,#ECFDF5,#D1FAE5)', border: '#A7F3D0', textColor: '#065F46' },
-  blue:   { gradient: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', tint: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border: '#BFDBFE', textColor: '#1E40AF' },
+  gray: { gradient: 'linear-gradient(135deg,#6B7280,#4B5563)', tint: 'linear-gradient(135deg,#F9FAFB,#F3F4F6)', border: '#E5E7EB', textColor: '#374151' },
+  green: { gradient: 'linear-gradient(135deg,#10B981,#059669)', tint: 'linear-gradient(135deg,#ECFDF5,#D1FAE5)', border: '#A7F3D0', textColor: '#065F46' },
+  blue: { gradient: 'linear-gradient(135deg,#3B82F6,#1D4ED8)', tint: 'linear-gradient(135deg,#EFF6FF,#DBEAFE)', border: '#BFDBFE', textColor: '#1E40AF' },
   indigo: { gradient: 'linear-gradient(135deg,#8B5CF6,#7C3AED)', tint: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', border: '#DDD6FE', textColor: '#5B21B6' },
-  red:    { gradient: 'linear-gradient(135deg,#EF4444,#DC2626)', tint: 'linear-gradient(135deg,#FEF2F2,#FEE2E2)', border: '#FECACA', textColor: '#991B1B' },
+  red: { gradient: 'linear-gradient(135deg,#EF4444,#DC2626)', tint: 'linear-gradient(135deg,#FEF2F2,#FEE2E2)', border: '#FECACA', textColor: '#991B1B' },
   orange: { gradient: 'linear-gradient(135deg,#E8470A,#F59E0B)', tint: 'linear-gradient(135deg,#FFF4EE,#FFE6D2)', border: '#FFD3B5', textColor: '#C43A06' },
-  amber:  { gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', tint: 'linear-gradient(135deg,#FFFBEB,#FEF3C7)', border: '#FDE68A', textColor: '#92400E' },
-  cyan:   { gradient: 'linear-gradient(135deg,#06B6D4,#0891B2)', tint: 'linear-gradient(135deg,#ECFEFF,#CFFAFE)', border: '#A5F3FC', textColor: '#164E63' },
+  amber: { gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', tint: 'linear-gradient(135deg,#FFFBEB,#FEF3C7)', border: '#FDE68A', textColor: '#92400E' },
+  cyan: { gradient: 'linear-gradient(135deg,#06B6D4,#0891B2)', tint: 'linear-gradient(135deg,#ECFEFF,#CFFAFE)', border: '#A5F3FC', textColor: '#164E63' },
   purple: { gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', tint: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', border: '#DDD6FE', textColor: '#5B21B6' },
 };
 
@@ -407,9 +407,9 @@ export function SearchInput({
 type FilterColor = 'indigo' | 'amber' | 'green' | 'red' | 'orange' | 'purple';
 const filterColorMap: Record<FilterColor, { active: string; dot: string }> = {
   indigo: { active: 'text-indigo-700', dot: '#6366F1' },
-  amber:  { active: 'text-amber-700', dot: '#D97706' },
-  green:  { active: 'text-green-700', dot: '#10B981' },
-  red:    { active: 'text-red-700', dot: '#EF4444' },
+  amber: { active: 'text-amber-700', dot: '#D97706' },
+  green: { active: 'text-green-700', dot: '#10B981' },
+  red: { active: 'text-red-700', dot: '#EF4444' },
   orange: { active: 'text-[#F4521E]', dot: '#F4521E' },
   purple: { active: 'text-purple-700', dot: '#A855F7' },
 };

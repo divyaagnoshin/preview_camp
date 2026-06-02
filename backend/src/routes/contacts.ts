@@ -132,11 +132,11 @@ async function validateCsvHeader(
 function extractAlternatePhone(body: any, cf: Record<string, any>) {
   const v =
     (typeof body.alternate_phone_number === 'string' &&
-    body.alternate_phone_number.trim() !== ''
+      body.alternate_phone_number.trim() !== ''
       ? body.alternate_phone_number.trim()
       : undefined) ??
     (typeof cf.alternate_phone_number === 'string' &&
-    cf.alternate_phone_number.trim() !== ''
+      cf.alternate_phone_number.trim() !== ''
       ? cf.alternate_phone_number.trim()
       : undefined) ??
     null;
@@ -234,7 +234,7 @@ export async function importCsvRecords(
 
     const assignedAgentId =
       typeof row.assigned_agent_id === 'string' &&
-      row.assigned_agent_id.trim() !== ''
+        row.assigned_agent_id.trim() !== ''
         ? row.assigned_agent_id.trim()
         : null;
 
@@ -280,12 +280,12 @@ console.error({
     // custom_fields bag so it ends up in its own real column.
     const altTop =
       typeof row.alternate_phone_number === 'string' &&
-      row.alternate_phone_number.trim() !== ''
+        row.alternate_phone_number.trim() !== ''
         ? row.alternate_phone_number.trim()
         : null;
     const altCf =
       typeof customFields.alternate_phone_number === 'string' &&
-      customFields.alternate_phone_number.trim() !== ''
+        customFields.alternate_phone_number.trim() !== ''
         ? customFields.alternate_phone_number.trim()
         : null;
     const alternatePhoneNumber = altTop ?? altCf ?? null;
@@ -635,7 +635,7 @@ export async function importCsvStream(
 
       const assignedAgentId =
         typeof row.assigned_agent_id === 'string' &&
-        row.assigned_agent_id.trim() !== ''
+          row.assigned_agent_id.trim() !== ''
           ? row.assigned_agent_id.trim()
           : null;
 
@@ -680,12 +680,12 @@ console.error({
 
       const altTop =
         typeof row.alternate_phone_number === 'string' &&
-        row.alternate_phone_number.trim() !== ''
+          row.alternate_phone_number.trim() !== ''
           ? row.alternate_phone_number.trim()
           : null;
       const altCf =
         typeof customFields.alternate_phone_number === 'string' &&
-        customFields.alternate_phone_number.trim() !== ''
+          customFields.alternate_phone_number.trim() !== ''
           ? customFields.alternate_phone_number.trim()
           : null;
       const alternatePhoneNumber = altTop ?? altCf ?? null;
@@ -1051,7 +1051,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
     const mergedCf = { ...(prev.custom_fields || {}), ...cfNew };
     const finalAltPhone =
       req.body.alternate_phone_number !== undefined ||
-      (custom_fields && 'alternate_phone_number' in custom_fields)
+        (custom_fields && 'alternate_phone_number' in custom_fields)
         ? alternate_phone_number
         : prev.alternate_phone_number;
 

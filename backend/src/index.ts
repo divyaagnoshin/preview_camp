@@ -1,4 +1,6 @@
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -30,7 +32,7 @@ import {
   timezonesRouter,
 } from './routes/other';
 import { errorHandler } from './middleware/errorHandler';
-//import { startScheduler } from './services/scheduler';
+// import { startScheduler } from './services/scheduler';
 //import { startEslListener } from './services/eslListener';
 import { seedTimezones } from './db/seedTimezones';
 import { seedSuperadmin } from './db/seedSuperadmin';
@@ -45,7 +47,30 @@ import campaignMappingRouter from './routes/Campaignmappingroute';
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = parseInt(process.env.PORT || '3001');
+
+export const io = new Server(httpServer, {
+  cors: {
+    origin: (origin, callback) => callback(null, true), // Allow all origins dynamically
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    credentials: true,
+  },
+});
+
+io.on('connection', (socket) => {
+  console.log(`[Socket] Client connected: ${socket.id}`);
+  
+  socket.on('agent_logout', (data) => {
+    console.log(`[Socket] Agent Logged Out:`, data);
+    // Forward this to the React Admin Dashboard
+    io.emit('agent_logged_out_alert', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket] Client disconnected: ${socket.id}`);
+  });
+});
 
 // ── Middleware ────────────────────────────────────────────
 app.use(helmet());
@@ -58,11 +83,27 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
+// ── Webhooks from C# ──────────────────────────────────────
+app.post('/api/notify-mapping', (req, res) => {
+  const { agent_userid, added, removed, added_ids, removed_ids } = req.body;
+  if (agent_userid) {
+    io.emit('campaign_update', {
+      event: 'mapped',
+      agent_userid: agent_userid,
+      added: added || [],
+      removed: removed || [],
+      added_ids: added_ids || [],
+      removed_ids: removed_ids || []
+    });
+  }
+  res.json({ success: true });
+});
+
 // ── Routes ────────────────────────────────────────────────
 app.use('/v1/auth', authRouter);
 app.use('/v1/organizations', organizationsRouter);
 app.use('/v1/contact-lists', contactListsRouter);
-app.use('/v1/contact-lists', cloudImportRouter);
+app.use('/v1/cloud-imports', cloudImportRouter);
 app.use('/v1/cloud-import-configs', cloudImportConfigsRouter);
 app.use('/v1/contacts', contactsRouter);
 app.use('/v1/field-library', fieldLibraryRouter);
@@ -99,9 +140,9 @@ app.get('/health', (_, res) =>
 app.use(errorHandler);
 
 // ── Start ─────────────────────────────────────────────────
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
- // startScheduler();
+  // startScheduler();
  // startEslListener();
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();

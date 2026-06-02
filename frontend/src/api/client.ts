@@ -220,18 +220,17 @@ export const deleteContactsBulk = (listId: string, ids: string[]) =>
   api
     .post(`/contact-lists/${listId}/contacts/bulk-delete`, { ids })
     .then((r) => r.data);
-export const cloudImportContacts = (
-  contactListId: string,
-  body:
-    | {
-        provider: 's3' | 'ftp' | 'gcs';
-        credentials: Record<string, any>;
-        options: Record<string, any>;
-      }
-    | { config_id: string },
+export const runCloudImport = (
+  contactListIds: string[],
+  body: {
+    config_id?: string;
+    provider?: string;
+    credentials?: any;
+    options?: any;
+  },
 ) =>
   api
-    .post(`/contact-lists/${contactListId}/cloud-import`, body)
+    .post(`/cloud-imports/run`, { ...body, contact_list_ids: contactListIds })
     .then((r) => r.data);
 
 // ── Cloud Import Configs (saved S3/FTP/GCS profiles) ──────
@@ -248,7 +247,7 @@ export interface CloudImportConfig {
   schedule_enabled?: boolean;
   cron_expression?: string | null;
   timezone?: string | null;
-  contact_list_id?: string | null;
+  contact_list_ids: string[];
   next_refresh?: string | null;
   last_refresh?: string | null;
   last_run_status?: string | null;
@@ -263,6 +262,11 @@ export const createCloudImportConfig = (body: {
   credentials: Record<string, any>;
   options: Record<string, any>;
 }) => api.post('/cloud-import-configs', body).then((r) => r.data);
+export const testCloudImportConnection = (body: {
+  provider: CloudProvider;
+  credentials: Record<string, any>;
+  options: Record<string, any>;
+}) => api.post('/cloud-import-configs/test-connection', body).then((r) => r.data);
 export const updateCloudImportConfig = (
   id: string,
   body: {
@@ -280,7 +284,7 @@ export const updateCloudImportConfigSchedule = (
     enabled: boolean;
     cron_expression?: string;
     timezone?: string;
-    contact_list_id?: string;
+    contact_list_ids?: string[];
   },
 ): Promise<CloudImportConfig> =>
   api.put(`/cloud-import-configs/${id}/schedule`, body).then((r) => r.data);

@@ -1,5 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { CronExpressionParser } from 'cron-parser';
+import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import SftpClient from 'ssh2-sftp-client';
+import * as FtpClient from 'basic-ftp';
 import pool from '../db/pool';
 import { authenticate } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -16,7 +19,7 @@ type Provider = (typeof PROVIDERS)[number];
 // columns (migration 012) and the renames in 013 are picked up everywhere.
 const SELECT_COLS = `id, name, provider, credentials, options,
   created_at, updated_at, last_used_at,
-  schedule_enabled, cron_expression, timezone, contact_list_id,
+  schedule_enabled, cron_expression, timezone, contact_list_ids,
   next_refresh, last_refresh, last_run_status, last_run_error`;
 
 // Validates a cron expression against the caller's timezone and returns the
@@ -75,10 +78,85 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// POST /v1/cloud-import-configs/test-connection — test connection without saving.
+router.post(
+  '/test-connection',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { provider, credentials = {}, options = {} } = req.body;
+      if (!PROVIDERS.includes(provider)) {
+        throw new AppError(400, `provider must be one of ${PROVIDERS.join(', ')}`);
+      }
+
+      const cred = credentials;
+      const protocol = (cred.protocol || '').toLowerCase();
+      const port = cred.port
+        ? parseInt(cred.port, 10)
+        : protocol === 'sftp'
+          ? 22
+          : 21;
+
+      if (provider === 's3') {
+        const s3 = new S3Client({
+          region: cred.region || 'us-east-1',
+          credentials: {
+            accessKeyId: cred.access_key_id,
+            secretAccessKey: cred.secret_access_key,
+          },
+        });
+        // Try a list-objects command with MaxKeys=1 just to verify credentials
+        // and bucket existence without downloading anything.
+        await s3.send(
+          new ListObjectsV2Command({
+            Bucket: cred.bucket,
+            Prefix: cred.folder,
+            MaxKeys: 1,
+          })
+        );
+      } else if (provider === 'ftp') {
+        if (protocol === 'sftp') {
+          const sftp = new SftpClient();
+          try {
+            await sftp.connect({
+              host: cred.host,
+              port,
+              username: cred.username,
+              password: cred.password,
+            });
+          } finally {
+            await sftp.end();
+          }
+        } else {
+          const client = new FtpClient.Client();
+          try {
+            await client.access({
+              host: cred.host,
+              port,
+              user: cred.username,
+              password: cred.password,
+              secure: false,
+            });
+          } finally {
+            client.close();
+          }
+        }
+      } else {
+        throw new AppError(400, 'Test connection not supported for this provider yet');
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      // Format the error nicely so the UI can display it
+      const message = e?.message || String(e);
+      res.status(400).json({ error: message });
+    }
+  }
+);
+
 // POST /v1/cloud-import-configs — create a new profile.
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, provider, credentials = {}, options = {} } = req.body;
+    const { name, provider, credentials = {}, options = {}, contact_list_ids = [] } = req.body;
     if (!name || typeof name !== 'string')
       throw new AppError(400, 'name required');
     if (!PROVIDERS.includes(provider))
@@ -89,8 +167,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const { rows } = await pool.query(
       `INSERT INTO cloud_import_configs
-         (org_id, name, provider, credentials, options, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (org_id, name, provider, credentials, options, created_by, contact_list_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING ${SELECT_COLS}`,
       [
         req.user!.orgId,
@@ -99,6 +177,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         JSON.stringify(credentials),
         JSON.stringify(options),
         req.user!.userId,
+        contact_list_ids,
       ],
     );
     res.status(201).json(sanitize(rows[0]));
@@ -116,7 +195,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 // passwords.
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { name, provider, credentials = {}, options = {} } = req.body;
+    const { name, provider, credentials = {}, options = {}, contact_list_ids = [] } = req.body;
     if (!name) throw new AppError(400, 'name required');
     if (!PROVIDERS.includes(provider))
       throw new AppError(
@@ -138,15 +217,16 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 
     const { rows } = await pool.query(
       `UPDATE cloud_import_configs
-          SET name = $1, provider = $2, credentials = $3, options = $4,
+          SET name = $1, provider = $2, credentials = $3, options = $4, contact_list_ids = $5,
               updated_at = NOW()
-        WHERE id = $5 AND org_id = $6
+        WHERE id = $6 AND org_id = $7
         RETURNING ${SELECT_COLS}`,
       [
         name.trim(),
         provider as Provider,
         JSON.stringify(merged),
         JSON.stringify(options),
+        contact_list_ids,
         req.params.id,
         req.user!.orgId,
       ],
@@ -174,15 +254,15 @@ router.put(
         enabled = false,
         cron_expression,
         timezone,
-        contact_list_id,
+        contact_list_ids,
       } = req.body;
 
       // Load the existing row so a pause (enabled=false) can preserve the
-      // previously stored cron / timezone / contact_list_id, and so a
+      // previously stored cron / timezone / contact_list_ids, and so a
       // resume (enabled=true) without explicit fields can fall back to
       // them.
       const existing = await pool.query(
-        `SELECT cron_expression, timezone, contact_list_id
+        `SELECT cron_expression, timezone, contact_list_ids
            FROM cloud_import_configs
           WHERE id = $1 AND org_id = $2`,
         [req.params.id, req.user!.orgId],
@@ -192,21 +272,21 @@ router.put(
 
       const finalCron = cron_expression ?? prev.cron_expression;
       const finalTz = timezone || prev.timezone || 'UTC';
-      const finalListId = contact_list_id ?? prev.contact_list_id;
+      const finalLists = contact_list_ids ?? prev.contact_list_ids;
 
       if (enabled) {
         if (!finalCron)
           throw new AppError(400, 'cron_expression required when enabled');
-        if (!finalListId)
-          throw new AppError(400, 'contact_list_id required when enabled');
-        // Confirm the list belongs to the caller's org so a malicious user
+        if (!finalLists || finalLists.length === 0)
+          throw new AppError(400, 'contact_list_ids array required when enabled');
+        // Confirm the lists belong to the caller's org so a malicious user
         // can't aim a schedule at someone else's data.
         const listChk = await pool.query(
-          `SELECT 1 FROM contact_lists WHERE id = $1 AND org_id = $2`,
-          [finalListId, req.user!.orgId],
+          `SELECT id FROM contact_lists WHERE id = ANY($1) AND org_id = $2`,
+          [finalLists, req.user!.orgId],
         );
-        if (!listChk.rows.length)
-          throw new AppError(404, 'contact_list_id not found');
+        if (listChk.rows.length !== finalLists.length)
+          throw new AppError(404, 'One or more contact_list_ids not found or unauthorized');
       }
 
       const nextRun = enabled ? computeNextRun(finalCron, finalTz) : null;
@@ -216,16 +296,16 @@ router.put(
             SET schedule_enabled = $1,
                 cron_expression  = $2,
                 timezone         = $3,
-                contact_list_id  = $4,
+                contact_list_ids = $4,
                 next_refresh     = $5,
                 updated_at       = NOW()
           WHERE id = $6 AND org_id = $7
         RETURNING ${SELECT_COLS}`,
         [
-          !!enabled,
-          finalCron,
+          enabled,
+          finalCron || null,
           finalTz,
-          finalListId,
+          finalLists || '{}',
           nextRun,
           req.params.id,
           req.user!.orgId,

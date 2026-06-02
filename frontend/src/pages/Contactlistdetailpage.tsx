@@ -12,7 +12,7 @@ import {
   uploadCSV,
   updateContact,
   downloadContactListCsvTemplate,
-  cloudImportContacts,
+  runCloudImport,
   listCloudImportConfigs,
   createCloudImportConfig,
   updateCloudImportConfig,
@@ -22,6 +22,7 @@ import {
   type CloudProvider,
 } from '../api/client';
 import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState, Pagination  } from '../components/ui';
+import { CloudConfigEditor } from '../components/CloudConfigEditor';
 import {
   ArrowLeft,
   Search,
@@ -56,30 +57,6 @@ function buildCron(
   if (freq === 'daily') return `${mm} ${hh} * * *`;
   if (freq === 'weekly') return `${mm} ${hh} * * ${dow}`;
   return `${mm} ${hh} ${dom} * *`;
-}
-
-function parseCronToPreset(cron: string): {
-  freq: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom';
-  time?: string;
-  dow?: string;
-  dom?: string;
-  custom?: string;
-} {
-  const parts = (cron || '').trim().split(/\s+/);
-  if (parts.length !== 5) return { freq: 'daily' };
-  const [m, h, dom, , dow] = parts;
-  const isNum = (s: string) => /^[0-9]+$/.test(s);
-  const time = (hh: string, mm: string) =>
-    `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}`;
-  if (m === '0' && h === '*' && dom === '*' && dow === '*')
-    return { freq: 'hourly' };
-  if (isNum(m) && isNum(h) && dom === '*' && dow === '*')
-    return { freq: 'daily', time: time(h, m) };
-  if (isNum(m) && isNum(h) && dom === '*' && isNum(dow))
-    return { freq: 'weekly', time: time(h, m), dow };
-  if (isNum(m) && isNum(h) && isNum(dom) && dow === '*')
-    return { freq: 'monthly', time: time(h, m), dom };
-  return { freq: 'custom', custom: cron };
 }
 
 // ─── MenuItem (kebab dropdown) ────────────────────────────────────────────────
@@ -241,196 +218,6 @@ function BulkGrid({
   );
 }
 
-// ─── CloudConfigEditor ────────────────────────────────────────────────────────
-function CloudConfigEditor({
-  open, editing, name, setName, provider, setProvider,
-  s3Form, setS3Form, ftpForm, setFtpForm, gcsForm, setGcsForm,
-  saving, error, step, setStep,
-  schedFreq, setSchedFreq, schedTime, setSchedTime,
-  schedDow, setSchedDow, schedDom, setSchedDom,
-  schedCustomCron, setSchedCustomCron, schedTz, setSchedTz,
-  cronPreview, savingSched, onClose, onSaveStep1, onSaveStep2,
-}: {
-  open: boolean; editing: CloudImportConfig | null;
-  name: string; setName: (v: string) => void;
-  provider: CloudProvider; setProvider: (v: CloudProvider) => void;
-  s3Form: any; setS3Form: React.Dispatch<React.SetStateAction<any>>;
-  ftpForm: any; setFtpForm: React.Dispatch<React.SetStateAction<any>>;
-  gcsForm: any; setGcsForm: React.Dispatch<React.SetStateAction<any>>;
-  saving: boolean; error?: string; step: 1 | 2; setStep: (s: 1 | 2) => void;
-  schedFreq: string; setSchedFreq: (v: any) => void;
-  schedTime: string; setSchedTime: (v: string) => void;
-  schedDow: string; setSchedDow: (v: string) => void;
-  schedDom: string; setSchedDom: (v: string) => void;
-  schedCustomCron: string; setSchedCustomCron: (v: string) => void;
-  schedTz: string; setSchedTz: (v: string) => void;
-  cronPreview: string; savingSched: boolean;
-  onClose: () => void; onSaveStep1: () => void; onSaveStep2: () => void;
-}) {
-  const canSave =
-    name.trim().length > 0 &&
-    (provider === 's3'
-      ? s3Form.bucket_name && s3Form.access_key_id && (editing || s3Form.secret_access_key)
-      : provider === 'ftp'
-      ? ftpForm.host && ftpForm.username && (editing || ftpForm.password)
-      : gcsForm.bucket_name && (editing || gcsForm.service_account_json));
-
-  return (
-    <Modal
-      title={step === 1 ? (editing ? 'Edit Cloud Connection' : 'Add Cloud Connection') : 'Schedule Automatic Imports'}
-      open={open}
-      onClose={onClose}
-      size='lg'
-    >
-      <div className='flex items-center gap-2 mb-4 text-xs'>
-        {(['1. Connection', '2. Schedule'] as const).map((label, i) => (
-          <React.Fragment key={label}>
-            {i > 0 && <span className='text-gray-300'>→</span>}
-            <span className={`px-2 py-1 rounded-full ${step === i + 1 ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>
-              {label}
-            </span>
-          </React.Fragment>
-        ))}
-      </div>
-
-      {step === 1 && (
-        <div className='space-y-4'>
-          <div className='grid grid-cols-2 gap-3'>
-            <Input label='Connection Name *' value={name} onChange={(e) => setName(e.target.value)} placeholder='e.g. Production S3 nightly' />
-            <div>
-              <label className='block text-xs text-gray-500 mb-1'>Provider *</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value as CloudProvider)}
-                disabled={!!editing}
-                className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-              >
-                <option value='s3'>Amazon S3</option>
-                <option value='ftp'>FTP / SFTP</option>
-                <option value='gcs'>Google Cloud Storage</option>
-              </select>
-            </div>
-          </div>
-
-          {provider === 's3' && (
-            <div className='grid grid-cols-2 gap-3'>
-              <Input label='Access Key ID *' value={s3Form.access_key_id} onChange={(e) => setS3Form((f: any) => ({ ...f, access_key_id: e.target.value }))} placeholder='AKIA...' />
-              <Input label={editing ? 'Secret Access Key (leave blank to keep)' : 'Secret Access Key *'} type='password' value={s3Form.secret_access_key} onChange={(e) => setS3Form((f: any) => ({ ...f, secret_access_key: e.target.value }))} placeholder='••••••••••••' />
-              <Input label='Bucket Name *' value={s3Form.bucket_name} onChange={(e) => setS3Form((f: any) => ({ ...f, bucket_name: e.target.value }))} placeholder='my-bucket' />
-              <Input label='Folder' value={s3Form.folder} onChange={(e) => setS3Form((f: any) => ({ ...f, folder: e.target.value }))} placeholder='data/imports' />
-              <Input label='Region' value={s3Form.region} onChange={(e) => setS3Form((f: any) => ({ ...f, region: e.target.value }))} placeholder='us-east-1' />
-              <Input label='File Name (optional)' value={s3Form.file_name} onChange={(e) => setS3Form((f: any) => ({ ...f, file_name: e.target.value }))} placeholder='contacts.csv' />
-              <div className='col-span-2'>
-                <Input label='Source Path (optional — overrides Folder + File Name)' value={s3Form.source_path} onChange={(e) => setS3Form((f: any) => ({ ...f, source_path: e.target.value }))} placeholder='data/2024/contacts.csv' />
-              </div>
-            </div>
-          )}
-
-          {provider === 'ftp' && (
-            <div className='grid grid-cols-2 gap-3'>
-              <div className='col-span-2 grid grid-cols-3 gap-3'>
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>Protocol</label>
-                  <select value={ftpForm.protocol} onChange={(e) => setFtpForm((f: any) => ({ ...f, protocol: e.target.value }))} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'>
-                    <option value='sftp'>SFTP</option>
-                    <option value='ftp'>FTP</option>
-                  </select>
-                </div>
-                <Input label='Host *' value={ftpForm.host} onChange={(e) => setFtpForm((f: any) => ({ ...f, host: e.target.value }))} placeholder='ftp.example.com' />
-                <Input label='Port' value={ftpForm.port} onChange={(e) => setFtpForm((f: any) => ({ ...f, port: e.target.value }))} placeholder='22' />
-              </div>
-              <Input label='Username *' value={ftpForm.username} onChange={(e) => setFtpForm((f: any) => ({ ...f, username: e.target.value }))} />
-              <Input label={editing ? 'Password (leave blank to keep)' : 'Password *'} type='password' value={ftpForm.password} onChange={(e) => setFtpForm((f: any) => ({ ...f, password: e.target.value }))} placeholder='••••••••••••' />
-              <Input label='Folder' value={ftpForm.folder} onChange={(e) => setFtpForm((f: any) => ({ ...f, folder: e.target.value }))} placeholder='imports' />
-              <Input label='File Name (optional)' value={ftpForm.file_name} onChange={(e) => setFtpForm((f: any) => ({ ...f, file_name: e.target.value }))} placeholder='contacts.csv' />
-              <div className='col-span-2'>
-                <Input label='Source Path (optional — overrides Folder + File Name)' value={ftpForm.source_path} onChange={(e) => setFtpForm((f: any) => ({ ...f, source_path: e.target.value }))} placeholder='/incoming/contacts.csv' />
-              </div>
-            </div>
-          )}
-
-          {provider === 'gcs' && (
-            <div className='space-y-3'>
-              <div className='grid grid-cols-2 gap-3'>
-                <Input label='Bucket Name *' value={gcsForm.bucket_name} onChange={(e) => setGcsForm((f: any) => ({ ...f, bucket_name: e.target.value }))} placeholder='my-gcs-bucket' />
-                <Input label='Folder' value={gcsForm.folder} onChange={(e) => setGcsForm((f: any) => ({ ...f, folder: e.target.value }))} placeholder='imports' />
-                <Input label='File Name (optional)' value={gcsForm.file_name} onChange={(e) => setGcsForm((f: any) => ({ ...f, file_name: e.target.value }))} placeholder='contacts.csv' />
-                <div className='col-span-2'>
-                  <Input label='Source Path (optional)' value={gcsForm.source_path} onChange={(e) => setGcsForm((f: any) => ({ ...f, source_path: e.target.value }))} placeholder='data/contacts.csv' />
-                </div>
-              </div>
-              <div>
-                <label className='block text-xs text-gray-500 mb-1'>{editing ? 'Service Account JSON (leave blank to keep)' : 'Service Account JSON *'}</label>
-                <textarea value={gcsForm.service_account_json} onChange={(e) => setGcsForm((f: any) => ({ ...f, service_account_json: e.target.value }))} rows={6} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500' placeholder='{ "type": "service_account", ... }' />
-                <p className='text-xs text-amber-600 mt-1'>Note: GCS support is queued for a future release.</p>
-              </div>
-            </div>
-          )}
-
-          {error && step === 1 && <div className='p-3 rounded-lg text-xs bg-red-50 text-red-700'>{error}</div>}
-          <div className='flex gap-3 pt-2 border-t border-gray-100'>
-            <Button variant='secondary' className='flex-1' onClick={onClose}>Cancel</Button>
-            <Button className='flex-1' loading={saving} disabled={!canSave} onClick={onSaveStep1}>
-              {editing ? 'Save & Next' : 'Save & Continue'}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className='space-y-4'>
-          <div className='grid grid-cols-2 gap-3'>
-            <div>
-              <label className='block text-xs text-gray-500 mb-1'>Frequency</label>
-              <select value={schedFreq} onChange={(e) => setSchedFreq(e.target.value)} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'>
-                <option value='hourly'>Hourly</option>
-                <option value='daily'>Daily</option>
-                <option value='weekly'>Weekly</option>
-                <option value='monthly'>Monthly</option>
-                <option value='custom'>Custom cron</option>
-              </select>
-            </div>
-            <Input label='Timezone (IANA)' value={schedTz} onChange={(e) => setSchedTz(e.target.value)} placeholder='Asia/Kolkata' />
-          </div>
-          {(schedFreq === 'daily' || schedFreq === 'weekly' || schedFreq === 'monthly') && (
-            <div className='grid grid-cols-2 gap-3'>
-              <div>
-                <label className='block text-xs text-gray-500 mb-1'>Time of day</label>
-                <input type='time' value={schedTime} onChange={(e) => setSchedTime(e.target.value)} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500' />
-              </div>
-              {schedFreq === 'weekly' && (
-                <div>
-                  <label className='block text-xs text-gray-500 mb-1'>Day of week</label>
-                  <select value={schedDow} onChange={(e) => setSchedDow(e.target.value)} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'>
-                    {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
-                      <option key={i} value={String(i)}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {schedFreq === 'monthly' && (
-                <Input label='Day of month (1–31)' value={schedDom} onChange={(e) => setSchedDom(e.target.value)} placeholder='1' />
-              )}
-            </div>
-          )}
-          {schedFreq === 'custom' && (
-            <Input label='Cron expression (5 fields: m h dom mon dow)' value={schedCustomCron} onChange={(e) => setSchedCustomCron(e.target.value)} placeholder='0 9 * * *' />
-          )}
-          <div className='p-3 rounded-lg bg-gray-50 text-xs text-gray-600 font-mono'>
-            Cron preview: <span className='text-indigo-700'>{cronPreview || '—'}</span>
-          </div>
-          <p className='text-xs text-gray-500'>The schedule will import into the contact list you opened this wizard from.</p>
-          {error && step === 2 && <div className='p-3 rounded-lg text-xs bg-red-50 text-red-700'>{error}</div>}
-          <div className='flex gap-3 pt-2 border-t border-gray-100'>
-            <Button variant='secondary' onClick={() => setStep(1)} disabled={savingSched}>Back</Button>
-            <Button className='flex-1' loading={savingSched} onClick={onSaveStep2}>Save Schedule</Button>
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ContactListDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -470,20 +257,6 @@ export default function ContactListDetailPage() {
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [showCfgEditor, setShowCfgEditor] = useState(false);
   const [editingCfg, setEditingCfg] = useState<CloudImportConfig | null>(null);
-  const [cfgName, setCfgName] = useState('');
-  const [cfgProvider, setCfgProvider] = useState<CloudProvider>('s3');
-  const [s3Form, setS3Form] = useState({ access_key_id: '', secret_access_key: '', bucket_name: '', folder: '', region: 'us-east-1', file_name: '', source_path: '' });
-  const [ftpForm, setFtpForm] = useState({ protocol: 'sftp' as 'ftp' | 'sftp', host: '', port: '22', username: '', password: '', folder: '', file_name: '', source_path: '' });
-  const [gcsForm, setGcsForm] = useState({ bucket_name: '', folder: '', file_name: '', service_account_json: '', source_path: '' });
-  const [cfgStep, setCfgStep] = useState<1 | 2>(1);
-  const [savedCfgId, setSavedCfgId] = useState<string | null>(null);
-  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  const [schedFreq, setSchedFreq] = useState<'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom'>('daily');
-  const [schedTime, setSchedTime] = useState('09:00');
-  const [schedDow, setSchedDow] = useState('1');
-  const [schedDom, setSchedDom] = useState('1');
-  const [schedCustomCron, setSchedCustomCron] = useState('0 9 * * *');
-  const [schedTz, setSchedTz] = useState(browserTz);
   const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // ── Queries ───────────────────────────────────────────────────────────────
@@ -564,41 +337,14 @@ export default function ContactListDetailPage() {
     setEditContactForm(form);
   };
 
-  const resetCfgForm = () => {
-    setEditingCfg(null); setCfgName(''); setCfgProvider('s3'); setCfgStep(1); setSavedCfgId(null);
-    setSchedFreq('daily'); setSchedTime('09:00'); setSchedDow('1'); setSchedDom('1');
-    setSchedCustomCron('0 9 * * *'); setSchedTz(browserTz);
-    setS3Form({ access_key_id: '', secret_access_key: '', bucket_name: '', folder: '', region: 'us-east-1', file_name: '', source_path: '' });
-    setFtpForm({ protocol: 'sftp', host: '', port: '22', username: '', password: '', folder: '', file_name: '', source_path: '' });
-    setGcsForm({ bucket_name: '', folder: '', file_name: '', service_account_json: '', source_path: '' });
-  };
-
   const openCfgEditor = (cfg?: CloudImportConfig) => {
-    resetCfgForm();
     if (cfg) {
-      setEditingCfg(cfg); setCfgName(cfg.name); setCfgProvider(cfg.provider);
-      const c = cfg.credentials || {}; const o = cfg.options || {};
-      if (cfg.provider === 's3') setS3Form({ access_key_id: c.access_key_id || '', secret_access_key: '', bucket_name: o.bucket_name || '', folder: o.folder || '', region: c.region || 'us-east-1', file_name: o.file_name || '', source_path: o.source_path || '' });
-      else if (cfg.provider === 'ftp') setFtpForm({ protocol: c.protocol === 'ftp' ? 'ftp' : 'sftp', host: c.host || '', port: c.port || '22', username: c.username || '', password: '', folder: o.folder || '', file_name: o.file_name || '', source_path: o.source_path || '' });
-      else setGcsForm({ bucket_name: o.bucket_name || '', folder: o.folder || '', file_name: o.file_name || '', service_account_json: '', source_path: o.source_path || '' });
-      setSchedTz(cfg.timezone || browserTz);
-      const parsed = parseCronToPreset(cfg.cron_expression || '');
-      setSchedFreq(parsed.freq);
-      if (parsed.time) setSchedTime(parsed.time);
-      if (parsed.dow) setSchedDow(parsed.dow);
-      if (parsed.dom) setSchedDom(parsed.dom);
-      if (parsed.custom) setSchedCustomCron(parsed.custom);
+      setEditingCfg(cfg);
+    } else {
+      setEditingCfg(null);
     }
     setShowCfgEditor(true);
   };
-
-  const buildCfgPayload = () => {
-    if (cfgProvider === 's3') return { credentials: { access_key_id: s3Form.access_key_id, secret_access_key: s3Form.secret_access_key, region: s3Form.region }, options: { bucket_name: s3Form.bucket_name, folder: s3Form.folder, file_name: s3Form.file_name || undefined, source_path: s3Form.source_path || undefined } };
-    if (cfgProvider === 'ftp') return { credentials: { protocol: ftpForm.protocol, host: ftpForm.host, port: ftpForm.port, username: ftpForm.username, password: ftpForm.password }, options: { folder: ftpForm.folder, file_name: ftpForm.file_name || undefined, source_path: ftpForm.source_path || undefined } };
-    return { credentials: { service_account_json: gcsForm.service_account_json }, options: { bucket_name: gcsForm.bucket_name, folder: gcsForm.folder, file_name: gcsForm.file_name || undefined, source_path: gcsForm.source_path || undefined } };
-  };
-
-  const cronPreview = buildCron(schedFreq, schedTime, schedDow, schedDom, schedCustomCron);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -727,33 +473,6 @@ export default function ContactListDetailPage() {
     },
   });
 
-  const saveCfgMut = useMutation({
-    mutationFn: () => {
-      const body = { name: cfgName.trim(), provider: cfgProvider, ...buildCfgPayload() };
-      return editingCfg ? updateCloudImportConfig(editingCfg.id, body) : createCloudImportConfig(body);
-    },
-    onSuccess: (saved: CloudImportConfig) => {
-      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
-      setSavedCfgId(saved.id);
-      setEditingCfg(saved);
-      setCfgStep(2);
-    },
-  });
-
-  const saveSchedMut = useMutation({
-    mutationFn: () => {
-      const cfgId = savedCfgId || editingCfg?.id;
-      if (!cfgId) throw new Error('No config to schedule');
-      return updateCloudImportConfigSchedule(cfgId, { enabled: true, cron_expression: cronPreview, timezone: schedTz || 'UTC', contact_list_id: id! });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
-      setShowCfgEditor(false);
-      resetCfgForm();
-      saveCfgMut.reset();
-    },
-  });
-
   const deleteCfgMut = useMutation({
     mutationFn: (cfgId: string) => deleteCloudImportConfig(cfgId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }),
@@ -761,7 +480,7 @@ export default function ContactListDetailPage() {
 
   const toggleScheduleMut = useMutation({
     mutationFn: ({ cfg, enabled }: { cfg: CloudImportConfig; enabled: boolean }) =>
-      updateCloudImportConfigSchedule(cfg.id, { enabled, cron_expression: enabled ? cfg.cron_expression || undefined : undefined, timezone: cfg.timezone || 'UTC', contact_list_id: enabled ? cfg.contact_list_id || id! : undefined }),
+      updateCloudImportConfigSchedule(cfg.id, { enabled, cron_expression: enabled ? cfg.cron_expression || undefined : undefined, timezone: cfg.timezone || 'UTC', contact_list_ids: cfg.contact_list_ids || [id!] }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
       setCloudStatus(`✓ Schedule ${vars.enabled ? 'activated' : 'deactivated'}.`);
@@ -770,7 +489,7 @@ export default function ContactListDetailPage() {
   });
 
   const runCfgMut = useMutation({
-    mutationFn: (cfgId: string) => cloudImportContacts(id!, { config_id: cfgId }),
+    mutationFn: (cfgId: string) => runCloudImport([id!], { config_id: cfgId }),
     onMutate: () => setCloudStatus('Connecting and downloading…'),
     onSuccess: (result: any) => {
       const failedNote = result.failed_rows > 0 ? `, ${result.failed_rows} failed` : '';
@@ -812,11 +531,11 @@ export default function ContactListDetailPage() {
           {listData?.description && <p className='text-sm text-gray-400 mt-0.5'>{listData.description}</p>}
         </div>
         <div className='flex items-center gap-2 flex-wrap justify-end'>
+          <Button variant='secondary' icon={<Cloud className='w-4 h-4' />} onClick={() => setShowCloudImport(true)}>Cloud Import</Button>
           <Button variant='secondary' icon={<Settings2 className='w-4 h-4' />} onClick={() => navigate(`/contact-lists/${id}/attributes`)}>Manage Attributes</Button>
           <Button variant='secondary' icon={<Download className='w-4 h-4' />} onClick={() => downloadContactListCsvTemplate(id!, listData?.name || 'contacts')}>CSV Template</Button>
           <Button variant='secondary' icon={<Upload className='w-4 h-4' />} onClick={() => fileRef.current?.click()}>Upload CSV</Button>
           <input ref={fileRef} type='file' accept='.csv' className='hidden' onChange={handleFileUpload} />
-          <Button variant='secondary' icon={<Cloud className='w-4 h-4' />} onClick={() => setShowCloudImport(true)}>Cloud Import</Button>
           <Button icon={<Plus className='w-4 h-4' />} onClick={() => setShowAddContact(true)}>Add Contact</Button>
         </div>
       </div>
@@ -1081,7 +800,7 @@ export default function ContactListDetailPage() {
           ) : (
             <Table<CloudImportConfig>
               keyFn={(r) => r.id}
-              rows={cloudConfigsQ.data || []}
+              rows={(cloudConfigsQ.data || []).filter((c: CloudImportConfig) => (c.contact_list_ids || []).includes(id!))}
               cols={[
                 { header: 'Name', render: (r) => <span className='font-medium text-gray-900'>{r.name}</span> },
                 {
@@ -1138,26 +857,13 @@ export default function ContactListDetailPage() {
 
       {/* ── Cloud Config Editor ───────────────────────────────────────────── */}
       <CloudConfigEditor
-        open={showCfgEditor} editing={editingCfg}
-        name={cfgName} setName={setCfgName}
-        provider={cfgProvider} setProvider={setCfgProvider}
-        s3Form={s3Form} setS3Form={setS3Form}
-        ftpForm={ftpForm} setFtpForm={setFtpForm}
-        gcsForm={gcsForm} setGcsForm={setGcsForm}
-        saving={saveCfgMut.isPending}
-        error={(saveCfgMut.error as any)?.response?.data?.error || (saveSchedMut.error as any)?.response?.data?.error}
-        step={cfgStep} setStep={setCfgStep}
-        schedFreq={schedFreq} setSchedFreq={setSchedFreq}
-        schedTime={schedTime} setSchedTime={setSchedTime}
-        schedDow={schedDow} setSchedDow={setSchedDow}
-        schedDom={schedDom} setSchedDom={setSchedDom}
-        schedCustomCron={schedCustomCron} setSchedCustomCron={setSchedCustomCron}
-        schedTz={schedTz} setSchedTz={setSchedTz}
-        cronPreview={cronPreview}
-        savingSched={saveSchedMut.isPending}
-        onClose={() => { setShowCfgEditor(false); resetCfgForm(); saveCfgMut.reset(); saveSchedMut.reset(); }}
-        onSaveStep1={() => saveCfgMut.mutate()}
-        onSaveStep2={() => saveSchedMut.mutate()}
+        open={showCfgEditor}
+        editing={editingCfg}
+        defaultContactListIds={[id!]}
+        onClose={() => setShowCfgEditor(false)}
+        onSuccess={() => {
+          qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
+        }}
       />
 
       {/* ── Edit Contact modal ────────────────────────────────────────────── */}

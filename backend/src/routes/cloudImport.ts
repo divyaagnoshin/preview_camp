@@ -4,6 +4,8 @@ import {
   S3Client,
   GetObjectCommand,
   ListObjectsV2Command,
+  CopyObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import SftpClient from 'ssh2-sftp-client';
 import * as FtpClient from 'basic-ftp';
@@ -24,7 +26,8 @@ async function downloadFromFtp(
   opts: any,
 ): Promise<{ name: string; text: string }[]> {
   const protocol: 'ftp' | 'sftp' = cred.protocol === 'ftp' ? 'ftp' : 'sftp';
-  let folder = (opts.folder || '').replace(/\/+$/, '') || '.';
+  let folder =
+    (opts.reading_folder || opts.folder || '').replace(/\/+$/, '') || '.';
   let wantedFile: string | undefined = opts.file_name;
   if (opts.source_path) {
     const sp = String(opts.source_path).replace(/\/+$/, '');
@@ -46,33 +49,35 @@ async function downloadFromFtp(
   const collect = (name: string, buf: Buffer) =>
     out.push({ name, text: buf.toString('utf-8') });
 
-  console.log('=== downloadFromFtp CALLED ===');
-  console.log({ protocol, host: cred.host, port, folder, wantedFile });
-
   if (protocol === 'sftp') {
     const sftp = new SftpClient();
     try {
-      console.log('=== SFTP CONNECT ATTEMPT ===');
       await sftp.connect({
         host: cred.host,
         port,
         username: cred.username,
         password: cred.password,
       });
-      console.log('=== SFTP LOGIN SUCCESS ===');
+      let listResult: any[] = [];
+      if (!wantedFile) {
+        listResult = (await sftp.list(folder)) as any[];
+        console.log(
+          '[SFTP DEBUG] Listed folder:',
+          folder,
+          'Result length:',
+          listResult.length,
+        );
+        console.log('[SFTP DEBUG] First few items:', listResult.slice(0, 3));
+      }
+      const csvItems = listResult.filter((e) => /\.csv$/i.test(e.name));
+      console.log('[SFTP DEBUG] All items ending in .csv:', csvItems);
 
       const targets: string[] = wantedFile
         ? [`${folder}/${wantedFile}`]
-        : ((await sftp.list(folder)) as any[])
-            .filter((e) => e.type === '-' && /\.csv$/i.test(e.name))
-            .map((e) => `${folder}/${e.name}`);
-
-      console.log('=== SFTP FILES FOUND ===', targets);
-
+        : csvItems.map((e) => `${folder}/${e.name}`);
+      console.log('[SFTP DEBUG] Targets array:', targets);
       for (const path of targets) {
-        console.log('=== SFTP DOWNLOADING ===', path);
         const buf = (await sftp.get(path)) as Buffer;
-        console.log('=== SFTP DOWNLOAD COMPLETE ===', path, `${buf.length} bytes`);
         collect(path.split('/').pop() || path, buf);
       }
     } finally {
@@ -80,11 +85,7 @@ async function downloadFromFtp(
     }
   } else {
     const client = new FtpClient.Client();
-    client.ftp.verbose = true; // logs every FTP command/response to console
     try {
-      console.log('=== FTP CONNECT ATTEMPT ===');
-      console.log({ host: cred.host, port, user: cred.username, secure: false });
-
       await client.access({
         host: cred.host,
         port,
@@ -92,19 +93,12 @@ async function downloadFromFtp(
         password: cred.password,
         secure: false,
       });
-
-      console.log('=== FTP LOGIN SUCCESS ===');
-
       const targets: string[] = wantedFile
         ? [wantedFile]
         : (await client.list(folder))
             .filter((e: any) => e.isFile && /\.csv$/i.test(e.name))
             .map((e: any) => e.name);
-
-      console.log('=== FTP FILES FOUND ===', targets);
-
       for (const name of targets) {
-        console.log('=== FTP DOWNLOADING ===', name);
         const chunks: Buffer[] = [];
         const sink = new Writable({
           write(chunk, _enc, cb) {
@@ -113,18 +107,118 @@ async function downloadFromFtp(
           },
         });
         await client.downloadTo(sink, `${folder}/${name}`);
-        const buf = Buffer.concat(chunks);
-        console.log('=== FTP DOWNLOAD COMPLETE ===', name, `${buf.length} bytes`);
-        collect(name, buf);
+        collect(name, Buffer.concat(chunks));
       }
     } finally {
       client.close();
     }
   }
-
-  console.log('=== downloadFromFtp DONE === files collected:', out.length);
   return out;
 }
+
+async function archiveFtpFile(
+  cred: any,
+  opts: any,
+  filename: string,
+): Promise<void> {
+  const protocol: 'ftp' | 'sftp' = cred.protocol === 'ftp' ? 'ftp' : 'sftp';
+  const readingFolder =
+    (opts.reading_folder || opts.folder || '').replace(/\/+$/, '') || '.';
+  const archiveFolder = (opts.archive_folder || '').replace(/\/+$/, '');
+  if (!archiveFolder) return;
+
+  const oldPath = `${readingFolder}/${filename}`;
+  const newPath = `${archiveFolder}/${filename}`;
+
+  const port = cred.port
+    ? parseInt(cred.port, 10)
+    : protocol === 'sftp'
+      ? 22
+      : 21;
+
+  if (protocol === 'sftp') {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect({
+        host: cred.host,
+        port,
+        username: cred.username,
+        password: cred.password,
+      });
+      // 1. Ensure the target directory exists
+      await sftp.mkdir(archiveFolder, true).catch(() => {});
+
+      // 2. Delete the destination file if it already exists (SFTP rename won't overwrite on Windows)
+      await sftp.delete(newPath).catch(() => {});
+
+      // 3. Move the file
+      await sftp.rename(oldPath, newPath);
+      console.log(`[SFTP ARCHIVE] Moved ${oldPath} to ${newPath}`);
+    } catch (e) {
+      console.error(
+        `[SFTP ARCHIVE] Failed to move ${oldPath} to ${newPath}:`,
+        e,
+      );
+    } finally {
+      await sftp.end();
+    }
+  } else {
+    const client = new FtpClient.Client();
+    try {
+      await client.access({
+        host: cred.host,
+        port,
+        user: cred.username,
+        password: cred.password,
+        secure: false,
+      });
+      await client.ensureDir(archiveFolder).catch(() => {});
+      await client.remove(newPath).catch(() => {});
+      await client.rename(oldPath, newPath);
+      console.log(`[FTP ARCHIVE] Moved ${oldPath} to ${newPath}`);
+    } catch (e) {
+      console.error(
+        `[FTP ARCHIVE] Failed to move ${oldPath} to ${newPath}:`,
+        e,
+      );
+    } finally {
+      client.close();
+    }
+  }
+}
+
+async function archiveS3File(
+  client: S3Client,
+  bucket: string,
+  opts: any,
+  key: string,
+) {
+  const archiveFolder = (opts.archive_folder || '').replace(/\/+$/, '');
+  if (!archiveFolder) return;
+
+  const filename = key.split('/').pop() || key;
+  const newKey = `${archiveFolder}/${filename}`;
+
+  try {
+    await client.send(
+      new CopyObjectCommand({
+        Bucket: bucket,
+        CopySource: `${bucket}/${key}`,
+        Key: newKey,
+      }),
+    );
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      }),
+    );
+    console.log(`[S3 ARCHIVE] Moved ${key} to ${newKey}`);
+  } catch (e) {
+    console.error(`[S3 ARCHIVE] Failed to move ${key} to ${newKey}:`, e);
+  }
+}
+
 const router = Router();
 router.use(authenticate);
 
@@ -234,7 +328,7 @@ export interface CloudImportResult {
 // below and the cron scheduler. Throws AppError on validation/IO failure;
 // the batch row is left in 'failed' state for the caller to inspect.
 export async function runCloudImport(args: {
-  contactListId: string;
+  contactListIds: string[];
   orgId: string;
   userId: string;
   configId?: string;
@@ -288,14 +382,17 @@ export async function runCloudImport(args: {
         ? `s3://${options.bucket_name}/${pathPart}`
         : `${credentials.protocol || 'sftp'}://${credentials.host}/${pathPart}`;
 
-    const batchRes = await pool.query(
-      `INSERT INTO contact_upload_batches
-           (contact_list_id, ingestion_method, source_ref, status, uploaded_by)
-         VALUES ($1,$2,$3,'processing',$4) RETURNING id`,
-      [args.contactListId, ingestionMethod, sourceRef, args.userId],
-    );
-    const currentBatchId: string = batchRes.rows[0].id;
-    batchId = currentBatchId;
+    const currentBatchIds: string[] = [];
+    for (const listId of args.contactListIds) {
+      const batchRes = await pool.query(
+        `INSERT INTO contact_upload_batches
+             (contact_list_id, ingestion_method, source_ref, status, uploaded_by)
+           VALUES ($1,$2,$3,'processing',$4) RETURNING id`,
+        [listId, ingestionMethod, sourceRef, args.userId],
+      );
+      currentBatchIds.push(batchRes.rows[0].id);
+    }
+    batchId = currentBatchIds[0]; // just keep the first one for error reporting backwards compat
 
     const fileResults: {
       file: string;
@@ -312,24 +409,28 @@ export async function runCloudImport(args: {
     const handleCsv = async (label: string, text: string) => {
       const records = await parseCsv(text);
       totalRows += records.length;
-      const r = await importCsvRecords(
-        records,
-        args.contactListId,
-        args.orgId,
-        currentBatchId,
-        ingestionMethod,
-      );
-      totalImported += r.imported;
-      totalFailed += r.failed;
-      totalSkipped += r.skipped;
-      fileResults.push({
-        file: label,
-        imported: r.imported,
-        failed: r.failed,
-        skipped: r.skipped,
-      });
-      for (const e of r.errors)
-        allErrors.push({ file: label, row: e.row, error: e.error });
+      for (let i = 0; i < args.contactListIds.length; i++) {
+        const listId = args.contactListIds[i];
+        const bId = currentBatchIds[i];
+        const r = await importCsvRecords(
+          records,
+          listId,
+          args.orgId,
+          bId,
+          ingestionMethod,
+        );
+        totalImported += r.imported;
+        totalFailed += r.failed;
+        fileResults.push({
+          file:
+            label + (args.contactListIds.length > 1 ? ` (List ${i + 1})` : ''),
+          imported: r.imported,
+          failed: r.failed,
+          skipped: 0,
+        });
+        for (const e of r.errors)
+          allErrors.push({ file: label, row: e.row, error: e.error });
+      }
     };
 
     if (provider === 's3') {
@@ -363,6 +464,9 @@ export async function runCloudImport(args: {
           );
           const text = await streamToString(obj.Body as Readable);
           await handleCsv(k, text);
+          if (options.archive_folder) {
+            await archiveS3File(client, options.bucket_name, options, k);
+          }
         }
       } catch (e: any) {
         if (e instanceof AppError) throw e;
@@ -373,7 +477,12 @@ export async function runCloudImport(args: {
         const files = await downloadFromFtp(credentials, options);
         if (!files.length)
           throw new AppError(404, 'No .csv files found on the server');
-        for (const f of files) await handleCsv(f.name, f.text);
+        for (const f of files) {
+          await handleCsv(f.name, f.text);
+          if (options.archive_folder) {
+            await archiveFtpFile(credentials, options, f.name);
+          }
+        }
       } catch (e: any) {
         if (e instanceof AppError) throw e;
         throw new AppError(400, formatFtpError(e));
@@ -386,13 +495,15 @@ export async function runCloudImport(args: {
         : totalFailed > 0
           ? 'partial_failure'
           : 'done';
-    await pool.query(
-      `UPDATE contact_upload_batches
-         SET total_rows=$1, imported_rows=$2, failed_rows=$3,
-             status=$4, completed_at=NOW()
-         WHERE id=$5`,
-      [totalRows, totalImported, totalFailed, status, batchId],
-    );
+    for (const bId of currentBatchIds) {
+      await pool.query(
+        `UPDATE contact_upload_batches
+           SET total_rows=$1, imported_rows=$2, failed_rows=$3,
+               status=$4, completed_at=NOW()
+           WHERE id=$5`,
+        [totalRows, totalImported, totalFailed, status, bId],
+      );
+    }
 
     return {
       batch_id: batchId,
@@ -419,26 +530,40 @@ export async function runCloudImport(args: {
     throw err;
   }
 }
+// POST /v1/cloud-imports/run — manual override triggered from the UI.
+router.post('/run', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { config_id, provider, credentials, options } = req.body;
+    let finalLists: string[] = req.body.contact_list_ids || [];
 
-// POST /v1/contact-lists/:id/cloud-import — thin wrapper around runCloudImport.
-router.post(
-  '/:id/cloud-import',
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const result = await runCloudImport({
-        contactListId: req.params.id,
-        orgId: req.user!.orgId,
-        userId: req.user!.userId,
-        configId: req.body.config_id,
-        provider: req.body.provider,
-        credentials: req.body.credentials,
-        options: req.body.options,
-      });
-      res.status(202).json(result);
-    } catch (err) {
-      next(err);
+    // If a config_id is provided, grab its contact_list_ids.
+    if (config_id && finalLists.length === 0) {
+      const cfg = await pool.query(
+        `SELECT contact_list_ids FROM cloud_import_configs WHERE id = $1 AND org_id = $2`,
+        [config_id, req.user!.orgId],
+      );
+      if (cfg.rows.length) {
+        finalLists = cfg.rows[0].contact_list_ids || [];
+      }
     }
-  },
-);
+
+    if (!finalLists.length) {
+      throw new AppError(400, 'contact_list_ids array required to run import');
+    }
+
+    const result = await runCloudImport({
+      contactListIds: finalLists,
+      orgId: req.user!.orgId,
+      userId: req.user!.userId,
+      configId: config_id,
+      provider,
+      credentials,
+      options,
+    });
+    res.status(202).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

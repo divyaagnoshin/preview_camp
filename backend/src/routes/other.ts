@@ -123,9 +123,9 @@ dncRouter.post(
       if (!owner.rowCount) throw new AppError(404, 'dnc group not found');
       try {
         const { rows } = await pool.query(
-        `INSERT INTO dnc_lists (dnc_group_id, name, created_by)
+          `INSERT INTO dnc_lists (dnc_group_id, name, created_by)
         VALUES ($1,$2,$3) RETURNING *`,
-        [req.params.id, name, req.user!.userId],
+          [req.params.id, name, req.user!.userId],
         );
         res.status(201).json(rows[0]);
       } catch (e: any) {
@@ -280,19 +280,31 @@ dncListsRouter.post(
         throw new AppError(400, 'Max 1000 numbers per call');
       const list = await loadList(req.params.id, req.user!.orgId);
 
-      let added = 0, duplicates = 0, failed = 0;
+      let added = 0,
+        duplicates = 0,
+        failed = 0;
       const phones: string[] = [];
       const duplicatePhones: string[] = [];
       for (const n of numbers) {
         try {
           const phoneRegex = /^\+?\d{7,15}$/;
-          if (!phoneRegex.test(n.phone_number)) { failed++; continue; }
+          if (!phoneRegex.test(n.phone_number)) {
+            failed++;
+            continue;
+          }
           const result = await pool.query(
             `INSERT INTO dnc_numbers
                (dnc_list_id, dnc_group_id, phone_number, added_reason, added_by, notes)
              VALUES ($1,$2,$3,$4,$5,$6)
              ON CONFLICT DO NOTHING`,
-            [list.id, list.dnc_group_id, n.phone_number, n.added_reason, req.user!.userId, n.notes],
+            [
+              list.id,
+              list.dnc_group_id,
+              n.phone_number,
+              n.added_reason,
+              req.user!.userId,
+              n.notes,
+            ],
           );
           if ((result.rowCount ?? 0) > 0) {
             added++;
@@ -301,7 +313,9 @@ dncListsRouter.post(
             duplicates++;
             if (n.phone_number) duplicatePhones.push(n.phone_number);
           }
-        } catch { failed++; }
+        } catch {
+          failed++;
+        }
       }
       let ccs_updated = 0;
       if (phones.length) {
@@ -320,7 +334,13 @@ dncListsRouter.post(
         );
         ccs_updated = rowCount ?? 0;
       }
-      res.json({ added, duplicates, failed, ccs_updated, duplicate_phones: duplicatePhones });
+      res.json({
+        added,
+        duplicates,
+        failed,
+        ccs_updated,
+        duplicate_phones: duplicatePhones,
+      });
     } catch (err) {
       next(err);
     }
@@ -350,7 +370,9 @@ dncListsRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const list = await loadList(req.params.id, req.user!.orgId);
-      const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids.filter(Boolean) : [];
+      const ids: string[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.filter(Boolean)
+        : [];
       if (!ids.length) throw new AppError(400, 'ids array required');
       if (ids.length > 1000) throw new AppError(400, 'Max 1000 ids per call');
       const { rowCount } = await pool.query(
@@ -374,20 +396,28 @@ dncListsRouter.patch(
       const sets: string[] = [];
       const vals: any[] = [];
       let i = 1;
-      if (typeof name === 'string') { sets.push(`name=$${i++}`); vals.push(name); }
+      if (typeof name === 'string') {
+        sets.push(`name=$${i++}`);
+        vals.push(name);
+      }
       if (!sets.length) {
-        const { rows } = await pool.query('SELECT * FROM dnc_lists WHERE id=$1', [req.params.id]);
+        const { rows } = await pool.query(
+          'SELECT * FROM dnc_lists WHERE id=$1',
+          [req.params.id],
+        );
         return res.json(rows[0]);
       }
       sets.push(`updated_at=NOW()`);
       vals.push(req.params.id);
       try {
         const { rows } = await pool.query(
-          `UPDATE dnc_lists SET ${sets.join(', ')} WHERE id=$${i} RETURNING *`, vals,
+          `UPDATE dnc_lists SET ${sets.join(', ')} WHERE id=$${i} RETURNING *`,
+          vals,
         );
         res.json(rows[0]);
       } catch (e: any) {
-        if (e?.code === '23505') throw new AppError(409, 'A list with that name already exists');
+        if (e?.code === '23505')
+          throw new AppError(409, 'A list with that name already exists');
         throw e;
       }
     } catch (err) {
@@ -433,7 +463,12 @@ dncNumbersRouter.patch(
            added_reason = COALESCE($2, added_reason),
            notes = COALESCE($3, notes)
          WHERE id = $4 RETURNING *`,
-        [phone_number ?? null, added_reason ?? null, notes ?? null, req.params.id],
+        [
+          phone_number ?? null,
+          added_reason ?? null,
+          notes ?? null,
+          req.params.id,
+        ],
       );
       res.json(rows[0]);
     } catch (err) {
@@ -466,17 +501,20 @@ dncNumbersRouter.delete(
 export const scheduleRouter = Router();
 scheduleRouter.use(authenticate);
 
-scheduleRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT * FROM schedule_templates WHERE org_id=$1 ORDER BY name',
-      [req.user!.orgId],
-    );
-    res.json({ data: rows });
-  } catch (err) {
-    next(err);
-  }
-});
+scheduleRouter.get(
+  '/',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT * FROM schedule_templates WHERE org_id=$1 ORDER BY name',
+        [req.user!.orgId],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 scheduleRouter.post(
   '/',
@@ -488,13 +526,23 @@ scheduleRouter.post(
       if (Array.isArray(windows) && windows.length) {
         const byDay = new Map<number, { start: string; end: string }[]>();
         for (const w of windows) {
-          if (!w.start_time || !w.end_time) throw new AppError(400, 'start_time and end_time required');
-          if (w.start_time >= w.end_time) throw new AppError(400, 'end_time must be after start_time');
-          await assertWithinTimeGuard(req.user!.orgId, w.day_of_week, w.start_time, w.end_time);
+          if (!w.start_time || !w.end_time)
+            throw new AppError(400, 'start_time and end_time required');
+          if (w.start_time >= w.end_time)
+            throw new AppError(400, 'end_time must be after start_time');
+          await assertWithinTimeGuard(
+            req.user!.orgId,
+            w.day_of_week,
+            w.start_time,
+            w.end_time,
+          );
           const list = byDay.get(w.day_of_week) || [];
           for (const ex of list) {
             if (w.start_time < ex.end && w.end_time > ex.start)
-              throw new AppError(400, `Overlapping windows for day ${w.day_of_week}: ${ex.start}-${ex.end} and ${w.start_time}-${w.end_time}.`);
+              throw new AppError(
+                400,
+                `Overlapping windows for day ${w.day_of_week}: ${ex.start}-${ex.end} and ${w.start_time}-${w.end_time}.`,
+              );
           }
           list.push({ start: w.start_time, end: w.end_time });
           byDay.set(w.day_of_week, list);
@@ -522,33 +570,48 @@ scheduleRouter.post(
   },
 );
 
-scheduleRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT * FROM schedule_templates WHERE id=$1 AND org_id=$2',
-      [req.params.id, req.user!.orgId],
-    );
-    if (!rows[0]) throw new AppError(404, 'Template not found');
-    const windows = await pool.query(
-      'SELECT * FROM schedule_windows WHERE schedule_template_id=$1 ORDER BY day_of_week',
-      [req.params.id],
-    );
-    const using = await pool.query(
-      'SELECT COUNT(*)::int FROM campaign_schedule_templates WHERE schedule_template_id=$1',
-      [req.params.id],
-    );
-    res.json({ ...rows[0], windows: windows.rows, campaigns_using: using.rows[0].count });
-  } catch (err) {
-    next(err);
-  }
-});
+scheduleRouter.get(
+  '/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT * FROM schedule_templates WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!rows[0]) throw new AppError(404, 'Template not found');
+      const windows = await pool.query(
+        'SELECT * FROM schedule_windows WHERE schedule_template_id=$1 ORDER BY day_of_week',
+        [req.params.id],
+      );
+      const using = await pool.query(
+        'SELECT COUNT(*)::int FROM campaign_schedule_templates WHERE schedule_template_id=$1',
+        [req.params.id],
+      );
+      res.json({
+        ...rows[0],
+        windows: windows.rows,
+        campaigns_using: using.rows[0].count,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 async function assertTemplateOwned(id: string, orgId: string) {
-  const r = await pool.query('SELECT 1 FROM schedule_templates WHERE id=$1 AND org_id=$2', [id, orgId]);
+  const r = await pool.query(
+    'SELECT 1 FROM schedule_templates WHERE id=$1 AND org_id=$2',
+    [id, orgId],
+  );
   if (!r.rowCount) throw new AppError(404, 'Template not found');
 }
 
-async function assertWithinTimeGuard(orgId: string, dayOfWeek: number, start: string, end: string) {
+async function assertWithinTimeGuard(
+  orgId: string,
+  dayOfWeek: number,
+  start: string,
+  end: string,
+) {
   const { rows } = await pool.query(
     `SELECT time_guard_enabled, time_guard_windows FROM system_config WHERE org_id = $1`,
     [orgId],
@@ -557,139 +620,215 @@ async function assertWithinTimeGuard(orgId: string, dayOfWeek: number, start: st
   if (!cfg || !cfg.time_guard_enabled) return;
   const allowed = cfg.time_guard_windows?.[String(dayOfWeek)];
   if (!allowed)
-    throw new AppError(409, `Time Guard blocks new windows on day ${dayOfWeek}. Enable this day in System Configuration first.`);
+    throw new AppError(
+      409,
+      `Time Guard blocks new windows on day ${dayOfWeek}. Enable this day in System Configuration first.`,
+    );
   const s = String(start).slice(0, 5);
   const e = String(end).slice(0, 5);
   const aStart = String(allowed.start).slice(0, 5);
   const aEnd = String(allowed.end).slice(0, 5);
   if (s < aStart || e > aEnd)
-    throw new AppError(409, `Time Guard for day ${dayOfWeek} allows only ${aStart}–${aEnd}. Adjust the slot or update System Configuration.`);
+    throw new AppError(
+      409,
+      `Time Guard for day ${dayOfWeek} allows only ${aStart}–${aEnd}. Adjust the slot or update System Configuration.`,
+    );
 }
 
-scheduleRouter.patch('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { name, timezone } = req.body;
-    if (name !== undefined && (typeof name !== 'string' || !name.trim()))
-      throw new AppError(400, 'name must be a non-empty string');
-    const { rows } = await pool.query(
-      `UPDATE schedule_templates SET name = COALESCE($1, name), timezone = COALESCE($2, timezone)
+scheduleRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, timezone } = req.body;
+      if (name !== undefined && (typeof name !== 'string' || !name.trim()))
+        throw new AppError(400, 'name must be a non-empty string');
+      const { rows } = await pool.query(
+        `UPDATE schedule_templates SET name = COALESCE($1, name), timezone = COALESCE($2, timezone)
         WHERE id=$3 AND org_id=$4 RETURNING *`,
-      [name?.trim() ?? null, timezone ?? null, req.params.id, req.user!.orgId],
-    );
-    if (!rows[0]) throw new AppError(404, 'Template not found');
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
-
-scheduleRouter.delete('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const usage = await pool.query(
-      'SELECT COUNT(*)::int AS n FROM campaign_schedule_templates WHERE schedule_template_id=$1',
-      [req.params.id],
-    );
-    if (usage.rows[0].n > 0) throw new AppError(409, `In use by ${usage.rows[0].n} campaign(s)`);
-    const { rowCount } = await pool.query(
-      'DELETE FROM schedule_templates WHERE id=$1 AND org_id=$2',
-      [req.params.id, req.user!.orgId],
-    );
-    if (!rowCount) throw new AppError(404, 'Template not found');
-    res.status(204).end();
-  } catch (err) { next(err); }
-});
-
-scheduleRouter.post('/:id/windows', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await assertTemplateOwned(req.params.id, req.user!.orgId);
-    const { day_of_week, start_time, end_time } = req.body;
-    if (day_of_week === undefined || day_of_week < 0 || day_of_week > 6)
-      throw new AppError(400, 'day_of_week must be 0-6');
-    if (!start_time || !end_time) throw new AppError(400, 'start_time and end_time required');
-    if (start_time >= end_time) throw new AppError(400, 'end_time must be after start_time');
-    await assertWithinTimeGuard(req.user!.orgId, day_of_week, start_time, end_time);
-    const overlap = await pool.query(
-      `SELECT start_time, end_time FROM schedule_windows
-        WHERE schedule_template_id = $1 AND day_of_week = $2
-          AND start_time < $4::time AND end_time > $3::time LIMIT 1`,
-      [req.params.id, day_of_week, start_time, end_time],
-    );
-    if (overlap.rowCount)
-      throw new AppError(409, `New window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`);
-    const { rows } = await pool.query(
-      `INSERT INTO schedule_windows (schedule_template_id, day_of_week, start_time, end_time) VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.params.id, day_of_week, start_time, end_time],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
-});
-
-scheduleRouter.patch('/:id/windows/:winId', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await assertTemplateOwned(req.params.id, req.user!.orgId);
-    const { day_of_week, start_time, end_time } = req.body;
-    if (day_of_week !== undefined && (day_of_week < 0 || day_of_week > 6))
-      throw new AppError(400, 'day_of_week must be 0-6');
-    if (day_of_week !== undefined || start_time !== undefined || end_time !== undefined) {
-      const cur = await pool.query(
-        `SELECT day_of_week, start_time, end_time FROM schedule_windows WHERE id=$1 AND schedule_template_id=$2`,
-        [req.params.winId, req.params.id],
+        [
+          name?.trim() ?? null,
+          timezone ?? null,
+          req.params.id,
+          req.user!.orgId,
+        ],
       );
-      if (!cur.rowCount) throw new AppError(404, 'Window not found');
-      const finalDay = day_of_week ?? cur.rows[0].day_of_week;
-      const finalStart = start_time ?? cur.rows[0].start_time;
-      const finalEnd = end_time ?? cur.rows[0].end_time;
-      if (finalStart >= finalEnd) throw new AppError(400, 'end_time must be after start_time');
-      await assertWithinTimeGuard(req.user!.orgId, finalDay, finalStart, finalEnd);
+      if (!rows[0]) throw new AppError(404, 'Template not found');
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+scheduleRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const usage = await pool.query(
+        'SELECT COUNT(*)::int AS n FROM campaign_schedule_templates WHERE schedule_template_id=$1',
+        [req.params.id],
+      );
+      if (usage.rows[0].n > 0)
+        throw new AppError(409, `In use by ${usage.rows[0].n} campaign(s)`);
+      const { rowCount } = await pool.query(
+        'DELETE FROM schedule_templates WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!rowCount) throw new AppError(404, 'Template not found');
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+scheduleRouter.post(
+  '/:id/windows',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await assertTemplateOwned(req.params.id, req.user!.orgId);
+      const { day_of_week, start_time, end_time } = req.body;
+      if (day_of_week === undefined || day_of_week < 0 || day_of_week > 6)
+        throw new AppError(400, 'day_of_week must be 0-6');
+      if (!start_time || !end_time)
+        throw new AppError(400, 'start_time and end_time required');
+      if (start_time >= end_time)
+        throw new AppError(400, 'end_time must be after start_time');
+      await assertWithinTimeGuard(
+        req.user!.orgId,
+        day_of_week,
+        start_time,
+        end_time,
+      );
       const overlap = await pool.query(
         `SELECT start_time, end_time FROM schedule_windows
-          WHERE schedule_template_id = $1 AND day_of_week = $2 AND id <> $3
-            AND start_time < $5::time AND end_time > $4::time LIMIT 1`,
-        [req.params.id, finalDay, req.params.winId, finalStart, finalEnd],
+        WHERE schedule_template_id = $1 AND day_of_week = $2
+          AND start_time < $4::time AND end_time > $3::time LIMIT 1`,
+        [req.params.id, day_of_week, start_time, end_time],
       );
       if (overlap.rowCount)
-        throw new AppError(409, `Window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`);
+        throw new AppError(
+          409,
+          `New window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`,
+        );
+      const { rows } = await pool.query(
+        `INSERT INTO schedule_windows (schedule_template_id, day_of_week, start_time, end_time) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.params.id, day_of_week, start_time, end_time],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
     }
-    const { rows } = await pool.query(
-      `UPDATE schedule_windows
+  },
+);
+
+scheduleRouter.patch(
+  '/:id/windows/:winId',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await assertTemplateOwned(req.params.id, req.user!.orgId);
+      const { day_of_week, start_time, end_time } = req.body;
+      if (day_of_week !== undefined && (day_of_week < 0 || day_of_week > 6))
+        throw new AppError(400, 'day_of_week must be 0-6');
+      if (
+        day_of_week !== undefined ||
+        start_time !== undefined ||
+        end_time !== undefined
+      ) {
+        const cur = await pool.query(
+          `SELECT day_of_week, start_time, end_time FROM schedule_windows WHERE id=$1 AND schedule_template_id=$2`,
+          [req.params.winId, req.params.id],
+        );
+        if (!cur.rowCount) throw new AppError(404, 'Window not found');
+        const finalDay = day_of_week ?? cur.rows[0].day_of_week;
+        const finalStart = start_time ?? cur.rows[0].start_time;
+        const finalEnd = end_time ?? cur.rows[0].end_time;
+        if (finalStart >= finalEnd)
+          throw new AppError(400, 'end_time must be after start_time');
+        await assertWithinTimeGuard(
+          req.user!.orgId,
+          finalDay,
+          finalStart,
+          finalEnd,
+        );
+        const overlap = await pool.query(
+          `SELECT start_time, end_time FROM schedule_windows
+          WHERE schedule_template_id = $1 AND day_of_week = $2 AND id <> $3
+            AND start_time < $5::time AND end_time > $4::time LIMIT 1`,
+          [req.params.id, finalDay, req.params.winId, finalStart, finalEnd],
+        );
+        if (overlap.rowCount)
+          throw new AppError(
+            409,
+            `Window overlaps an existing slot on this day (${overlap.rows[0].start_time}–${overlap.rows[0].end_time}).`,
+          );
+      }
+      const { rows } = await pool.query(
+        `UPDATE schedule_windows
         SET day_of_week = COALESCE($1, day_of_week),
             start_time  = COALESCE($2::time, start_time),
             end_time    = COALESCE($3::time, end_time)
        WHERE id=$4 AND schedule_template_id=$5 RETURNING *`,
-      [day_of_week ?? null, start_time ?? null, end_time ?? null, req.params.winId, req.params.id],
-    );
-    if (!rows[0]) throw new AppError(404, 'Window not found');
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
+        [
+          day_of_week ?? null,
+          start_time ?? null,
+          end_time ?? null,
+          req.params.winId,
+          req.params.id,
+        ],
+      );
+      if (!rows[0]) throw new AppError(404, 'Window not found');
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-scheduleRouter.delete('/:id/windows/:winId', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await assertTemplateOwned(req.params.id, req.user!.orgId);
-    const { rowCount } = await pool.query(
-      'DELETE FROM schedule_windows WHERE id=$1 AND schedule_template_id=$2',
-      [req.params.winId, req.params.id],
-    );
-    if (!rowCount) throw new AppError(404, 'Window not found');
-    res.status(204).end();
-  } catch (err) { next(err); }
-});
+scheduleRouter.delete(
+  '/:id/windows/:winId',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await assertTemplateOwned(req.params.id, req.user!.orgId);
+      const { rowCount } = await pool.query(
+        'DELETE FROM schedule_windows WHERE id=$1 AND schedule_template_id=$2',
+        [req.params.winId, req.params.id],
+      );
+      if (!rowCount) throw new AppError(404, 'Window not found');
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── TIMEZONES ─────────────────────────────────────────────────────────
 export const timezonesRouter = Router();
 timezonesRouter.use(authenticate);
 
-timezonesRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const q = String(req.query.q || '').toLowerCase().trim();
-    const sql = q
-      ? `SELECT name FROM timezones WHERE LOWER(name) LIKE $1 ORDER BY name LIMIT 100`
-      : `SELECT name FROM timezones ORDER BY name`;
-    const params = q ? [`%${q}%`] : [];
-    const { rows } = await pool.query(sql, params);
-    res.json({ data: rows.map((r: any) => r.name) });
-  } catch (err) {
-    next(err);
-  }
-});
+timezonesRouter.get(
+  '/',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const q = String(req.query.q || '')
+        .toLowerCase()
+        .trim();
+      const sql = q
+        ? `SELECT name FROM timezones WHERE LOWER(name) LIKE $1 ORDER BY name LIMIT 100`
+        : `SELECT name FROM timezones ORDER BY name`;
+      const params = q ? [`%${q}%`] : [];
+      const { rows } = await pool.query(sql, params);
+      res.json({ data: rows.map((r: any) => r.name) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── M5: JOBS ──────────────────────────────────────────────────────────
 export const jobsRouter = Router();
@@ -755,54 +894,68 @@ jobsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
 // ─────────────────────────────────────────────────────────────────────
 // GET /v1/jobs/:id — live progress from CCS
 // ─────────────────────────────────────────────────────────────────────
-jobsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT cj.*, c.name as campaign_name, c.schedule_type, c.agent_priority_enabled
+jobsRouter.get(
+  '/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT cj.*, c.name as campaign_name, c.schedule_type, c.agent_priority_enabled
        FROM campaign_jobs cj JOIN campaigns c ON c.id = cj.campaign_id
        WHERE cj.id=$1 AND c.org_id=$2`,
-      [req.params.id, req.user!.orgId],
-    );
-    if (!rows[0]) throw new AppError(404, 'Job not found');
+        [req.params.id, req.user!.orgId],
+      );
+      if (!rows[0]) throw new AppError(404, 'Job not found');
 
-    const { rows: prog } = await pool.query(
-      `SELECT
+      const { rows: prog } = await pool.query(
+        `SELECT
          COUNT(*)::int                                                          AS total_contacts,
          COUNT(*) FILTER (WHERE status NOT IN ('queued', 'with_agent'))::int   AS processed_contacts
        FROM campaign_contact_status
        WHERE job_id = $1`,
-      [req.params.id],
-    );
+        [req.params.id],
+      );
 
-    const total     = prog[0]?.total_contacts     ?? 0;
-    const processed = prog[0]?.processed_contacts ?? 0;
-    const prcnt     = total > 0 ? (processed / total) * 100 : 0;
+      const total = prog[0]?.total_contacts ?? 0;
+      const processed = prog[0]?.processed_contacts ?? 0;
+      const prcnt = total > 0 ? (processed / total) * 100 : 0;
 
-    res.json({
-      ...rows[0],
-      total_contacts:     total,
-      processed_contacts: processed,
-      prcnt_complete:     prcnt,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+      res.json({
+        ...rows[0],
+        total_contacts: total,
+        processed_contacts: processed,
+        prcnt_complete: prcnt,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-jobsRouter.get('/:id/contacts', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { status, assigned_agent_id } = req.query;
-    const page = parseInt(req.query.page as string) || 1;
-    const perPage = Math.min(parseInt(req.query.per_page as string) || 50, 200);
-    const offset = (page - 1) * perPage;
+jobsRouter.get(
+  '/:id/contacts',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { status, assigned_agent_id } = req.query;
+      const page = parseInt(req.query.page as string) || 1;
+      const perPage = Math.min(
+        parseInt(req.query.per_page as string) || 50,
+        200,
+      );
+      const offset = (page - 1) * perPage;
 
-    const params: any[] = [req.params.id];
-    let where = 'WHERE ccs.job_id = $1';
-    if (status) { params.push(status); where += ` AND ccs.status = $${params.length}`; }
-    if (assigned_agent_id) { params.push(assigned_agent_id); where += ` AND ccs.assigned_agent_id = $${params.length}`; }
+      const params: any[] = [req.params.id];
+      let where = 'WHERE ccs.job_id = $1';
+      if (status) {
+        params.push(status);
+        where += ` AND ccs.status = $${params.length}`;
+      }
+      if (assigned_agent_id) {
+        params.push(assigned_agent_id);
+        where += ` AND ccs.assigned_agent_id = $${params.length}`;
+      }
 
-    const { rows } = await pool.query(
-      `SELECT ccs.*, c.phone_number, c.first_name, c.last_name,
+      const { rows } = await pool.query(
+        `SELECT ccs.*, c.phone_number, c.first_name, c.last_name,
               u.first_name || ' ' || u.last_name AS assigned_agent_name
        FROM campaign_contact_status ccs
        JOIN contacts c ON c.id = ccs.contact_id
@@ -810,336 +963,527 @@ jobsRouter.get('/:id/contacts', async (req: Request, res: Response, next: NextFu
        ${where}
        ORDER BY ccs.priority ASC, ccs.next_attempt_at ASC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, perPage, offset],
-    );
-    const total = await pool.query(
-      `SELECT COUNT(*)::int FROM campaign_contact_status ccs ${where}`, params,
-    );
-    res.json({ data: rows, total: total.rows[0].count, page, per_page: perPage });
-  } catch (err) {
-    next(err);
-  }
-});
+        [...params, perPage, offset],
+      );
+      const total = await pool.query(
+        `SELECT COUNT(*)::int FROM campaign_contact_status ccs ${where}`,
+        params,
+      );
+      res.json({
+        data: rows,
+        total: total.rows[0].count,
+        page,
+        per_page: perPage,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-jobsRouter.patch('/:id/contacts/:ccsId', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { assigned_agent_id, priority } = req.body;
-    const { rows: check } = await pool.query(
-      `SELECT status FROM campaign_contact_status WHERE id=$1 AND job_id=$2`,
-      [req.params.ccsId, req.params.id],
-    );
-    if (!check[0]) throw new AppError(404, 'CCS row not found');
-    if (check[0].status === 'with_agent')
-      throw new AppError(409, 'Contact is with_agent — cannot reassign mid-call');
+jobsRouter.patch(
+  '/:id/contacts/:ccsId',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { assigned_agent_id, priority } = req.body;
+      const { rows: check } = await pool.query(
+        `SELECT status FROM campaign_contact_status WHERE id=$1 AND job_id=$2`,
+        [req.params.ccsId, req.params.id],
+      );
+      if (!check[0]) throw new AppError(404, 'CCS row not found');
+      if (check[0].status === 'with_agent')
+        throw new AppError(
+          409,
+          'Contact is with_agent — cannot reassign mid-call',
+        );
 
-    const { rows } = await pool.query(
-      `UPDATE campaign_contact_status SET
+      const { rows } = await pool.query(
+        `UPDATE campaign_contact_status SET
          assigned_agent_id = CASE WHEN $1::text = 'null' THEN NULL ELSE COALESCE($1::uuid, assigned_agent_id) END,
          priority = COALESCE($2, priority),
          updated_at = NOW()
        WHERE id=$3 RETURNING *`,
-      [assigned_agent_id !== undefined ? assigned_agent_id || 'null' : null, priority, req.params.ccsId],
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-});
+        [
+          assigned_agent_id !== undefined ? assigned_agent_id || 'null' : null,
+          priority,
+          req.params.ccsId,
+        ],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────
 // GET /v1/jobs/:id/stats — live progress from CCS
 // ─────────────────────────────────────────────────────────────────────
-jobsRouter.get('/:id/stats', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows: jobRows } = await pool.query(
-      `SELECT cj.*, c.name as campaign_name FROM campaign_jobs cj
+jobsRouter.get(
+  '/:id/stats',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows: jobRows } = await pool.query(
+        `SELECT cj.*, c.name as campaign_name FROM campaign_jobs cj
        JOIN campaigns c ON c.id=cj.campaign_id
        WHERE cj.id=$1 AND c.org_id=$2`,
-      [req.params.id, req.user!.orgId],
-    );
-    if (!jobRows[0]) throw new AppError(404, 'Job not found');
+        [req.params.id, req.user!.orgId],
+      );
+      if (!jobRows[0]) throw new AppError(404, 'Job not found');
 
-    const { rows: statRows } = await pool.query(
-      `SELECT status, COUNT(*)::int FROM campaign_contact_status WHERE job_id=$1 GROUP BY status`,
-      [req.params.id],
-    );
-    const byStatus: Record<string, number> = {};
-    for (const s of statRows) byStatus[s.status] = s.count;
+      const { rows: statRows } = await pool.query(
+        `SELECT status, COUNT(*)::int FROM campaign_contact_status WHERE job_id=$1 GROUP BY status`,
+        [req.params.id],
+      );
+      const byStatus: Record<string, number> = {};
+      for (const s of statRows) byStatus[s.status] = s.count;
 
-    const total     = Object.values(byStatus).reduce((a, b) => a + b, 0);
-    const processed = (byStatus['completed'] ?? 0)
-                    + (byStatus['exhausted'] ?? 0)
-                    + (byStatus['dnc']       ?? 0);
-    const prcnt     = total > 0 ? (processed / total) * 100 : 0;
+      const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+      const processed =
+        (byStatus['completed'] ?? 0) +
+        (byStatus['exhausted'] ?? 0) +
+        (byStatus['dnc'] ?? 0);
+      const prcnt = total > 0 ? (processed / total) * 100 : 0;
 
-    const { rows: agentRows } = await pool
-      .query(
-        `SELECT u.id, u.first_name||' '||u.last_name as agent_name,
+      const { rows: agentRows } = await pool
+        .query(
+          `SELECT u.id, u.first_name||' '||u.last_name as agent_name,
                 COUNT(*) FILTER (WHERE ccs.status='with_agent')::int as with_agent_count,
                 COUNT(*) FILTER (WHERE ccs.status='completed')::int  as completed_count
          FROM campaign_contact_status ccs
          JOIN users u ON u.id = ccs.locked_by_session::text::uuid
          WHERE ccs.job_id=$1 GROUP BY u.id, u.first_name, u.last_name`,
-        [req.params.id],
-      )
-      .catch(() => ({ rows: [] }));
+          [req.params.id],
+        )
+        .catch(() => ({ rows: [] }));
 
-    res.json({
-      job_id:             req.params.id,
-      campaign_name:      jobRows[0].campaign_name,
-      status:             jobRows[0].status,
-      total_contacts:     total,
-      processed_contacts: processed,
-      prcnt_complete:     prcnt,
-      by_status: {
-        queued:     byStatus['queued']     ?? 0,
-        with_agent: byStatus['with_agent'] ?? 0,
-        completed:  byStatus['completed']  ?? 0,
-        exhausted:  byStatus['exhausted']  ?? 0,
-        dnc:        byStatus['dnc']        ?? 0,
-      },
-      by_agent: agentRows,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+      res.json({
+        job_id: req.params.id,
+        campaign_name: jobRows[0].campaign_name,
+        status: jobRows[0].status,
+        total_contacts: total,
+        processed_contacts: processed,
+        prcnt_complete: prcnt,
+        by_status: {
+          queued: byStatus['queued'] ?? 0,
+          with_agent: byStatus['with_agent'] ?? 0,
+          completed: byStatus['completed'] ?? 0,
+          exhausted: byStatus['exhausted'] ?? 0,
+          dnc: byStatus['dnc'] ?? 0,
+        },
+        by_agent: agentRows,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── M7: DISPOSITION CODES ─────────────────────────────────────────────
 export const dispositionRouter = Router();
 dispositionRouter.use(authenticate);
 
-dispositionRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { campaign_id, capability, type } = req.query;
-    const params: any[] = [];
-    let where = '';
-    if (campaign_id) {
-      params.push(campaign_id);
-      where += `${where ? ' AND ' : 'WHERE '}(dc.campaign_id IS NULL OR dc.campaign_id = $${params.length})`;
+dispositionRouter.get(
+  '/',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { campaign_id, capability, type } = req.query;
+      const params: any[] = [];
+      let where = '';
+      if (campaign_id) {
+        params.push(campaign_id);
+        where += `${where ? ' AND ' : 'WHERE '}(dc.campaign_id IS NULL OR dc.campaign_id = $${params.length})`;
+      }
+      if (capability) {
+        params.push(capability);
+        where += `${where ? ' AND ' : 'WHERE '}dc.capability = $${params.length}`;
+      }
+      if (type === 'system' || type === 'custom') {
+        params.push(type);
+        where += `${where ? ' AND ' : 'WHERE '}dc.type = $${params.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT * FROM disposition_codes dc ${where} ORDER BY dc.display_order`,
+        params,
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
     }
-    if (capability) {
-      params.push(capability);
-      where += `${where ? ' AND ' : 'WHERE '}dc.capability = $${params.length}`;
-    }
-    if (type === 'system' || type === 'custom') {
-      params.push(type);
-      where += `${where ? ' AND ' : 'WHERE '}dc.type = $${params.length}`;
-    }
-    const { rows } = await pool.query(
-      `SELECT * FROM disposition_codes dc ${where} ORDER BY dc.display_order`, params,
-    );
-    res.json({ data: rows });
-  } catch (err) {
-    next(err);
-  }
-});
+  },
+);
 
-dispositionRouter.post('/', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { code, label, capability, retry_delay_min, notes_required, campaign_id } = req.body;
-    if (!code || !label || !capability) throw new AppError(400, 'code, label, capability required');
-    if (!['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
-      throw new AppError(400, 'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE');
-    if (capability === 'NEXT_ATTEMPT' && !retry_delay_min)
-      throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
-    const { rows } = await pool.query(
-      `INSERT INTO disposition_codes (org_id, campaign_id, code, label, capability, retry_delay_min, notes_required)
+dispositionRouter.post(
+  '/',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const {
+        code,
+        label,
+        capability,
+        retry_delay_min,
+        notes_required,
+        campaign_id,
+      } = req.body;
+      if (!code || !label || !capability)
+        throw new AppError(400, 'code, label, capability required');
+      if (!['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
+        throw new AppError(
+          400,
+          'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE',
+        );
+      if (capability === 'NEXT_ATTEMPT' && !retry_delay_min)
+        throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
+      const { rows } = await pool.query(
+        `INSERT INTO disposition_codes (org_id, campaign_id, code, label, capability, retry_delay_min, notes_required)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.user!.orgId, campaign_id || null, code.toUpperCase(), label, capability, retry_delay_min || null, notes_required || false],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
-});
+        [
+          req.user!.orgId,
+          campaign_id || null,
+          code.toUpperCase(),
+          label,
+          capability,
+          retry_delay_min || null,
+          notes_required || false,
+        ],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionRouter.patch('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows: existing } = await pool.query(`SELECT id, type FROM disposition_codes WHERE id = $1`, [req.params.id]);
-    if (!existing[0]) throw new AppError(404, 'disposition code not found');
-    if (existing[0].type === 'system') throw new AppError(409, 'system disposition codes cannot be edited');
-    const { label, capability, retry_delay_min, notes_required, display_order } = req.body || {};
-    if (capability && !['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
-      throw new AppError(400, 'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE');
-    if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
-      throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
-    const { rows } = await pool.query(
-      `UPDATE disposition_codes SET
+dispositionRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows: existing } = await pool.query(
+        `SELECT id, type FROM disposition_codes WHERE id = $1`,
+        [req.params.id],
+      );
+      if (!existing[0]) throw new AppError(404, 'disposition code not found');
+      if (existing[0].type === 'system')
+        throw new AppError(409, 'system disposition codes cannot be edited');
+      const {
+        label,
+        capability,
+        retry_delay_min,
+        notes_required,
+        display_order,
+      } = req.body || {};
+      if (
+        capability &&
+        !['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability)
+      )
+        throw new AppError(
+          400,
+          'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE',
+        );
+      if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
+        throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
+      const { rows } = await pool.query(
+        `UPDATE disposition_codes SET
          label           = COALESCE($1, label),
          capability      = COALESCE($2, capability),
          retry_delay_min = $3,
          notes_required  = COALESCE($4, notes_required),
          display_order   = COALESCE($5, display_order)
        WHERE id = $6 RETURNING *`,
-      [label ?? null, capability ?? null, retry_delay_min ?? null, notes_required ?? null, display_order ?? null, req.params.id],
-    );
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
+        [
+          label ?? null,
+          capability ?? null,
+          retry_delay_min ?? null,
+          notes_required ?? null,
+          display_order ?? null,
+          req.params.id,
+        ],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionRouter.delete('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(`SELECT id, type FROM disposition_codes WHERE id = $1`, [req.params.id]);
-    if (!rows[0]) throw new AppError(404, 'disposition code not found');
-    if (rows[0].type === 'system') throw new AppError(409, 'system disposition codes cannot be deleted');
-    await pool.query('DELETE FROM disposition_codes WHERE id=$1', [req.params.id]);
-    res.status(204).end();
-  } catch (err) { next(err); }
-});
+dispositionRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, type FROM disposition_codes WHERE id = $1`,
+        [req.params.id],
+      );
+      if (!rows[0]) throw new AppError(404, 'disposition code not found');
+      if (rows[0].type === 'system')
+        throw new AppError(409, 'system disposition codes cannot be deleted');
+      await pool.query('DELETE FROM disposition_codes WHERE id=$1', [
+        req.params.id,
+      ]);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── M7b: DISPOSITION GROUPS ───────────────────────────────────────────
 export const dispositionGroupsRouter = Router();
 dispositionGroupsRouter.use(authenticate);
 
-dispositionGroupsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT dg.*, COUNT(dgc.disposition_code_id)::int AS custom_code_count
+dispositionGroupsRouter.get(
+  '/',
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT dg.*, COUNT(dgc.disposition_code_id)::int AS custom_code_count
          FROM disposition_groups dg
          LEFT JOIN disposition_group_codes dgc ON dgc.disposition_group_id = dg.id
         GROUP BY dg.id ORDER BY dg.created_at DESC`,
-    );
-    res.json({ data: rows });
-  } catch (err) { next(err); }
-});
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.post('/', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { name, description } = req.body || {};
-    if (!name) throw new AppError(400, 'name required');
-    const { rows } = await pool.query(
-      `INSERT INTO disposition_groups (org_id, name, description, created_by) VALUES ($1,$2,$3,$4) RETURNING *`,
-      [req.user!.orgId, name, description || null, req.user!.userId],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
-});
+dispositionGroupsRouter.post(
+  '/',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, description } = req.body || {};
+      if (!name) throw new AppError(400, 'name required');
+      const { rows } = await pool.query(
+        `INSERT INTO disposition_groups (org_id, name, description, created_by) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.user!.orgId, name, description || null, req.user!.userId],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.patch('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const owner = await pool.query('SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2', [req.params.id, req.user!.orgId]);
-    if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
-    const { name, description } = req.body || {};
-    const { rows } = await pool.query(
-      `UPDATE disposition_groups SET name=COALESCE($1,name), description=COALESCE($2,description), updated_at=NOW() WHERE id=$3 RETURNING *`,
-      [name ?? null, description ?? null, req.params.id],
-    );
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
+dispositionGroupsRouter.patch(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      const { name, description } = req.body || {};
+      const { rows } = await pool.query(
+        `UPDATE disposition_groups SET name=COALESCE($1,name), description=COALESCE($2,description), updated_at=NOW() WHERE id=$3 RETURNING *`,
+        [name ?? null, description ?? null, req.params.id],
+      );
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.delete('/:id', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const owner = await pool.query('SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2', [req.params.id, req.user!.orgId]);
-    if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
-    await pool.query('DELETE FROM disposition_groups WHERE id=$1', [req.params.id]);
-    res.status(204).end();
-  } catch (err) { next(err); }
-});
+dispositionGroupsRouter.delete(
+  '/:id',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      await pool.query('DELETE FROM disposition_groups WHERE id=$1', [
+        req.params.id,
+      ]);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.get('/:id/codes', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const exists = await pool.query('SELECT id FROM disposition_groups WHERE id=$1', [req.params.id]);
-    if (!exists.rowCount) throw new AppError(404, 'disposition group not found');
-    const { rows } = await pool.query(
-      `SELECT dc.*, (dc.type = 'system') AS is_system
+dispositionGroupsRouter.get(
+  '/:id/codes',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const exists = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1',
+        [req.params.id],
+      );
+      if (!exists.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      const { rows } = await pool.query(
+        `SELECT dc.*, (dc.type = 'system') AS is_system
          FROM disposition_codes dc
          JOIN disposition_group_codes dgc ON dgc.disposition_code_id = dc.id
         WHERE dgc.disposition_group_id = $1 AND dc.campaign_id IS NULL
         ORDER BY dc.display_order, dc.code`,
-      [req.params.id],
-    );
-    res.json({ data: rows });
-  } catch (err) { next(err); }
-});
+        [req.params.id],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.get('/:id/codes/available', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const exists = await pool.query('SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2', [req.params.id, req.user!.orgId]);
-    if (!exists.rowCount) throw new AppError(404, 'disposition group not found');
-    const { rows } = await pool.query(
-      `SELECT dc.*, (dc.type = 'system') AS is_system
+dispositionGroupsRouter.get(
+  '/:id/codes/available',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const exists = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!exists.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      const { rows } = await pool.query(
+        `SELECT dc.*, (dc.type = 'system') AS is_system
          FROM disposition_codes dc
         WHERE dc.campaign_id IS NULL
           AND dc.id NOT IN (SELECT disposition_code_id FROM disposition_group_codes WHERE disposition_group_id = $1)
         ORDER BY dc.display_order, dc.code`,
-      [req.params.id],
-    );
-    res.json({ data: rows });
-  } catch (err) { next(err); }
-});
+        [req.params.id],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-dispositionGroupsRouter.post('/:id/codes', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const owner = await pool.query('SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2', [req.params.id, req.user!.orgId]);
-    if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
-    const { code, label, capability, retry_delay_min, notes_required, display_order } = req.body || {};
-    if (!code || !label || !capability) throw new AppError(400, 'code, label, capability required');
-    if (!['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
-      throw new AppError(400, 'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE');
-    if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
-      throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
-    const created = await withTransaction(async (client) => {
-      const { rows } = await client.query(
-        `INSERT INTO disposition_codes
+dispositionGroupsRouter.post(
+  '/:id/codes',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      const {
+        code,
+        label,
+        capability,
+        retry_delay_min,
+        notes_required,
+        display_order,
+      } = req.body || {};
+      if (!code || !label || !capability)
+        throw new AppError(400, 'code, label, capability required');
+      if (!['CLOSED', 'NEXT_ATTEMPT', 'RESCHEDULE'].includes(capability))
+        throw new AppError(
+          400,
+          'capability must be CLOSED | NEXT_ATTEMPT | RESCHEDULE',
+        );
+      if (capability === 'NEXT_ATTEMPT' && retry_delay_min == null)
+        throw new AppError(400, 'retry_delay_min required for NEXT_ATTEMPT');
+      const created = await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `INSERT INTO disposition_codes
            (org_id, campaign_id, disposition_group_id, type, code, label, capability, retry_delay_min, notes_required, display_order)
          VALUES ($1, NULL, NULL, 'custom', $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [req.user!.orgId, String(code).toUpperCase(), label, capability, retry_delay_min ?? null, notes_required ?? false, display_order ?? 99],
-      );
-      await client.query(
-        `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [req.params.id, rows[0].id],
-      );
-      return rows[0];
-    });
-    res.status(201).json(created);
-  } catch (err) { next(err); }
-});
-
-dispositionGroupsRouter.put('/:id/codes', requireRole('admin', 'supervisor'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const owner = await pool.query('SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2', [req.params.id, req.user!.orgId]);
-    if (!owner.rowCount) throw new AppError(404, 'disposition group not found');
-    const ids: string[] = Array.isArray(req.body?.disposition_code_ids) ? req.body.disposition_code_ids.filter(Boolean) : [];
-    await withTransaction(async (client) => {
-      if (ids.length) {
-        const valid = await client.query(
-          `SELECT id FROM disposition_codes WHERE id = ANY($1::uuid[]) AND campaign_id IS NULL`, [ids],
+          [
+            req.user!.orgId,
+            String(code).toUpperCase(),
+            label,
+            capability,
+            retry_delay_min ?? null,
+            notes_required ?? false,
+            display_order ?? 99,
+          ],
         );
-        if (valid.rowCount !== ids.length) throw new AppError(404, 'one or more disposition codes not found');
-      }
-      await client.query('DELETE FROM disposition_group_codes WHERE disposition_group_id=$1', [req.params.id]);
-      for (const cid of ids) {
         await client.query(
           `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [req.params.id, cid],
+          [req.params.id, rows[0].id],
         );
-      }
-    });
-    res.json({ ok: true, count: ids.length });
-  } catch (err) { next(err); }
-});
+        return rows[0];
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+dispositionGroupsRouter.put(
+  '/:id/codes',
+  requireRole('admin', 'supervisor'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const owner = await pool.query(
+        'SELECT id FROM disposition_groups WHERE id=$1 AND org_id=$2',
+        [req.params.id, req.user!.orgId],
+      );
+      if (!owner.rowCount)
+        throw new AppError(404, 'disposition group not found');
+      const ids: string[] = Array.isArray(req.body?.disposition_code_ids)
+        ? req.body.disposition_code_ids.filter(Boolean)
+        : [];
+      await withTransaction(async (client) => {
+        if (ids.length) {
+          const valid = await client.query(
+            `SELECT id FROM disposition_codes WHERE id = ANY($1::uuid[]) AND campaign_id IS NULL`,
+            [ids],
+          );
+          if (valid.rowCount !== ids.length)
+            throw new AppError(404, 'one or more disposition codes not found');
+        }
+        await client.query(
+          'DELETE FROM disposition_group_codes WHERE disposition_group_id=$1',
+          [req.params.id],
+        );
+        for (const cid of ids) {
+          await client.query(
+            `INSERT INTO disposition_group_codes (disposition_group_id, disposition_code_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [req.params.id, cid],
+          );
+        }
+      });
+      res.json({ ok: true, count: ids.length });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── M8: REPORTS ───────────────────────────────────────────────────────
 export const reportsRouter = Router();
 reportsRouter.use(authenticate);
 
-reportsRouter.get('/campaign/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows: campRows } = await pool.query(
-      `SELECT c.*, (SELECT cj.id FROM campaign_jobs cj WHERE cj.campaign_id = c.id ORDER BY cj.job_run_number DESC LIMIT 1) AS job_id
+reportsRouter.get(
+  '/campaign/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows: campRows } = await pool.query(
+        `SELECT c.*, (SELECT cj.id FROM campaign_jobs cj WHERE cj.campaign_id = c.id ORDER BY cj.job_run_number DESC LIMIT 1) AS job_id
          FROM campaigns c WHERE c.id=$1 AND c.org_id=$2`,
-      [req.params.id, req.user!.orgId],
-    );
-    if (!campRows[0]) throw new AppError(404, 'Campaign not found');
-    const jobId = req.query.job_id || campRows[0].job_id;
-    const { rows: totals } = await pool.query(
-      `SELECT COUNT(c.id)::int AS total_contacts FROM contacts c
+        [req.params.id, req.user!.orgId],
+      );
+      if (!campRows[0]) throw new AppError(404, 'Campaign not found');
+      const jobId = req.query.job_id || campRows[0].job_id;
+      const { rows: totals } = await pool.query(
+        `SELECT COUNT(c.id)::int AS total_contacts FROM contacts c
          JOIN campaign_contact_lists ccl ON ccl.contact_list_id = c.contact_list_id
         WHERE ccl.campaign_id = $1`,
-      [req.params.id],
-    );
-    const { rows: stats } = await pool.query(
-      `SELECT
+        [req.params.id],
+      );
+      const { rows: stats } = await pool.query(
+        `SELECT
          COUNT(*)::int AS successful_contacts,
          COUNT(*) FILTER (WHERE ci.dialed_at IS NOT NULL)::int AS attempted,
          COUNT(*) FILTER (WHERE ci.call_status='connected')::int AS connected,
@@ -1152,45 +1496,56 @@ reportsRouter.get('/campaign/:id', async (req: Request, res: Response, next: Nex
        FROM campaign_contact_status ccs
        LEFT JOIN contact_interactions ci ON ci.contact_id=ccs.contact_id AND ci.job_id=ccs.job_id
        WHERE ccs.job_id=$1`,
-      [jobId],
-    );
-    const { rows: dispositions } = await pool.query(
-      `SELECT dc.code, dc.label, COUNT(*)::int as count
+        [jobId],
+      );
+      const { rows: dispositions } = await pool.query(
+        `SELECT dc.code, dc.label, COUNT(*)::int as count
          FROM contact_interactions ci
          JOIN disposition_codes dc ON dc.id=ci.disposition_code_id
         WHERE ci.job_id=$1 GROUP BY dc.code, dc.label ORDER BY count DESC`,
-      [jobId],
-    );
-    const totalContacts = totals[0]?.total_contacts ?? 0;
-    const successfulContacts = stats[0]?.successful_contacts ?? 0;
-    res.json({
-      campaign_id: req.params.id,
-      job_id: jobId,
-      total_contacts: totalContacts,
-      successful_contacts: successfulContacts,
-      duplicate_contacts: Math.max(0, totalContacts - successfulContacts),
-      attempted: stats[0]?.attempted ?? 0,
-      connected: stats[0]?.connected ?? 0,
-      completed_total: stats[0]?.completed_total ?? 0,
-      dnc: stats[0]?.dnc ?? 0,
-      avg_preview_duration_sec: stats[0]?.avg_preview_duration_sec ?? 0,
-      avg_talk_time_sec: stats[0]?.avg_talk_time_sec ?? 0,
-      avg_wrapup_duration_sec: stats[0]?.avg_wrapup_duration_sec ?? 0,
-      avg_total_handling_sec: stats[0]?.avg_total_handling_sec ?? 0,
-      dispositions,
-    });
-  } catch (err) { next(err); }
-});
+        [jobId],
+      );
+      const totalContacts = totals[0]?.total_contacts ?? 0;
+      const successfulContacts = stats[0]?.successful_contacts ?? 0;
+      res.json({
+        campaign_id: req.params.id,
+        job_id: jobId,
+        total_contacts: totalContacts,
+        successful_contacts: successfulContacts,
+        duplicate_contacts: Math.max(0, totalContacts - successfulContacts),
+        attempted: stats[0]?.attempted ?? 0,
+        connected: stats[0]?.connected ?? 0,
+        completed_total: stats[0]?.completed_total ?? 0,
+        dnc: stats[0]?.dnc ?? 0,
+        avg_preview_duration_sec: stats[0]?.avg_preview_duration_sec ?? 0,
+        avg_talk_time_sec: stats[0]?.avg_talk_time_sec ?? 0,
+        avg_wrapup_duration_sec: stats[0]?.avg_wrapup_duration_sec ?? 0,
+        avg_total_handling_sec: stats[0]?.avg_total_handling_sec ?? 0,
+        dispositions,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-reportsRouter.get('/agent/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { from, to } = req.query;
-    const params: any[] = [req.params.id];
-    let where = 'WHERE ci.agent_id=$1';
-    if (from) { params.push(from); where += ` AND ci.given_at >= $${params.length}`; }
-    if (to) { params.push(to); where += ` AND ci.given_at <= $${params.length}`; }
-    const { rows } = await pool.query(
-      `SELECT COUNT(*)::int AS total_offered,
+reportsRouter.get(
+  '/agent/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { from, to } = req.query;
+      const params: any[] = [req.params.id];
+      let where = 'WHERE ci.agent_id=$1';
+      if (from) {
+        params.push(from);
+        where += ` AND ci.given_at >= $${params.length}`;
+      }
+      if (to) {
+        params.push(to);
+        where += ` AND ci.given_at <= $${params.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS total_offered,
          COUNT(*) FILTER (WHERE preview_action='rejected')::int AS rejected,
          COUNT(*) FILTER (WHERE preview_action='accepted')::int AS accepted,
          COUNT(*) FILTER (WHERE call_status='connected')::int AS connected,
@@ -1198,32 +1553,70 @@ reportsRouter.get('/agent/:id', async (req: Request, res: Response, next: NextFu
          ROUND(AVG(talk_time_sec))::int AS avg_talk_time_sec,
          ROUND(AVG(wrapup_duration_sec))::int AS avg_wrapup_duration_sec
        FROM contact_interactions ci ${where}`,
-      params,
-    );
-    const { rows: agentInfo } = await pool.query(
-      'SELECT id, first_name, last_name, email FROM users WHERE id=$1', [req.params.id],
-    );
-    res.json({ ...agentInfo[0], ...rows[0] });
-  } catch (err) { next(err); }
-});
+        params,
+      );
+      const { rows: agentInfo } = await pool.query(
+        'SELECT id, first_name, last_name, email FROM users WHERE id=$1',
+        [req.params.id],
+      );
+      res.json({ ...agentInfo[0], ...rows[0] });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-reportsRouter.get('/interactions', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { job_id, agent_id, from, to, preview_action, call_status, disposition_capability } = req.query;
-    const page = parseInt(req.query.page as string) || 1;
-    const perPage = Math.min(parseInt(req.query.per_page as string) || 100, 500);
-    const offset = (page - 1) * perPage;
-    const params: any[] = [req.user!.orgId];
-    let where = `WHERE c.org_id = $1`;
-    if (job_id) { params.push(job_id); where += ` AND ci.job_id=$${params.length}`; }
-    if (agent_id) { params.push(agent_id); where += ` AND ci.agent_id=$${params.length}`; }
-    if (from) { params.push(from); where += ` AND ci.given_at>=$${params.length}`; }
-    if (to) { params.push(to); where += ` AND ci.given_at<=$${params.length}`; }
-    if (preview_action) { params.push(preview_action); where += ` AND ci.preview_action=$${params.length}`; }
-    if (call_status) { params.push(call_status); where += ` AND ci.call_status=$${params.length}`; }
-    if (disposition_capability) { params.push(disposition_capability); where += ` AND ci.disposition_capability=$${params.length}`; }
-    const { rows } = await pool.query(
-      `SELECT ci.*, ct.phone_number, ct.first_name, ct.last_name,
+reportsRouter.get(
+  '/interactions',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const {
+        job_id,
+        agent_id,
+        from,
+        to,
+        preview_action,
+        call_status,
+        disposition_capability,
+      } = req.query;
+      const page = parseInt(req.query.page as string) || 1;
+      const perPage = Math.min(
+        parseInt(req.query.per_page as string) || 100,
+        500,
+      );
+      const offset = (page - 1) * perPage;
+      const params: any[] = [req.user!.orgId];
+      let where = `WHERE c.org_id = $1`;
+      if (job_id) {
+        params.push(job_id);
+        where += ` AND ci.job_id=$${params.length}`;
+      }
+      if (agent_id) {
+        params.push(agent_id);
+        where += ` AND ci.agent_id=$${params.length}`;
+      }
+      if (from) {
+        params.push(from);
+        where += ` AND ci.given_at>=$${params.length}`;
+      }
+      if (to) {
+        params.push(to);
+        where += ` AND ci.given_at<=$${params.length}`;
+      }
+      if (preview_action) {
+        params.push(preview_action);
+        where += ` AND ci.preview_action=$${params.length}`;
+      }
+      if (call_status) {
+        params.push(call_status);
+        where += ` AND ci.call_status=$${params.length}`;
+      }
+      if (disposition_capability) {
+        params.push(disposition_capability);
+        where += ` AND ci.disposition_capability=$${params.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT ci.*, ct.phone_number, ct.first_name, ct.last_name,
               u.first_name||' '||u.last_name AS agent_name,
               dc.code AS disposition_code_label
        FROM contact_interactions ci
@@ -1234,100 +1627,161 @@ reportsRouter.get('/interactions', async (req: Request, res: Response, next: Nex
        ${where}
        ORDER BY ci.given_at DESC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, perPage, offset],
-    );
-    const total = await pool.query(
-      `SELECT COUNT(*)::int FROM contact_interactions ci
+        [...params, perPage, offset],
+      );
+      const total = await pool.query(
+        `SELECT COUNT(*)::int FROM contact_interactions ci
          JOIN contacts ct ON ct.id=ci.contact_id
          JOIN campaigns c ON c.id=(SELECT campaign_id FROM campaign_jobs WHERE id=ci.job_id)
          ${where}`,
-      params,
-    );
-    res.json({ data: rows, total: total.rows[0].count, page, per_page: perPage });
-  } catch (err) { next(err); }
-});
+        params,
+      );
+      res.json({
+        data: rows,
+        total: total.rows[0].count,
+        page,
+        per_page: perPage,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── AGENTS ────────────────────────────────────────────────
 export const agentsRouter = Router();
 agentsRouter.use(authenticate);
 
-agentsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, email, first_name, last_name, role, is_active, created_at
+agentsRouter.get(
+  '/',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, email, first_name, last_name, role, is_active, created_at
          FROM users WHERE org_id=$1 ORDER BY role, first_name`,
-      [req.user!.orgId],
-    );
-    res.json({ data: rows });
-  } catch (err) { next(err); }
-});
+        [req.user!.orgId],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-agentsRouter.post('/', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { email, password, first_name, last_name, role } = req.body || {};
-    if (!email || !password || !first_name || !last_name)
-      throw new AppError(400, 'email, password, first_name, last_name required');
-    if (typeof password !== 'string' || password.length < 8)
-      throw new AppError(400, 'password must be at least 8 characters');
-    const finalRole = role && ['agent', 'supervisor', 'admin'].includes(role) ? role : 'agent';
-    const hash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO users (org_id, email, password_hash, first_name, last_name, role)
+agentsRouter.post(
+  '/',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { email, password, first_name, last_name, role } = req.body || {};
+      if (!email || !password || !first_name || !last_name)
+        throw new AppError(
+          400,
+          'email, password, first_name, last_name required',
+        );
+      if (typeof password !== 'string' || password.length < 8)
+        throw new AppError(400, 'password must be at least 8 characters');
+      const finalRole =
+        role && ['agent', 'supervisor', 'admin'].includes(role)
+          ? role
+          : 'agent';
+      const hash = await bcrypt.hash(password, 10);
+      const { rows } = await pool.query(
+        `INSERT INTO users (org_id, email, password_hash, first_name, last_name, role)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, email, first_name, last_name, role, is_active, created_at`,
-      [req.user!.orgId, String(email).toLowerCase().trim(), hash, first_name, last_name, finalRole],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
-});
+        [
+          req.user!.orgId,
+          String(email).toLowerCase().trim(),
+          hash,
+          first_name,
+          last_name,
+          finalRole,
+        ],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-agentsRouter.patch('/:id', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { is_active, first_name, last_name } = req.body || {};
-    const { rows } = await pool.query(
-      `UPDATE users SET
+agentsRouter.patch(
+  '/:id',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { is_active, first_name, last_name } = req.body || {};
+      const { rows } = await pool.query(
+        `UPDATE users SET
          is_active = COALESCE($1, is_active),
          first_name = COALESCE($2, first_name),
          last_name = COALESCE($3, last_name),
          updated_at = NOW()
        WHERE id = $4 AND org_id = $5
        RETURNING id, email, first_name, last_name, role, is_active, created_at`,
-      [is_active === undefined ? null : is_active, first_name || null, last_name || null, req.params.id, req.user!.orgId],
-    );
-    if (!rows[0]) throw new AppError(404, 'Agent not found');
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
-
-agentsRouter.delete('/:id', requireRole('admin'), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (req.params.id === req.user!.userId)
-      throw new AppError(400, 'You cannot delete your own account');
-    const { rows: target } = await pool.query(
-      `SELECT id FROM users WHERE id = $1 AND org_id = $2`, [req.params.id, req.user!.orgId],
-    );
-    if (!target[0]) throw new AppError(404, 'User not found');
-    try {
-      await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
-      res.status(204).send();
-    } catch (e: any) {
-      if (e?.code === '23503') {
-        await pool.query(`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`, [req.params.id]);
-        res.json({ id: req.params.id, deactivated: true, reason: 'User has historical activity and was deactivated instead of deleted' });
-        return;
-      }
-      throw e;
+        [
+          is_active === undefined ? null : is_active,
+          first_name || null,
+          last_name || null,
+          req.params.id,
+          req.user!.orgId,
+        ],
+      );
+      if (!rows[0]) throw new AppError(404, 'Agent not found');
+      res.json(rows[0]);
+    } catch (err) {
+      next(err);
     }
-  } catch (err) { next(err); }
-});
+  },
+);
+
+agentsRouter.delete(
+  '/:id',
+  requireRole('admin'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (req.params.id === req.user!.userId)
+        throw new AppError(400, 'You cannot delete your own account');
+      const { rows: target } = await pool.query(
+        `SELECT id FROM users WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!target[0]) throw new AppError(404, 'User not found');
+      try {
+        await pool.query(`DELETE FROM users WHERE id = $1`, [req.params.id]);
+        res.status(204).send();
+      } catch (e: any) {
+        if (e?.code === '23503') {
+          await pool.query(
+            `UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`,
+            [req.params.id],
+          );
+          res.json({
+            id: req.params.id,
+            deactivated: true,
+            reason:
+              'User has historical activity and was deactivated instead of deleted',
+          });
+          return;
+        }
+        throw e;
+      }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── SESSIONS (live agent status) ──────────────────────────
 export const sessionsRouter = Router();
 sessionsRouter.use(authenticate);
-sessionsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT s.id, s.agent_id, s.selected_job_ids, s.status,
+sessionsRouter.get(
+  '/',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT s.id, s.agent_id, s.selected_job_ids, s.status,
               s.current_contact_id, s.current_job_id,
               s.login_at, s.logout_at, s.last_heartbeat_at,
               c.phone_number    AS current_phone_number,
@@ -1341,8 +1795,11 @@ sessionsRouter.get('/', async (req: Request, res: Response, next: NextFunction) 
        LEFT JOIN campaigns camp ON camp.id = cj.campaign_id
        WHERE u.org_id = $1
        ORDER BY s.last_heartbeat_at DESC`,
-      [req.user!.orgId],
-    );
-    res.json({ data: rows });
-  } catch (err) { next(err); }
-});
+        [req.user!.orgId],
+      );
+      res.json({ data: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);

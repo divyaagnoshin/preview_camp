@@ -171,8 +171,13 @@ router.post(
         throw new AppError(400, "field_type must be 'predefined' or 'custom'");
 
       const reserved = [
-        'phone_number', 'first_name', 'last_name', 'email',
-        'timezone', 'assigned_agent_id', 'priority',
+        'phone_number',
+        'first_name',
+        'last_name',
+        'email',
+        'timezone',
+        'assigned_agent_id',
+        'priority',
       ];
       if (reserved.includes(field_key))
         throw new AppError(400, `field_key '${field_key}' is system reserved`);
@@ -183,9 +188,13 @@ router.post(
           is_required, display_order, is_visible_to_agent)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
-          req.params.id, field_key, field_label,
-          data_type || 'text', field_type || 'predefined',
-          is_required || false, display_order || 99,
+          req.params.id,
+          field_key,
+          field_label,
+          data_type || 'text',
+          field_type || 'predefined',
+          is_required || false,
+          display_order || 99,
           is_visible_to_agent !== false,
         ],
       );
@@ -203,7 +212,9 @@ router.get(
     try {
       const page = parseInt(req.query.page as string) || 1;
       const perPage = Math.min(
-        parseInt((req.query.per_page as string) || (req.query.page_size as string)) || 50,
+        parseInt(
+          (req.query.per_page as string) || (req.query.page_size as string),
+        ) || 50,
         200,
       );
       const offset = (page - 1) * perPage;
@@ -216,12 +227,12 @@ router.get(
 
       const { rows } = await pool.query(
         `SELECT c.*, u.first_name || ' ' || u.last_name AS assigned_agent_name
-         FROM contacts c
-         LEFT JOIN users u ON u.id = c.assigned_agent_id
-         WHERE c.contact_list_id = $1::uuid
-         ${searchClause}
-         ORDER BY c.priority ASC, c.created_at ASC
-         LIMIT $2 OFFSET $3`,
+     FROM contacts c
+     LEFT JOIN users u ON u.id::text = c.assigned_agent_id::text
+     WHERE c.contact_list_id = $1::uuid
+        ${searchClause}
+     ORDER BY c.priority ASC, c.created_at ASC
+     LIMIT $2 OFFSET $3`,
         params,
       );
 
@@ -234,14 +245,22 @@ router.get(
         countParams,
       );
 
-      res.json({ data: rows, total: total.rows[0].count, page, per_page: perPage });
+      res.json({
+        data: rows,
+        total: total.rows[0].count,
+        page,
+        per_page: perPage,
+      });
     } catch (err) {
       next(err);
     }
   },
 );
 
-async function purgeContacts(listId: string, contactIds: string[]): Promise<number> {
+async function purgeContacts(
+  listId: string,
+  contactIds: string[],
+): Promise<number> {
   if (!contactIds.length) return 0;
   let deleted = 0;
   await withTransaction(async (client) => {
@@ -282,7 +301,10 @@ router.delete(
         res.status(204).send();
       } catch (e: any) {
         if (e?.code === '23503')
-          throw new AppError(409, 'Contact has historical call activity and cannot be deleted');
+          throw new AppError(
+            409,
+            'Contact has historical call activity and cannot be deleted',
+          );
         throw e;
       }
     } catch (err) {
@@ -318,7 +340,10 @@ router.delete(
         res.json({ deleted });
       } catch (e: any) {
         if (e?.code === '23503')
-          throw new AppError(409, 'Some contacts have historical call activity and cannot be deleted');
+          throw new AppError(
+            409,
+            'Some contacts have historical call activity and cannot be deleted',
+          );
         throw e;
       }
     } catch (err) {
@@ -332,7 +357,9 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const rawIds: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
-      const ids = rawIds.filter((s) => typeof s === 'string' && UUID_RE.test(s));
+      const ids = rawIds.filter(
+        (s) => typeof s === 'string' && UUID_RE.test(s),
+      );
       if (!ids.length) throw new AppError(400, 'ids array required');
       const list = await pool.query(
         `SELECT id FROM contact_lists WHERE id = $1 AND org_id = $2`,
@@ -352,7 +379,10 @@ router.post(
         res.json({ deleted });
       } catch (e: any) {
         if (e?.code === '23503')
-          throw new AppError(409, 'Some contacts have historical call activity and cannot be deleted');
+          throw new AppError(
+            409,
+            'Some contacts have historical call activity and cannot be deleted',
+          );
         throw e;
       }
     } catch (err) {
@@ -427,14 +457,23 @@ async function syncFieldDefinitions(client: any, listId: string) {
   for (const r of rows) {
     if (r.field_key === 'phone_number') continue;
     pos += 1;
-    const inputType = DATA_TYPE_TO_INPUT_TYPE[String(r.data_type).toUpperCase()] || 'text';
+    const inputType =
+      DATA_TYPE_TO_INPUT_TYPE[String(r.data_type).toUpperCase()] || 'text';
     await client.query(
       `INSERT INTO contact_list_field_definitions
          (contact_list_id, field_key, field_label, data_type, field_type,
           is_required, display_order, is_visible_to_agent)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [listId, r.field_key, r.name, inputType, r.field_type,
-       REQUIRED_FIELD_KEYS.includes(r.field_key), pos, true],
+      [
+        listId,
+        r.field_key,
+        r.name,
+        inputType,
+        r.field_type,
+        REQUIRED_FIELD_KEYS.includes(r.field_key),
+        pos,
+        true,
+      ],
     );
   }
   return pos;
@@ -515,14 +554,20 @@ router.put(
       const libRes = await client.query(
         `SELECT id FROM org_field_library
           WHERE id = ANY($1::uuid[]) AND (org_id = $2 OR org_id IS NULL)`,
-        [rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'], req.user!.orgId],
+        [
+          rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'],
+          req.user!.orgId,
+        ],
       );
       const libSet = new Set<string>(libRes.rows.map((r: any) => r.id));
 
       const cusRes = await client.query(
         `SELECT id FROM contact_list_custom_fields
           WHERE id = ANY($1::uuid[]) AND contact_list_id = $2`,
-        [rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'], req.params.id],
+        [
+          rawIds.length ? rawIds : ['00000000-0000-0000-0000-000000000000'],
+          req.params.id,
+        ],
       );
       const cusSet = new Set<string>(cusRes.rows.map((r: any) => r.id));
 
@@ -535,7 +580,8 @@ router.put(
       const orderedCus: string[] = [];
       for (const id of rawIds) {
         if (libSet.has(id) && !orderedLib.includes(id)) orderedLib.push(id);
-        else if (cusSet.has(id) && !orderedCus.includes(id)) orderedCus.push(id);
+        else if (cusSet.has(id) && !orderedCus.includes(id))
+          orderedCus.push(id);
       }
       for (const rid of requiredIds)
         if (!orderedLib.includes(rid)) orderedLib.unshift(rid);
@@ -564,7 +610,11 @@ router.put(
       }
       const defs = await syncFieldDefinitions(client, req.params.id);
       await client.query('COMMIT');
-      res.json({ attached_library: orderedLib.length, attached_custom: orderedCus.length, field_definitions: defs });
+      res.json({
+        attached_library: orderedLib.length,
+        attached_custom: orderedCus.length,
+        field_definitions: defs,
+      });
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       next(err);
@@ -599,10 +649,18 @@ router.get(
          ORDER BY display_order ASC, field_key ASC`,
         [req.params.id],
       );
-      const header = ['phone_number', ...rows.map((r) => r.field_key)].join(',');
-      const safeName = (list.rows[0].name || 'contacts').replace(/[^a-z0-9_-]+/gi, '_');
+      const header = ['phone_number', ...rows.map((r) => r.field_key)].join(
+        ',',
+      );
+      const safeName = (list.rows[0].name || 'contacts').replace(
+        /[^a-z0-9_-]+/gi,
+        '_',
+      );
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="${safeName}_template.csv"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${safeName}_template.csv"`,
+      );
       res.send(header + '\n');
     } catch (err) {
       next(err);
@@ -611,11 +669,22 @@ router.get(
 );
 
 const CUSTOM_DATA_TYPES = new Set([
-  'STRING', 'INTEGER', 'FLOAT', 'LONG', 'PHONE', 'EMAIL', 'TIMESTAMP', 'BOOLEAN',
+  'STRING',
+  'INTEGER',
+  'FLOAT',
+  'LONG',
+  'PHONE',
+  'EMAIL',
+  'TIMESTAMP',
+  'BOOLEAN',
 ]);
 
 const toFieldKey = (s: string) =>
-  s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
 
 // POST /contact-lists/:id/custom-fields
 router.post(
@@ -624,7 +693,9 @@ router.post(
     const client = await pool.connect();
     let cleaned: any[] = [];
     try {
-      const fields: any[] = Array.isArray(req.body?.fields) ? req.body.fields : [];
+      const fields: any[] = Array.isArray(req.body?.fields)
+        ? req.body.fields
+        : [];
       if (!fields.length) throw new AppError(400, 'fields array required');
 
       const list = await client.query(
@@ -662,7 +733,9 @@ router.post(
       });
 
       const requestKeys = cleaned.map((c) => c.field_key);
-      const requestDupes = requestKeys.filter((k, i) => requestKeys.indexOf(k) !== i);
+      const requestDupes = requestKeys.filter(
+        (k, i) => requestKeys.indexOf(k) !== i,
+      );
       if (requestDupes.length > 0) {
         throw new AppError(
           400,
@@ -676,7 +749,9 @@ router.post(
         [req.params.id, requestKeys],
       );
       if (existingRes.rows.length > 0) {
-        const dupKeys = existingRes.rows.map((r: any) => `"${r.field_key}"`).join(', ');
+        const dupKeys = existingRes.rows
+          .map((r: any) => `"${r.field_key}"`)
+          .join(', ');
         return next(
           new AppError(
             409,
@@ -699,9 +774,17 @@ router.post(
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
            RETURNING *`,
           [
-            req.params.id, c.name, c.field_key, c.data_type,
-            c.is_private, c.is_read_only_agent, c.is_masked_agent,
-            c.is_masked_reports, c.is_editable_agent, nextOrder, req.user!.userId,
+            req.params.id,
+            c.name,
+            c.field_key,
+            c.data_type,
+            c.is_private,
+            c.is_read_only_agent,
+            c.is_masked_agent,
+            c.is_masked_reports,
+            c.is_editable_agent,
+            nextOrder,
+            req.user!.userId,
           ],
         );
         inserted.push(rows[0]);
@@ -713,9 +796,16 @@ router.post(
            VALUES ($1,$2,$3,'custom',$4,$5,$6,$7,$8,$9,99,$10)
            ON CONFLICT (org_id, field_key) DO NOTHING`,
           [
-            req.user!.orgId, c.name, c.field_key, c.data_type,
-            c.is_private, c.is_read_only_agent, c.is_masked_agent,
-            c.is_masked_reports, c.is_editable_agent, req.user!.userId,
+            req.user!.orgId,
+            c.name,
+            c.field_key,
+            c.data_type,
+            c.is_private,
+            c.is_read_only_agent,
+            c.is_masked_agent,
+            c.is_masked_reports,
+            c.is_editable_agent,
+            req.user!.userId,
           ],
         );
       }

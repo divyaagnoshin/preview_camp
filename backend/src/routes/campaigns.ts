@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import pool, { withTransaction } from '../db/pool';
 import { authenticate, requireRole } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { io } from '../index';
+import agnoPool from '../db/agnoPool';
 
 const router = Router();
 router.use(authenticate);
@@ -529,6 +531,22 @@ router.post(
           return rows;
         });
 
+        // Fetch mapped agents so UI knows who to notify
+        const mappedRes = await agnoPool.query(
+          `SELECT agent_userid FROM campaign_agent_mapping WHERE campaign_id=$1`,
+          [camp.id]
+        );
+        const mapped_agents = mappedRes.rows.map((r: any) => r.agent_userid);
+
+        // Broadcast to AgnoConV2 Angular clients
+        io.emit('campaign_update', {
+          campaign_id: camp.id,
+          event: 'started',
+          message: `Campaign ${camp.name || camp.id} has been started.`,
+          timestamp: new Date().toISOString(),
+          mapped_agents
+        });
+
         res.json({
           campaign_id: camp.id,
           job_id: job.id,
@@ -601,6 +619,22 @@ router.post(
          RETURNING id`,
           [jobId],
         );
+
+        // Fetch mapped agents so UI knows who to notify
+        const mappedRes = await agnoPool.query(
+          `SELECT agent_userid FROM campaign_agent_mapping WHERE campaign_id=$1`,
+          [req.params.id]
+        );
+        const mapped_agents = mappedRes.rows.map((r: any) => r.agent_userid);
+
+        // Broadcast to AgnoConV2 Angular clients
+        io.emit('campaign_update', {
+          campaign_id: req.params.id,
+          event: 'stopped',
+          message: `Campaign ${campRows[0].name} has been stopped.`,
+          timestamp: new Date().toISOString(),
+          mapped_agents
+        });
 
         return {
           campaign_id: req.params.id,

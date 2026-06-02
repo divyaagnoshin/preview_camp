@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { startScheduler } from './services/scheduler';
 import { startCleanupScheduler } from './services/Ccscleanupscheduler';
+import { startCloudImportScheduler } from './services/cloudImportScheduler';
 import pool from './db/pool';
 
 dotenv.config();
@@ -12,6 +13,7 @@ dotenv.config();
 console.log('[injector] booting backend-injector…');
 startScheduler();
 startCleanupScheduler();
+startCloudImportScheduler();
 
 // Graceful shutdown so an in-flight transaction has a chance to commit or
 // roll back cleanly before the connection pool is torn down. Without this

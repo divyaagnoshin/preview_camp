@@ -31,6 +31,7 @@ import ReportSettingsPage from './pages/Reports/report-settings';
 import SystemConfigurationPage from './pages/SystemConfiguration';
 import OrganizationsPage from './pages/Organizations';
 import OrganizationDetailPage from './pages/OrganizationDetail';
+import TaskScheduler from './pages/TaskScheduler';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -48,7 +49,7 @@ function PrivateRoute({
   if (roles && user && !roles.includes(user.role)) {
     const fallback =
       user.role === 'superadmin' ? '/organizations'
-      : '/dashboard';
+        : '/dashboard';
     return <Navigate to={fallback} replace />;
   }
   return <>{children}</>;
@@ -124,6 +125,16 @@ function AppRoutes() {
           <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
             <Layout>
               <ContactListsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/task-scheduler'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <TaskScheduler />
             </Layout>
           </PrivateRoute>
         }
