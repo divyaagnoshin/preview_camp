@@ -69,9 +69,9 @@ function FilterDropdown({
 
   const colorMap: Record<string, { active: string; dot: string }> = {
     indigo: { active: 'text-indigo-700', dot: '#6366F1' },
-    amber:  { active: 'text-amber-700',  dot: '#D97706' },
-    green:  { active: 'text-green-700',  dot: '#10B981' },
-    red:    { active: 'text-red-700',    dot: '#EF4444' },
+    amber: { active: 'text-amber-700', dot: '#D97706' },
+    green: { active: 'text-green-700', dot: '#10B981' },
+    red: { active: 'text-red-700', dot: '#EF4444' },
   };
   const cm = colorMap[color];
 
@@ -211,8 +211,8 @@ function SearchableDropdown({
                   style={value === opt.value
                     ? { background: 'linear-gradient(135deg, #FFF0E5, #FFE4D0)', color: '#F4521E', fontWeight: 600 }
                     : opt.value === ''
-                    ? { color: '#9A6A50' }
-                    : { color: '#1A0F00' }
+                      ? { color: '#9A6A50' }
+                      : { color: '#1A0F00' }
                   }
                   onMouseEnter={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = '#FFF8F4'; }}
                   onMouseLeave={e => { if (value !== opt.value) (e.currentTarget as HTMLElement).style.background = ''; }}
@@ -673,12 +673,19 @@ export default function CampaignsPage() {
                         <Play className='w-4 h-4' />
                       </button>
                     )}
-                    {r.status !== 'active' ? (
-                      <button onClick={() => openEdit(r)} title='Edit campaign'
-                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'>
-                        <Pencil className='w-3 h-3' />
-                      </button>
-                    ) : <span className='inline-block w-[58px] h-[26px]' />}
+                    <div className="w-[32px] flex justify-center">
+                      {r.status !== 'active' && r.status !== 'completed' && r.schedule_type !== 'finite' ? (
+                        <button
+                          onClick={() => openEdit(r)}
+                          title="Edit campaign"
+                          className="inline-flex items-center justify-center p-1.5 rounded-md text-indigo-600 bg-indigo-50 hover:bg-indigo-100"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <div className="w-[24px] h-[24px]" />
+                      )}
+                    </div>
                     {r.status !== 'active' ? (
                       <button onClick={() => setDeleteTarget(r)} title='Delete campaign'
                         className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'>
@@ -771,11 +778,10 @@ export default function CampaignsPage() {
                           value={form.max_attempts}
                           onChange={(e) => set('max_attempts', e.target.value)}
                           placeholder='1 – 20'
-                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${
-                            !maxAttemptsValid
-                              ? 'border-red-300 focus:ring-red-200 focus:border-red-400'
-                              : 'border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
-                          }`}
+                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${!maxAttemptsValid
+                            ? 'border-red-300 focus:ring-red-200 focus:border-red-400'
+                            : 'border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
+                            }`}
                         />
                         {!maxAttemptsValid ? (
                           <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
@@ -955,8 +961,8 @@ export default function CampaignsPage() {
                   className='flex-1'
                   disabled={
                     step === 1 ? step1Disabled :
-                    step === 2 ? (!editingId && !form.contact_list_ids.length) :
-                    false
+                      step === 2 ? (!editingId && !form.contact_list_ids.length) :
+                        false
                   }
                   onClick={() => setStep(step + 1)}
                 >
