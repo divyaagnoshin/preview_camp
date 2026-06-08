@@ -218,6 +218,12 @@ router.put(
         [campaignId],
       );
 
+      console.log(
+        'Campaign Mapping Save',
+        campaignId,
+        agent_userids
+      );
+
       for (const userId of agent_userids) {
         await agnoPool.query(
           `INSERT INTO campaign_agent_mapping
@@ -332,7 +338,7 @@ router.put(
         [req.params.agentId],
       );
       const oldIds = new Set(oldRows.map((r: any) => String(r.campaign_id).trim()));
-      
+
       // 2. Get New Mapping
       const newIds = new Set(campaign_ids.map((id: any) => String(id).trim()));
 
@@ -360,7 +366,7 @@ router.put(
           const { rows: nameRows } = await pool.query('SELECT id, name FROM campaigns');
           const nameMap: Record<string, string> = {};
           nameRows.forEach((r: any) => { nameMap[String(r.id)] = String(r.name); });
-          
+
           const addedNames = addedIds.map(id => nameMap[id] || id);
           const removedNames = removedIds.map(id => nameMap[id] || id);
 

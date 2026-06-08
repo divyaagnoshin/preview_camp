@@ -1,10 +1,14 @@
 ﻿import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { getCampaigns, getJobs } from '../api/client';
+import { getCampaigns, getJobs, listAgentSessions } from '../api/client';
 import { Card, CardHeader, StatusBadge, Progress, PageLoader, Table } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
 import { Megaphone, Briefcase, TrendingUp, Users, ArrowRight, Activity } from 'lucide-react';
+
+import ActiveCampaignsReport from './Reports/active-campaigns';
+import StaffedAgentsReport from './Reports/staffed-agents';
+import { PALETTE } from './Reports/report-utils';
 
 function KPICard({ label, value, sub, icon: Icon, gradient, tint, border }: { label: string; value: string | number; sub?: string; icon: typeof Megaphone; gradient: string; tint: string; border: string }) {
   return (
@@ -44,7 +48,7 @@ export default function DashboardPage() {
             Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'},{' '}
             <span style={{ background: 'linear-gradient(135deg, #F4521E, #F5A623)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               {user?.firstName}
-            </span> 
+            </span>
           </h1>
           <p className='text-sm text-[#7A5C44] mt-1'>Here's what's happening with your campaigns today</p>
         </div>
@@ -75,6 +79,20 @@ export default function DashboardPage() {
           sub={user?.orgName || ''} />
       </div>
 
+      {/* Active Campaigns + Staffed Agents mini tables */}
+      <div className='grid grid-cols-1 lg:grid-cols-2 gap-4 anim-d2'>
+        <ActiveCampaignsReport
+          isMini
+          onExpand={() => navigate('/reports/active-campaigns')}
+          pal={PALETTE[0]}
+        />
+        <StaffedAgentsReport
+          isMini
+          onExpand={() => navigate('/reports/staffed-agents')}
+          pal={PALETTE[1]}
+        />
+      </div>
+
       {/* Active jobs */}
       <Card className='anim-d2'>
         <CardHeader title='Active Jobs' subtitle='Currently running campaign jobs'
@@ -87,15 +105,17 @@ export default function DashboardPage() {
           cols={[
             { header: 'Campaign', render: (r: any) => <span className='font-semibold text-[#1A0F00]'>{r.campaign_name}</span> },
             { header: 'Run #', key: 'job_run_number', width: '70px' },
-            { header: 'Progress', render: (r: any) => {
-  const pct = parseFloat(r.prcnt_complete) || 0;
-  return (
-    <div className='flex items-center gap-2 min-w-[120px]'>
-      <Progress value={pct} />
-      <span className='text-xs text-[#7A5C44] w-9 text-right'>{pct.toFixed(0)}%</span>
-    </div>
-  );
-}},
+            {
+              header: 'Progress', render: (r: any) => {
+                const pct = parseFloat(r.prcnt_complete) || 0;
+                return (
+                  <div className='flex items-center gap-2 min-w-[120px]'>
+                    <Progress value={pct} />
+                    <span className='text-xs text-[#7A5C44] w-9 text-right'>{pct.toFixed(0)}%</span>
+                  </div>
+                );
+              }
+            },
             { header: 'Contacts', render: (r: any) => <span className='text-[#5C4030]'>{r.processed_contacts} / {r.total_contacts}</span> },
             { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
           ]}
@@ -121,7 +141,7 @@ export default function DashboardPage() {
             { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
             {
               header: 'Agent Priority', render: (r: any) => r.agent_priority_enabled
-                ? <span className='text-xs font-semibold text-[#F4521E]'>âœ“ Enabled</span>
+                ? <span className='text-xs font-semibold text-[#F4521E]'>✓ Enabled</span>
                 : <span className='text-xs text-[#C4A080]'>Off</span>
             },
           ]}

@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import pool, { withTransaction } from '../db/pool';
+import agnoPool from '../db/agnoPool';
 import { authenticate, requireRole } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
@@ -1555,15 +1556,70 @@ reportsRouter.get(
        FROM contact_interactions ci ${where}`,
         params,
       );
-      const { rows: agentInfo } = await pool.query(
-        'SELECT id, first_name, last_name, email FROM users WHERE id=$1',
-        [req.params.id],
+
+      const { rows: agentInfo } = await agnoPool.query(
+        `SELECT 
+           userid AS id,
+           COALESCE(NULLIF(TRIM(first_name || ' ' || COALESCE(last_name, '')), ''), userid) AS agent_name,
+           email_id AS email
+         FROM user_details
+         WHERE userid = $1`,
+        [req.params.id]
       );
-      res.json({ ...agentInfo[0], ...rows[0] });
+
+      res.json({ ...(agentInfo[0] || { id: req.params.id, agent_name: req.params.id }), ...rows[0] });
     } catch (err) {
       next(err);
     }
   },
+);
+
+reportsRouter.get(
+  '/agent-login-history',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT 
+          ash.session_id AS id,
+          ash.session_id,
+          ash.agent_id,
+          ash.login_at,
+          ash.logout_at,
+          ash.status
+         
+         FROM agent_session_history ash
+         ORDER BY ash.login_at DESC`
+      );
+
+      const { rows: agnoUsers } = await agnoPool.query(
+        `SELECT userid, first_name, last_name, email_id,  status FROM user_details`
+      );
+      const userMap = new Map();
+      for (const u of agnoUsers) {
+        userMap.set(u.userid.toString(), {
+          agent_name: u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.userid.toString(),
+          email: u.email_id,
+
+          is_active: u.status === 'Active'
+        });
+      }
+
+      const merged = rows.map((r: any) => {
+        const agInfo = userMap.get(r.agent_id) || {};
+        return {
+          ...r,
+          agent_name: agInfo.agent_name || r.agent_id,
+          email: agInfo.email,
+
+          is_active: agInfo.is_active
+        };
+      });
+
+      res.json({ data: merged });
+    } catch (err) {
+      next(err);
+    }
+  }
 );
 
 reportsRouter.get(
@@ -1617,12 +1673,11 @@ reportsRouter.get(
       }
       const { rows } = await pool.query(
         `SELECT ci.*, ct.phone_number, ct.first_name, ct.last_name,
-              u.first_name||' '||u.last_name AS agent_name,
-              dc.code AS disposition_code_label
+              dc.code AS disposition_code_label,
+              c.name AS campaign_name
        FROM contact_interactions ci
        JOIN contacts ct ON ct.id=ci.contact_id
        JOIN campaigns c ON c.id=(SELECT campaign_id FROM campaign_jobs WHERE id=ci.job_id)
-       JOIN users u ON u.id=ci.agent_id
        LEFT JOIN disposition_codes dc ON dc.id=ci.disposition_code_id
        ${where}
        ORDER BY ci.given_at DESC
@@ -1636,8 +1691,32 @@ reportsRouter.get(
          ${where}`,
         params,
       );
+      const { rows: agnoUsers } = await agnoPool.query(
+        `SELECT userid, first_name, last_name, email_id, role_id, status FROM user_details`
+      );
+      const userMap = new Map();
+      for (const u of agnoUsers) {
+        userMap.set(u.userid.toString(), {
+          agent_name: u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.userid.toString(),
+          email: u.email_id,
+          role: u.role_id,
+          is_active: u.status === 'Active'
+        });
+      }
+
+      const merged = rows.map((r: any) => {
+        const agInfo = userMap.get(r.agent_id) || {};
+        return {
+          ...r,
+          agent_name: agInfo.agent_name || r.agent_id,
+          email: agInfo.email,
+          role: agInfo.role,
+          is_active: agInfo.is_active
+        };
+      });
+
       res.json({
-        data: rows,
+        data: merged,
         total: total.rows[0].count,
         page,
         per_page: perPage,
@@ -1789,15 +1868,33 @@ sessionsRouter.get(
               c.last_name       AS current_last_name,
               camp.name         AS current_campaign_name
        FROM agent_sessions s
-       JOIN users u ON u.id = s.agent_id
        LEFT JOIN contacts c ON c.id = s.current_contact_id
        LEFT JOIN campaign_jobs cj ON cj.id = s.current_job_id
        LEFT JOIN campaigns camp ON camp.id = cj.campaign_id
-       WHERE u.org_id = $1
-       ORDER BY s.last_heartbeat_at DESC`,
-        [req.user!.orgId],
+       ORDER BY s.last_heartbeat_at DESC`
       );
-      res.json({ data: rows });
+
+      const { rows: agnoUsers } = await agnoPool.query(
+        `SELECT userid, first_name, last_name, email_id FROM user_details`
+      );
+      const userMap = new Map();
+      for (const u of agnoUsers) {
+        userMap.set(u.userid.toString(), {
+          agent_name: u.first_name ? `${u.first_name} ${u.last_name || ''}`.trim() : u.userid.toString(),
+          email: u.email_id
+        });
+      }
+
+      const merged = rows.map((r: any) => {
+        const agInfo = userMap.get(r.agent_id) || {};
+        return {
+          ...r,
+          agent_name: agInfo.agent_name || r.agent_id,
+          email: agInfo.email
+        };
+      });
+
+      res.json({ data: merged });
     } catch (err) {
       next(err);
     }

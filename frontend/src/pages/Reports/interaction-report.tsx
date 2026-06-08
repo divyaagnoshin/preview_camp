@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getInteractions } from '../../api/client';
 import { Download, Search } from 'lucide-react';
-import { ColDef, ColPicker, TableHeader, TableFooter, StatusPill, CellText, exportCSV, loadSavedCols, saveCols } from './report-utils';
+import { ColDef, ColPicker, TableHeader, TableFooter, StatusPill, CellText, exportCSV, loadSavedCols, saveCols, MiniTable, FilterBar } from './report-utils';
 
 const ACCENT = '#f59e0b';
 
@@ -11,64 +11,83 @@ function fmtNum(v: any) { return v == null ? '—' : Number(v).toLocaleString();
 function fmtDate(v: any) { return v ? new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'; }
 
 const DEFAULT_COLS: ColDef[] = [
-  { key: 'contact_name',    label: 'Contact',          visible: true,  get: r => `${r.first_name || ''} ${r.last_name || ''}`.trim() || '—' },
-  { key: 'phone_number',    label: 'Phone',            visible: true,  get: r => fmt(r.phone_number) },
-  { key: 'agent_name',      label: 'Agent',            visible: true,  get: r => fmt(r.agent_name) },
-  { key: 'campaign_name',   label: 'Campaign',         visible: true,  get: r => fmt(r.campaign_name) },
-  { key: 'preview_action',  label: 'Preview Action',   visible: true,  get: r => fmt(r.preview_action) },
-  { key: 'call_status',     label: 'Call Status',      visible: true,  get: r => fmt(r.call_status) },
-  { key: 'dial_mode',       label: 'Dial Mode',        visible: true,  get: r => fmt(r.dial_mode) },
-  { key: 'attempt_number',  label: 'Attempt #',        visible: true,  get: r => fmtNum(r.attempt_number) },
-  { key: 'talk_time_sec',   label: 'Talk Time (s)',    visible: true,  get: r => fmtNum(r.talk_time_sec) },
-  { key: 'preview_duration',label: 'Preview (s)',      visible: true,  get: r => fmtNum(r.preview_duration_sec) },
-  { key: 'wrapup_duration', label: 'Wrapup (s)',       visible: true,  get: r => fmtNum(r.wrapup_duration_sec) },
-  { key: 'total_handling',  label: 'Total Handle (s)', visible: true,  get: r => fmtNum(r.total_handling_sec) },
-  { key: 'disposition_code',label: 'Disposition',      visible: true,  get: r => fmt(r.disposition_code_label) },
-  { key: 'given_at',        label: 'Given At',         visible: true,  get: r => fmtDate(r.given_at) },
-  { key: 'dialed_at',       label: 'Dialed At',        visible: false, get: r => fmtDate(r.dialed_at) },
-  { key: 'answered_at',     label: 'Answered At',      visible: false, get: r => fmtDate(r.answered_at) },
-  { key: 'disconnected_at', label: 'Disconnected At',  visible: false, get: r => fmtDate(r.disconnected_at) },
-  { key: 'accepted_at',     label: 'Accepted At',      visible: false, get: r => fmtDate(r.accepted_at) },
-  { key: 'rejected_at',     label: 'Rejected At',      visible: false, get: r => fmtDate(r.rejected_at) },
-  { key: 'rejection_reason',label: 'Rejection Reason', visible: false, get: r => fmt(r.rejection_reason) },
-  { key: 'wrapup_at',       label: 'Wrapup At',        visible: false, get: r => fmtDate(r.wrapup_at) },
-  { key: 'channel_type',    label: 'Channel',          visible: false, get: r => fmt(r.channel_type) },
-  { key: 'recording_url',   label: 'Recording URL',    visible: false, get: r => fmt(r.recording_url) },
-  { key: 'reschedule_at',   label: 'Reschedule At',    visible: false, get: r => fmtDate(r.reschedule_at) },
-  { key: 'disposition_notes',label:'Notes',            visible: false, get: r => fmt(r.disposition_notes) },
+  { key: 'phone_number', label: 'Phone', visible: true, get: r => fmt(r.phone_number) },
+  { key: 'given_at', label: 'Given At', visible: true, get: r => fmtDate(r.given_at) },
+  { key: 'agent_name', label: 'Agent', visible: true, get: r => fmt(r.agent_name) },
+  { key: 'campaign_name', label: 'Campaign', visible: true, get: r => fmt(r.campaign_name) },
+  { key: 'preview_action', label: 'Preview Action', visible: true, get: r => fmt(r.preview_action) },
+  { key: 'call_status', label: 'Call Status', visible: true, get: r => fmt(r.call_status) },
+  { key: 'dial_mode', label: 'Dial Mode', visible: true, get: r => fmt(r.dial_mode) },
+  { key: 'attempt_number', label: 'Attempt #', visible: true, get: r => fmtNum(r.attempt_number) },
+  { key: 'talk_time_sec', label: 'Talk Time (s)', visible: true, get: r => fmtNum(r.talk_time_sec) },
+  { key: 'preview_duration', label: 'Preview (s)', visible: true, get: r => fmtNum(r.preview_duration_sec) },
+  { key: 'wrapup_duration', label: 'Wrapup (s)', visible: true, get: r => fmtNum(r.wrapup_duration_sec) },
+  { key: 'total_handling', label: 'Total Handle (s)', visible: true, get: r => fmtNum(r.total_handling_sec) },
+  { key: 'disposition_code', label: 'Disposition', visible: true, get: r => fmt(r.disposition_code_label) },
+
+  { key: 'dialed_at', label: 'Dialed At', visible: false, get: r => fmtDate(r.dialed_at) },
+  { key: 'answered_at', label: 'Answered At', visible: false, get: r => fmtDate(r.answered_at) },
+  { key: 'disconnected_at', label: 'Disconnected At', visible: false, get: r => fmtDate(r.disconnected_at) },
+  { key: 'accepted_at', label: 'Accepted At', visible: false, get: r => fmtDate(r.accepted_at) },
+  { key: 'rejected_at', label: 'Rejected At', visible: false, get: r => fmtDate(r.rejected_at) },
+  { key: 'rejection_reason', label: 'Rejection Reason', visible: false, get: r => fmt(r.rejection_reason) },
+  { key: 'wrapup_at', label: 'Wrapup At', visible: false, get: r => fmtDate(r.wrapup_at) },
+  { key: 'channel_type', label: 'Channel', visible: false, get: r => fmt(r.channel_type) },
+  { key: 'recording_url', label: 'Recording URL', visible: false, get: r => fmt(r.recording_url) },
+  { key: 'reschedule_at', label: 'Reschedule At', visible: false, get: r => fmtDate(r.reschedule_at) },
+  { key: 'disposition_notes', label: 'Notes', visible: false, get: r => fmt(r.disposition_notes) },
 ];
 
 const PILL_COLS = new Set(['call_status', 'preview_action']);
 
-export default function InteractionReport() {
+export default function InteractionReport({ isMini, onExpand, miniTitle, pal }: { isMini?: boolean; onExpand?: () => void; miniTitle?: string; pal?: any } = {}) {
   const [cols, setCols] = useState<ColDef[]>(() => loadSavedCols('interaction-report', DEFAULT_COLS));
   const [sortKey, setSortKey] = useState('given_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [globalQ, setGlobalQ] = useState('');
-  const [colFilters, setColFilters] = useState<Record<string, string>>({});
+  const [colFilters, setColFilters] = useState<Record<string, string[]>>({});
   const [page, setPage] = useState(1);
   const PER = 100;
 
+  // Refresh columns when report settings are saved
+  useEffect(() => {
+    function onStorage() { setCols(loadSavedCols('interaction-report', DEFAULT_COLS)); }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const { data: intData, isLoading } = useQuery({ queryKey: ['interactions-all'], queryFn: () => getInteractions({ per_page: 500 }) });
 
+  const allRows = useMemo(() => (intData?.data || []) as any[], [intData]);
+
   const rows = useMemo(() => {
-    let result: any[] = intData?.data || [];
+    let result: any[] = allRows;
     const q = globalQ.trim().toLowerCase();
     if (q) result = result.filter(r => cols.filter(c => c.visible).some(c => c.get(r).toLowerCase().includes(q)));
-    Object.entries(colFilters).forEach(([key, val]) => {
-      if (!val) return;
+    Object.entries(colFilters).forEach(([key, vals]) => {
+      if (!vals || vals.length === 0) return;
       const col = cols.find(c => c.key === key);
-      if (col) result = result.filter(r => col.get(r).toLowerCase().includes(val.toLowerCase()));
+      if (col) result = result.filter(r => vals.some(v => col.get(r).toLowerCase() === v.toLowerCase()));
     });
     return [...result].sort((a, b) => {
       const col = cols.find(c => c.key === sortKey);
       const av = col ? col.get(a) : '', bv = col ? col.get(b) : '';
       return sortDir === 'desc' ? bv.localeCompare(av, undefined, { numeric: true }) : av.localeCompare(bv, undefined, { numeric: true });
     });
-  }, [intData, globalQ, colFilters, sortKey, sortDir, cols]);
+  }, [allRows, globalQ, colFilters, sortKey, sortDir, cols]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PER));
   const paginated = rows.slice((page - 1) * PER, page * PER);
+
+  if (isMini) {
+    const miniCols = ['Contact Number', 'Agent', 'Action', 'Call Status'];
+    const activeCols = DEFAULT_COLS.filter(c => miniCols.includes(c.label));
+    const miniRows = rows.slice(0, 5).map(r => ({
+      cells: activeCols.map(c => c.get(r))
+    }));
+    return <MiniTable title={miniTitle || 'Interaction Report'} cols={activeCols.map(c => c.label)} rows={miniRows} pal={pal} onExpand={onExpand!} emptyMsg="No interactions found" />;
+  }
+
   const visCols = cols.filter(c => c.visible);
 
   function toggleSort(key: string) {
@@ -77,9 +96,9 @@ export default function InteractionReport() {
   }
 
   return (
-    <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 4px 32px rgba(245,158,11,0.15)', border: '1.5px solid #fde68a' }}>
-      <div style={{ background: 'linear-gradient(135deg,#78350f 0%,#d97706 50%,#fbbf24 100%)', padding: '18px 22px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+    <div style={{ borderRadius: 16, boxShadow: '0 4px 32px rgba(217,119,6,0.15)', border: '1.5px solid #fde68a', overflow: 'visible' }}>
+      <div style={{ position: 'relative', zIndex: 99, background: 'linear-gradient(135deg,#78350f 0%,#d97706 50%,#fbbf24 100%)', padding: '18px 22px', borderRadius: '14px 14px 0 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <p style={{ fontSize: 15, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-0.01em' }}>Interaction Report</p>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', margin: '2px 0 0' }}>{rows.length} interaction{rows.length !== 1 ? 's' : ''}</p>
@@ -97,35 +116,53 @@ export default function InteractionReport() {
             </button>
           </div>
         </div>
-        <TableHeader visCols={visCols} sortKey={sortKey} sortDir={sortDir}
-          colFilters={colFilters} onSort={toggleSort}
-          onFilter={(k, v) => setColFilters(f => ({ ...f, [k]: v }))} accentColor={ACCENT} />
       </div>
 
-      <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto', background: '#fff' }}>
-        {isLoading ? (
-          <div style={{ padding: '56px 0', textAlign: 'center', fontSize: 14, color: '#94a3b8' }}>Loading…</div>
-        ) : paginated.length === 0 ? (
-          <div style={{ padding: '56px 0', textAlign: 'center', fontSize: 14, color: '#94a3b8' }}>No interactions found</div>
-        ) : paginated.map((r, idx) => (
-          <div key={r.interaction_id || idx} style={{
-            display: 'grid', gridTemplateColumns: `repeat(${visCols.length}, minmax(100px, 1fr))`,
-            gap: 4, padding: '11px 22px', borderBottom: '1px solid #f1f5f9',
-            background: idx % 2 === 0 ? '#fff' : '#fffbeb',
-            alignItems: 'center', transition: 'background 0.1s',
-          }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#fef3c7'}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = idx % 2 === 0 ? '#fff' : '#fffbeb'}
-          >
-            {visCols.map(c => (
-              <div key={c.key} style={{ minWidth: 0 }}>
-                {PILL_COLS.has(c.key) && c.get(r) !== '—'
-                  ? <StatusPill status={c.get(r)} />
-                  : <CellText>{c.get(r)}</CellText>}
+      {/* ── Filter Bar moved inside scroll container ── */}
+
+      {/* ── Scrollable Grid Wrapper ── */}
+      <div style={{ position: 'relative', zIndex: 1, overflowX: 'auto', background: '#fff', width: '100%' }}>
+        <div style={{ minWidth: visCols.length * 200 }}>
+          <FilterBar
+            cols={visCols}
+            rows={allRows}
+            colFilters={colFilters}
+            onFilter={(k, v) => { setColFilters(f => ({ ...f, [k]: v })); setPage(1); }}
+            onClearAll={() => { setColFilters({}); setPage(1); }}
+            accentColor={ACCENT}
+          />
+          {/* Table Header inside horizontal scroll */}
+          <div style={{ position: 'relative', zIndex: 10, background: 'linear-gradient(135deg,#78350f 0%,#d97706 50%,#fbbf24 100%)', padding: '10px 22px 18px' }}>
+            <TableHeader visCols={visCols} sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} accentColor={ACCENT} />
+          </div>
+
+          {/* Table Body inside horizontal scroll */}
+          <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'hidden' }}>
+            {isLoading ? (
+              <div style={{ padding: '56px 0', textAlign: 'center', fontSize: 14, color: '#94a3b8' }}>Loading…</div>
+            ) : paginated.length === 0 ? (
+              <div style={{ padding: '56px 0', textAlign: 'center', fontSize: 14, color: '#94a3b8' }}>No interactions found</div>
+            ) : paginated.map((r, idx) => (
+              <div key={r.interaction_id || idx} style={{
+                display: 'grid', gridTemplateColumns: `repeat(${visCols.length}, minmax(180px, 1fr))`,
+                gap: 20, padding: '11px 22px', borderBottom: '1px solid #f1f5f9',
+                background: idx % 2 === 0 ? '#fff' : '#fffbeb',
+                alignItems: 'center', transition: 'background 0.1s',
+              }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#fef3c7'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = idx % 2 === 0 ? '#fff' : '#fffbeb'}
+              >
+                {visCols.map(c => (
+                  <div key={c.key} style={{ minWidth: 0, overflow: 'hidden', maxWidth: '100%' }}>
+                    {PILL_COLS.has(c.key) && c.get(r) !== '—'
+                      ? <StatusPill status={c.get(r)} />
+                      : <CellText>{c.get(r)}</CellText>}
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
+        </div>
       </div>
 
       <TableFooter total={rows.length} sortLabel={cols.find(c => c.key === sortKey)?.label || sortKey}

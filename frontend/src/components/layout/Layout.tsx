@@ -27,6 +27,7 @@ import {
   Map,
   UsersRound,
   Cloud,
+  ClipboardList,
 } from 'lucide-react';
 
 type NavItem = {
@@ -45,10 +46,30 @@ const navItems: NavItem[] = [
     roles: ['superadmin'],
   },
   {
-    to: '/dashboard',
+    to: '/dashboard-group',
     icon: LayoutDashboard,
     label: 'Dashboard',
     roles: ['admin', 'supervisor', 'superadmin'],
+    children: [
+      {
+        to: '/dashboard',
+        icon: LayoutDashboard,
+        label: 'Overview',
+        roles: ['admin', 'supervisor', 'superadmin'],
+      },
+      {
+        to: '/reports/active-campaigns',
+        icon: BarChart2,
+        label: 'Active Campaigns',
+        roles: ['admin', 'supervisor', 'superadmin'],
+      },
+      {
+        to: '/reports/staffed-agents',
+        icon: Users,
+        label: 'Staffed Agents (Live)',
+        roles: ['admin', 'supervisor', 'superadmin'],
+      },
+    ],
   },
   {
     // "Campaigns" is a button-only parent — no page at /campaigns itself
@@ -57,44 +78,19 @@ const navItems: NavItem[] = [
     label: 'Campaign Management',
     roles: ['admin', 'supervisor', 'superadmin'],
     children: [
-      {
-        to: '/campaigns',
-        icon: Megaphone,
-        label: 'Campaigns',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/schedule-templates',
-        icon: Clock,
-        label: 'Schedules',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/holiday-calendars',
-        icon: CalendarOff,
-        label: 'Holidays',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/dnc',
-        icon: ShieldOff,
-        label: 'DNC',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/dispositions',
-        icon: Settings2,
-        label: 'Dispositions',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
+      { to: '/campaigns', icon: Megaphone, label: 'Campaigns', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/schedule-templates', icon: Clock, label: 'Schedule Templates', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/holiday-calendars', icon: CalendarOff, label: 'Holidays', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/dnc', icon: ShieldOff, label: 'DNC', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/dispositions', icon: Settings2, label: 'Dispositions', roles: ['admin', 'supervisor', 'superadmin'] },
     ],
   },
-  // {
-  //   to: '/jobs',
-  //   icon: Briefcase,
-  //   label: 'Jobs',
-  //   roles: ['admin', 'supervisor', 'superadmin'],
-  // },
+  {
+    to: '/jobs',
+    icon: Briefcase,
+    label: 'Jobs',
+    roles: ['admin', 'supervisor', 'superadmin'],
+  },
   {
     to: '/contact-lists-group',
     icon: List,
@@ -121,80 +117,53 @@ const navItems: NavItem[] = [
     label: 'User Management',
     roles: ['admin', 'supervisor', 'superadmin'],
     children: [
-      {
-        to: '/agents',
-        icon: UserCog,
-        label: 'Admin',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/users',
-        icon: UsersRound,
-        label: 'Users',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/campaign-mapping',
-        icon: Map,
-        label: 'Campaign Mapping',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/supervisor-teams',
-        icon: UserCheck,
-        label: 'Supervisor Teams',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
+      { to: '/agents', icon: UserCog, label: 'Admin', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/users', icon: UsersRound, label: 'Users', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/campaign-mapping', icon: Map, label: 'Campaign Mapping', roles: ['admin', 'supervisor', 'superadmin'] },
+      { to: '/supervisor-teams', icon: UserCheck, label: 'Supervisor Teams', roles: ['admin', 'supervisor', 'superadmin'] },
     ],
   },
   {
     to: '/reports-group',
-
     icon: BarChart2,
-
     label: 'Reports',
-
     roles: ['admin', 'supervisor', 'superadmin'],
-
     children: [
       {
-        to: '/reports/active-campaigns',
-        icon: BarChart2,
-        label: 'Active Campaigns',
+        to: '/reports-dashboard-sub',   // sentinel — no real page
+        icon: LayoutDashboard,
+        label: 'Dashboard',
         roles: ['admin', 'supervisor', 'superadmin'],
+        children: [
+          {
+            to: '/reports',
+            icon: LayoutDashboard,
+            label: 'Overview',
+            roles: ['admin', 'supervisor', 'superadmin'],
+          },
+          {
+            to: '/reports/active-campaigns',
+            icon: BarChart2,
+            label: 'Active Campaigns',
+            roles: ['admin', 'supervisor', 'superadmin'],
+          },
+          {
+            to: '/reports/staffed-agents',
+            icon: Users,
+            label: 'Staffed Agents (Live)',
+            roles: ['admin', 'supervisor', 'superadmin'],
+          },
+        ],
       },
       {
-        to: '/reports/staffed-agents',
-        icon: Users,
-        label: 'Staffed Agents (Live)',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/reports/disposition-report',
-        icon: Settings2,
-        label: 'Disposition Report',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/reports/interaction-report',
-        icon: List,
-        label: 'Interaction Report',
-        roles: ['admin', 'supervisor', 'superadmin'],
-      },
-      {
-        to: '/reports/agent-login-report',
-        icon: UserCheck,
-        label: 'Agent Login Report',
+        to: '/reports/static',
+        icon: ClipboardList,
+        label: 'Static Reports',
         roles: ['admin', 'supervisor', 'superadmin'],
       },
     ],
   },
-  {
-    to: '/system-configuration',
-    icon: Cog,
-    label: 'System Configuration',
-    roles: ['admin', 'supervisor', 'superadmin'],
-  },
+  { to: '/system-configuration', icon: Cog, label: 'System Configuration', roles: ['admin', 'supervisor', 'superadmin'] },
 ];
 
 // Sentinels that are group-only (no real page — clicking just toggles accordion)
@@ -202,7 +171,7 @@ const GROUP_ONLY = new Set([
   '/users-group',
   '/campaigns-group',
   '/reports-group',
-  ,
+  '/dashboard-group',
   '/contact-lists-group',
 ]);
 
@@ -210,6 +179,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { user, logout, isSuperadmin, orgContext } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [openSubGroups, setOpenSubGroups] = useState<Record<string, boolean>>({});
 
   const [expanded, setExpanded] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -281,16 +251,14 @@ export default function Layout({ children }: { children: ReactNode }) {
                   : 'text-[#C4956A] hover:bg-white/10 hover:text-white',
               )}
             >
-              <n.icon className='w-5 h-5 flex-shrink-0' />
+              <n.icon className="w-5 h-5 flex-shrink-0" />
+
 
               {isExpanded && (
-                <div className='flex items-center justify-between flex-1 min-w-0'>
+                <div className="flex items-center justify-between flex-1 min-w-0">
                   <span
-                    className='text-[14px] font-medium truncate'
-                    style={{
-                      fontFamily: 'DM Sans, sans-serif',
-                      letterSpacing: '0.01em',
-                    }}
+                    className="text-[14px] font-medium truncate"
+                    style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}
                   >
                     {n.label}
                   </span>
@@ -298,7 +266,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   <ChevronDown
                     className={clsx(
                       'w-4 h-4 transition-transform duration-200 flex-shrink-0 ml-2',
-                      groupOpen ? 'rotate-0' : '-rotate-90',
+                      groupOpen ? 'rotate-0' : '-rotate-90'
                     )}
                   />
                 </div>
@@ -367,24 +335,98 @@ export default function Layout({ children }: { children: ReactNode }) {
 
               {hasChildren && isExpanded && groupOpen && (
                 <div className='mt-0.5 space-y-0.5'>
-                  {visibleChildren.map((c) => (
-                    <NavLink
-                      key={c.to}
-                      to={c.to}
-                      onClick={() => setMobileOpen(false)}
-                      className={({ isActive }) =>
-                        clsx(
-                          'flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
-                          isActive
-                            ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
-                            : 'text-[#906040] hover:text-[#F5C89A] hover:bg-white/6',
-                        )
-                      }
-                    >
-                      <c.icon className='w-3.5 h-3.5 flex-shrink-0' />
-                      {c.label}
-                    </NavLink>
-                  ))}
+                  {visibleChildren.map((c) => {
+                    // Check if this child itself has children (second level)
+                    const subChildren = (c.children || []).filter(sc =>
+                      sc.roles.includes(user?.role || '')
+                    );
+                    const hasSubChildren = subChildren.length > 0;
+                    const subChildActive = subChildren.some(sc => isPathActive(sc.to));
+                    const subGroupOpen = openSubGroups[c.to] ?? subChildActive;
+
+                    if (hasSubChildren) {
+                      // Render as a collapsible sub-group
+                      return (
+                        <div key={c.to}>
+                          <button
+                            type='button'
+                            onClick={() =>
+                              setOpenSubGroups((g) => ({ ...g, [c.to]: !subGroupOpen }))
+                            }
+                            className={clsx(
+                              'flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 w-full',
+                              subChildActive
+                                ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
+                                : 'text-[#906040] hover:text-[#F5C89A] hover:bg-white/6',
+                            )}
+                          >
+                            <c.icon className='w-3.5 h-3.5 flex-shrink-0' />
+                            <span className='flex-1 text-left'>{c.label}</span>
+                            <ChevronDown
+                              className={clsx(
+                                'w-3 h-3 transition-transform duration-200 flex-shrink-0',
+                                subGroupOpen ? 'rotate-0' : '-rotate-90'
+                              )}
+                            />
+                          </button>
+
+                          {subGroupOpen && (
+                            <div className='mt-0.5 space-y-0.5'>
+                              {subChildren.map((sc) => (
+                                <NavLink
+                                  key={sc.to}
+                                  to={sc.to}
+                                  end={sc.to === '/reports'}
+                                  onClick={() => setMobileOpen(false)}
+                                  className={({ isActive }) =>
+                                    clsx(
+                                      'flex items-center gap-2.5 pl-16 pr-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150',
+                                      isActive
+                                        ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
+                                        : 'text-[#906040] hover:text-[#F5C89A] hover:bg-white/6',
+                                    )
+                                  }
+                                >
+                                  <sc.icon className='w-3 h-3 flex-shrink-0' />
+                                  {sc.label}
+                                </NavLink>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    // Regular child (no sub-children)
+                    const showDivider = c.to === '/reports/static' && n.to === '/reports-group';
+                    return (
+                      <React.Fragment key={c.to}>
+                        {showDivider && (
+                          <div className='px-3 pt-3 pb-1'>
+                            <span className='text-[9px] font-bold uppercase tracking-[0.14em] text-[#5A3A22]'>
+                              Static
+                            </span>
+                          </div>
+                        )}
+                        <NavLink
+                          to={c.to}
+                          end={c.to === '/reports'}
+                          onClick={() => setMobileOpen(false)}
+                          className={({ isActive }) =>
+                            clsx(
+                              'flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150',
+                              isActive
+                                ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
+                                : 'text-[#906040] hover:text-[#F5C89A] hover:bg-white/6',
+                            )
+                          }
+                        >
+                          <c.icon className='w-3.5 h-3.5 flex-shrink-0' />
+                          {c.label}
+                        </NavLink>
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               )}
             </div>

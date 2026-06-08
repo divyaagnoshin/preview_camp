@@ -360,6 +360,10 @@ export default function CampaignsPage() {
   const [step, setStep] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [errors, setErrors] = useState({
+    start_date: '',
+    end_date: '',
+  });
   const [form, setForm] = useState({
     name: '',
     schedule_type: 'finite',
@@ -507,6 +511,32 @@ export default function CampaignsPage() {
     !form.name ||
     !maxAttemptsValid ||
     (form.schedule_type !== 'infinite' && form.max_attempts === '');
+
+  const validateDates = () => {
+    const newErrors = {
+      start_date: '',
+      end_date: '',
+    };
+
+    if (!form.start_date) {
+      newErrors.start_date = 'Start Date is required';
+    }
+
+    if (form.schedule_type !== 'infinite') {
+      if (!form.end_date) {
+        newErrors.end_date = 'End Date is required';
+      } else if (
+        form.start_date &&
+        new Date(form.end_date) < new Date(form.start_date)
+      ) {
+        newErrors.end_date = 'End Date cannot be before Start Date';
+      }
+    }
+
+    setErrors(newErrors);
+
+    return !newErrors.start_date && !newErrors.end_date;
+  };
 
   if (isLoading) return <PageLoader />;
 
@@ -848,9 +878,35 @@ export default function CampaignsPage() {
             {step === 3 && (
               <>
                 <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                  <Input label='Start Date' type='date' value={form.start_date} onChange={(e) => set('start_date', e.target.value)} />
+                  <div>
+                    <Input
+                      label='Start Date'
+                      type='date'
+                      value={form.start_date}
+                      onChange={(e) => set('start_date', e.target.value)}
+                    />
+                    {errors.start_date && (
+                      <p className='text-xs text-red-500 mt-1'>
+                        {errors.start_date}
+                      </p>
+                    )}
+                  </div>
                   {form.schedule_type !== 'infinite' && (
-                    <Input label='End Date' type='date' value={form.end_date} onChange={(e) => set('end_date', e.target.value)} />
+                    <div>
+                      <Input
+                        label='End Date'
+                        type='date'
+                        min={form.start_date}
+                        value={form.end_date}
+                        onChange={(e) => set('end_date', e.target.value)}
+                      />
+
+                      {errors.end_date && (
+                        <p className='text-xs text-red-500 mt-1'>
+                          {errors.end_date}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <SearchableDropdown

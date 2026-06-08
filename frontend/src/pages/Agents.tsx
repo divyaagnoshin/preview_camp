@@ -101,7 +101,7 @@ export default function AgentsPage() {
     <div className='p-6 space-y-5'>
       <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>Users</h1>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>Admins</h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {hasActiveFilters
               ? `${filtered.length} of ${agents.length} member(s)`
@@ -113,7 +113,7 @@ export default function AgentsPage() {
             icon={<Plus className='w-3.5 h-3.5' />}
             onClick={() => setCreateOpen(true)}
           >
-            New user
+            New Admin
           </Button>
         )}
       </div>
@@ -123,7 +123,7 @@ export default function AgentsPage() {
         <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search by name or email…' />
           <div className='flex items-center gap-2 flex-wrap'>
-            <FilterDropdown
+            {/* <FilterDropdown
               label='Role'
               value={filterRole}
               onChange={setFilterRole}
@@ -133,7 +133,7 @@ export default function AgentsPage() {
                 { value: 'supervisor', label: 'Supervisor' },
                 { value: 'agent', label: 'Agent' },
               ]}
-            />
+            /> */}
             <FilterDropdown
               label='Status'
               value={filterActive}
@@ -165,89 +165,89 @@ export default function AgentsPage() {
             description='Try adjusting or clearing the filters above.'
           />
         ) : (
-        <PagedTable
-          cols={[
-            {
-              header: 'User',
-              render: (r: Row) => {
-                const initials = `${r.first_name?.[0] || ''}${r.last_name?.[0] || ''}`;
-                const gradients = [
-                  'linear-gradient(135deg,#E8470A,#F59E0B)',
-                  'linear-gradient(135deg,#8B5CF6,#7C3AED)',
-                  'linear-gradient(135deg,#10B981,#059669)',
-                  'linear-gradient(135deg,#3B82F6,#1D4ED8)',
-                  'linear-gradient(135deg,#F59E0B,#D97706)',
-                  'linear-gradient(135deg,#06B6D4,#0891B2)',
-                ];
-                const grad = gradients[(r.first_name?.charCodeAt(0) || 0) % gradients.length];
-                const gmailLink = r.email ? `https://mail.google.com/mail/u/0/#search/${r.email}` : null;
-                return (
-                  <div className='flex items-center gap-3'>
-                    <div className='w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md flex-shrink-0' style={{ background: grad }}>
-                      {initials}
+          <PagedTable
+            cols={[
+              {
+                header: 'Name',
+                render: (r: Row) => {
+                  const initials = `${r.first_name?.[0] || ''}${r.last_name?.[0] || ''}`;
+                  const gradients = [
+                    'linear-gradient(135deg,#E8470A,#F59E0B)',
+                    'linear-gradient(135deg,#8B5CF6,#7C3AED)',
+                    'linear-gradient(135deg,#10B981,#059669)',
+                    'linear-gradient(135deg,#3B82F6,#1D4ED8)',
+                    'linear-gradient(135deg,#F59E0B,#D97706)',
+                    'linear-gradient(135deg,#06B6D4,#0891B2)',
+                  ];
+                  const grad = gradients[(r.first_name?.charCodeAt(0) || 0) % gradients.length];
+                  const gmailLink = r.email ? `https://mail.google.com/mail/u/0/#search/${r.email}` : null;
+                  return (
+                    <div className='flex items-center gap-3'>
+                      <div className='w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md flex-shrink-0' style={{ background: grad }}>
+                        {initials}
+                      </div>
+                      <div>
+                        <div className='font-semibold text-[#0F1117]'>{r.first_name} {r.last_name}</div>
+                        {r.email && gmailLink ? (
+                          <a href={gmailLink} target='_blank' rel='noopener noreferrer'
+                            className='text-xs text-[#E8470A] hover:underline flex items-center gap-1'
+                            onClick={e => e.stopPropagation()}>
+                            ✉ {r.email}
+                          </a>
+                        ) : (
+                          <div className='text-xs text-[#9CA3AF]'>{r.email}</div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <div className='font-semibold text-[#0F1117]'>{r.first_name} {r.last_name}</div>
-                      {r.email && gmailLink ? (
-                        <a href={gmailLink} target='_blank' rel='noopener noreferrer'
-                          className='text-xs text-[#E8470A] hover:underline flex items-center gap-1'
-                          onClick={e => e.stopPropagation()}>
-                          ✉ {r.email}
-                        </a>
-                      ) : (
-                        <div className='text-xs text-[#9CA3AF]'>{r.email}</div>
-                      )}
-                    </div>
-                  </div>
-                );
+                  );
+                },
               },
-            },
-            {
-              header: 'Role',
-              render: (r: Row) => (
-                <Badge
-                  label={r.role}
-                  color={
-                    r.role === 'admin'
-                      ? 'indigo'
-                      : r.role === 'supervisor'
-                        ? 'purple'
-                        : 'gray'
-                  }
-                />
-              ),
-            },
-            {
-              header: 'Active',
-              render: (r: Row) =>
-                r.is_active ? (
-                  <Badge label='active' color='green' />
-                ) : (
-                  <Badge label='disabled' color='red' />
+              {
+                header: 'Role',
+                render: (r: Row) => (
+                  <Badge
+                    label={r.role}
+                    color={
+                      r.role === 'admin'
+                        ? 'indigo'
+                        : r.role === 'supervisor'
+                          ? 'purple'
+                          : 'gray'
+                    }
+                  />
                 ),
-              width: '100px',
-            },
-            {
-              header: 'Session',
-              render: (r: Row) =>
-                r.session ? (
-                  <StatusBadge status={r.session.status} />
-                ) : (
-                  <span className='text-xs text-gray-400'>No session</span>
-                ),
-              width: '140px',
-            },
-            {
-              header: 'Current Contact',
-              render: (r: Row) => <CurrentContactCell session={r.session} />,
-            },
-            {
-              header: 'Last Heartbeat',
-              render: (r: Row) => <HeartbeatCell session={r.session} />,
-              width: '160px',
-            },
-            ...(isAdmin
-              ? [
+              },
+              {
+                header: 'Active',
+                render: (r: Row) =>
+                  r.is_active ? (
+                    <Badge label='active' color='green' />
+                  ) : (
+                    <Badge label='disabled' color='red' />
+                  ),
+                width: '100px',
+              },
+              {
+                header: 'Session',
+                render: (r: Row) =>
+                  r.session ? (
+                    <StatusBadge status={r.session.status} />
+                  ) : (
+                    <span className='text-xs text-gray-400'>No session</span>
+                  ),
+                width: '140px',
+              },
+              {
+                header: 'Current Contact',
+                render: (r: Row) => <CurrentContactCell session={r.session} />,
+              },
+              {
+                header: 'Last Heartbeat',
+                render: (r: Row) => <HeartbeatCell session={r.session} />,
+                width: '160px',
+              },
+              ...(isAdmin
+                ? [
                   {
                     header: 'Actions',
                     render: (r: Row) =>
@@ -276,12 +276,12 @@ export default function AgentsPage() {
                     width: '180px',
                   },
                 ]
-              : []),
-          ]}
-          rows={filtered}
-          keyFn={(r) => r.id}
-          emptyMessage='No agents found'
-        />
+                : []),
+            ]}
+            rows={filtered}
+            keyFn={(r) => r.id}
+            emptyMessage='No agents found'
+          />
         )}
       </Card>
 

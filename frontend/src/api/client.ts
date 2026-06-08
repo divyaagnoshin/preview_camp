@@ -574,6 +574,8 @@ export const getAgentReport = (id: string, params?: any) =>
   api.get(`/reports/agent/${id}`, { params }).then((r) => r.data);
 export const getInteractions = (params?: any) =>
   api.get('/reports/interactions', { params }).then((r) => r.data);
+export const getAgentLoginHistory = (params?: any): Promise<{ data: any[] }> =>
+  api.get('/reports/agent-login-history', { params }).then((r) => r.data);
 
 
 export const deleteAllDncNumbers = (listId: string) =>
