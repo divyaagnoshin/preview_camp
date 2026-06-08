@@ -524,8 +524,22 @@ router.post(
           // Flip the job to 'active' inside the same transaction that
           // wrote the CCS rows — readers either see (preparing + empty CCS)
           // or (active + populated CCS), never a half-state.
+          // Also set excluded_contacts = total_contacts - (non-dnc contacts in CCS)
           await client.query(
-            `UPDATE campaign_jobs SET status='active' WHERE id=$1`,
+            `UPDATE campaign_jobs
+   SET status='active',
+       excluded_contacts = (
+         -- DNC contacts
+         SELECT COUNT(*)::int
+         FROM campaign_contact_status
+         WHERE job_id = $1 AND status = 'dnc'
+       ) + (
+         -- Duplicate contacts: total from lists minus what got inserted into CCS
+         SELECT GREATEST(0, total_contacts - COUNT(*)::int)
+         FROM campaign_contact_status
+         WHERE job_id = $1
+       )
+   WHERE id=$1`,
             [job.id],
           );
           return rows;

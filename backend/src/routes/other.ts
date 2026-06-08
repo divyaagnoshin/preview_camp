@@ -877,8 +877,8 @@ jobsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
        JOIN campaigns c ON c.id = cj.campaign_id
        LEFT JOIN LATERAL (
          SELECT
-           COUNT(*)::int                                                        AS total_contacts,
-           COUNT(*) FILTER (WHERE status NOT IN ('queued','with_agent'))::int   AS processed_contacts
+           COUNT(*) FILTER (WHERE status != 'dnc')::int                                                         AS total_contacts,
+           COUNT(*) FILTER (WHERE status NOT IN ('queued','with_agent','dnc'))::int   AS processed_contacts
          FROM campaign_contact_status
          WHERE job_id = cj.id
        ) prog ON true
@@ -910,7 +910,7 @@ jobsRouter.get(
       const { rows: prog } = await pool.query(
         `SELECT
          COUNT(*)::int                                                          AS total_contacts,
-         COUNT(*) FILTER (WHERE status NOT IN ('queued', 'with_agent'))::int   AS processed_contacts
+         COUNT(*) FILTER (WHERE status NOT IN ('queued', 'with_agent', 'dnc'))::int   AS processed_contacts
        FROM campaign_contact_status
        WHERE job_id = $1`,
         [req.params.id],
@@ -951,16 +951,18 @@ jobsRouter.get(
         where += ` AND ccs.status = $${params.length}`;
       }
       if (assigned_agent_id) {
-        params.push(assigned_agent_id);
-        where += ` AND ccs.assigned_agent_id = $${params.length}`;
+        if (assigned_agent_id === 'null') {
+          where += ` AND ccs.assigned_agent_id IS NULL`;
+        } else {
+          params.push(assigned_agent_id);
+          where += ` AND ccs.assigned_agent_id::text = $${params.length}`;
+        }
       }
 
       const { rows } = await pool.query(
-        `SELECT ccs.*, c.phone_number, c.first_name, c.last_name,
-              u.first_name || ' ' || u.last_name AS assigned_agent_name
+        `SELECT ccs.*, c.phone_number, c.first_name, c.last_name
        FROM campaign_contact_status ccs
        JOIN contacts c ON c.id = ccs.contact_id
-       LEFT JOIN users u ON u.id = ccs.assigned_agent_id
        ${where}
        ORDER BY ccs.priority ASC, ccs.next_attempt_at ASC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -1040,21 +1042,22 @@ jobsRouter.get(
       const byStatus: Record<string, number> = {};
       for (const s of statRows) byStatus[s.status] = s.count;
 
+      const dnc = byStatus['dnc'] ?? 0;
       const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+      const activeTotal = total - dnc; // exclude DNC from progress denominator
       const processed =
         (byStatus['completed'] ?? 0) +
-        (byStatus['exhausted'] ?? 0) +
-        (byStatus['dnc'] ?? 0);
-      const prcnt = total > 0 ? (processed / total) * 100 : 0;
+        (byStatus['exhausted'] ?? 0);
+      const prcnt = activeTotal > 0 ? (processed / activeTotal) * 100 : 0;
 
       const { rows: agentRows } = await pool
         .query(
-          `SELECT u.id, u.first_name||' '||u.last_name as agent_name,
-                COUNT(*) FILTER (WHERE ccs.status='with_agent')::int as with_agent_count,
-                COUNT(*) FILTER (WHERE ccs.status='completed')::int  as completed_count
-         FROM campaign_contact_status ccs
-         JOIN users u ON u.id = ccs.locked_by_session::text::uuid
-         WHERE ccs.job_id=$1 GROUP BY u.id, u.first_name, u.last_name`,
+          `SELECT ccs.assigned_agent_id as agent_id,
+          COUNT(*) FILTER (WHERE ccs.status='with_agent')::int as with_agent_count,
+          COUNT(*) FILTER (WHERE ccs.status='completed')::int  as completed_count
+   FROM campaign_contact_status ccs
+   WHERE ccs.job_id=$1 AND ccs.assigned_agent_id IS NOT NULL
+   GROUP BY ccs.assigned_agent_id`,
           [req.params.id],
         )
         .catch(() => ({ rows: [] }));
@@ -1063,7 +1066,7 @@ jobsRouter.get(
         job_id: req.params.id,
         campaign_name: jobRows[0].campaign_name,
         status: jobRows[0].status,
-        total_contacts: total,
+        total_contacts: activeTotal,
         processed_contacts: processed,
         prcnt_complete: prcnt,
         by_status: {

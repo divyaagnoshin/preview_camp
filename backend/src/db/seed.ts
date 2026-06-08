@@ -91,8 +91,8 @@ async function seed() {
 
     await client.query(
       `
-      INSERT INTO dnc_lists (dnc_group_id, name, source, created_by)
-      VALUES ($1, 'Default', 'agent_disposition', $2)`,
+      INSERT INTO dnc_lists (dnc_group_id, name, created_by)
+      VALUES ($1, 'Default', $2)`,
       [dncGroupId, adminId],
     );
 

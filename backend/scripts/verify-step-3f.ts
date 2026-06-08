@@ -82,8 +82,10 @@ async function main() {
     );
     await client.query(
       `UPDATE campaign_jobs SET excluded_contacts =
-         (SELECT COUNT(*)::int FROM campaign_contact_status
-          WHERE job_id=$1 AND status='dnc')
+         total_contacts - (
+           SELECT COUNT(*)::int FROM campaign_contact_status
+           WHERE job_id=$1 AND status != 'dnc'
+         )
        WHERE id=$1`,
       [job.id],
     );
@@ -114,24 +116,24 @@ async function main() {
     console.table(cshRows);
 
     expect('campaign flipped draft → active', campAfter[0].status === 'active', campAfter[0].status);
-    expect('job created with status=active',  jobAfter[0].status === 'active');
-    expect('job created_by=system',           jobAfter[0].created_by === 'system', jobAfter[0].created_by);
-    expect('job.start_time set',              !!jobAfter[0].start_time);
-    expect('job.end_time NULL',               jobAfter[0].end_time === null);
-    expect('job.total_contacts=3',            jobAfter[0].total_contacts === 3, jobAfter[0].total_contacts);
-    expect('job.processed_contacts=0',        jobAfter[0].processed_contacts === 0);
-    expect('job.excluded_contacts set',       jobAfter[0].excluded_contacts !== null);
-    expect('job.job_run_number=1',            jobAfter[0].job_run_number === 1);
-    expect('CCS rows count = 3',              ccsRows.length === 3, ccsRows.length);
-    expect('all CCS locked_by_session NULL',  ccsRows.every(r => r.locked_by_session === null));
-    expect('all CCS locked_at NULL',          ccsRows.every(r => r.locked_at === null));
-    expect('all CCS attempts_made=0',         ccsRows.every(r => r.attempts_made === 0));
-    expect('all CCS next_attempt_at set',     ccsRows.every(r => !!r.next_attempt_at));
-    expect('all CCS priority copied (>0)',    ccsRows.every(r => r.priority > 0));
-    expect('CSH rows count = 3',              cshRows.length === 3, cshRows.length);
-    expect('all CSH from_status=NULL',        cshRows.every(r => r.from_status === null));
-    expect('all CSH trigger_type=system',     cshRows.every(r => r.trigger_type === 'system'));
-    expect('all CSH triggered_by=NULL',       cshRows.every(r => r.triggered_by === null));
+    expect('job created with status=active', jobAfter[0].status === 'active');
+    expect('job created_by=system', jobAfter[0].created_by === 'system', jobAfter[0].created_by);
+    expect('job.start_time set', !!jobAfter[0].start_time);
+    expect('job.end_time NULL', jobAfter[0].end_time === null);
+    expect('job.total_contacts=3', jobAfter[0].total_contacts === 3, jobAfter[0].total_contacts);
+    expect('job.processed_contacts=0', jobAfter[0].processed_contacts === 0);
+    expect('job.excluded_contacts set', jobAfter[0].excluded_contacts !== null);
+    expect('job.job_run_number=1', jobAfter[0].job_run_number === 1);
+    expect('CCS rows count = 3', ccsRows.length === 3, ccsRows.length);
+    expect('all CCS locked_by_session NULL', ccsRows.every(r => r.locked_by_session === null));
+    expect('all CCS locked_at NULL', ccsRows.every(r => r.locked_at === null));
+    expect('all CCS attempts_made=0', ccsRows.every(r => r.attempts_made === 0));
+    expect('all CCS next_attempt_at set', ccsRows.every(r => !!r.next_attempt_at));
+    expect('all CCS priority copied (>0)', ccsRows.every(r => r.priority > 0));
+    expect('CSH rows count = 3', cshRows.length === 3, cshRows.length);
+    expect('all CSH from_status=NULL', cshRows.every(r => r.from_status === null));
+    expect('all CSH trigger_type=system', cshRows.every(r => r.trigger_type === 'system'));
+    expect('all CSH triggered_by=NULL', cshRows.every(r => r.triggered_by === null));
 
     // Partial index existence
     const { rows: idxRows } = await client.query(

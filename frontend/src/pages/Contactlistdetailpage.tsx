@@ -21,7 +21,7 @@ import {
   type CloudImportConfig,
   type CloudProvider,
 } from '../api/client';
-import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState, Pagination  } from '../components/ui';
+import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState, Pagination } from '../components/ui';
 import { CloudConfigEditor } from '../components/CloudConfigEditor';
 import {
   ArrowLeft,
@@ -81,13 +81,12 @@ function MenuItem({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${
-        disabled
-          ? 'text-gray-300 cursor-not-allowed'
-          : danger
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${disabled
+        ? 'text-gray-300 cursor-not-allowed'
+        : danger
           ? 'text-red-600 hover:bg-red-50'
           : 'text-gray-700 hover:bg-gray-50'
-      }`}
+        }`}
     >
       <span className='shrink-0'>{icon}</span>
       <span>{label}</span>
@@ -97,13 +96,13 @@ function MenuItem({
 
 // ─── BulkGrid ─────────────────────────────────────────────────────────────────
 function BulkGrid({
-  customFieldDefs,
+  allFieldDefs,
   rows,
   setRows,
   progress,
   disabled,
 }: {
-  customFieldDefs: any[];
+  allFieldDefs: any[];
   rows: Record<string, any>[];
   setRows: React.Dispatch<React.SetStateAction<Record<string, any>[]>>;
   progress: { done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null;
@@ -132,8 +131,8 @@ function BulkGrid({
             <tr>
               <th className={thCls + ' w-10'}>#</th>
               <th className={thCls + ' min-w-[180px]'}>Phone Number *</th>
-              {customFieldDefs.map((def: any) => (
-                <th key={def.id} className={thCls + ' min-w-[160px]'}>
+              {allFieldDefs.map((def: any) => (
+                <th key={def.field_key} className={thCls + ' min-w-[160px]'}>
                   {def.name}
                   {def.field_key === 'system_contact_id' && <span className='text-red-500 ml-0.5'>*</span>}
                 </th>
@@ -155,14 +154,14 @@ function BulkGrid({
                     className={cellCls}
                   />
                 </td>
-                {customFieldDefs.map((def: any) => {
+                {allFieldDefs.map((def: any) => {
                   const t = String(def.data_type).toUpperCase();
                   const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
                   const isDate = t === 'TIMESTAMP';
                   const isBool = t === 'BOOLEAN';
                   if (isBool) {
                     return (
-                      <td key={def.id} className={tdCls + ' px-2 py-1.5'}>
+                      <td key={def.field_key} className={tdCls + ' px-2 py-1.5'}>
                         <input
                           type='checkbox'
                           checked={!!row[def.field_key]}
@@ -174,7 +173,7 @@ function BulkGrid({
                     );
                   }
                   return (
-                    <td key={def.id} className={tdCls}>
+                    <td key={def.field_key} className={tdCls}>
                       <input
                         type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
                         value={row[def.field_key] ?? ''}
@@ -248,8 +247,7 @@ export default function ContactListDetailPage() {
 
   const [showAddContact, setShowAddContact] = useState(false);
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
-  const [contact, setContact] = useState({ phone_number: '', first_name: '', last_name: '', email: '', timezone: '', priority: '100' });
-  const [customFieldValues, setCustomFieldValues] = useState<Record<string, any>>({});
+  const [formValues, setFormValues] = useState<Record<string, any>>({ priority: '100' });
   const [bulkRows, setBulkRows] = useState<Record<string, any>[]>([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
   const [bulkProgress, setBulkProgress] = useState<{ done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null>(null);
 
@@ -312,8 +310,7 @@ export default function ContactListDetailPage() {
   const closeAddContact = () => {
     setShowAddContact(false);
     setAddMode('single');
-    setContact({ phone_number: '', first_name: '', last_name: '', email: '', timezone: '', priority: '100' });
-    setCustomFieldValues({});
+    setFormValues({ priority: '100' });
     setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
     setBulkProgress(null);
   };
@@ -377,12 +374,32 @@ export default function ContactListDetailPage() {
 
   const addMut = useMutation({
     mutationFn: () => {
-      const cf: Record<string, any> = {};
-      for (const def of customFieldDefs) {
-        const v = coerceCustom(def, customFieldValues[def.field_key]);
-        if (v !== undefined) cf[def.field_key] = v;
+      const systemPayload: Record<string, any> = { contact_list_id: id };
+      const customPayload: Record<string, any> = {};
+
+      // Get all selected attribute defs to know data types for coercion
+      const allDefs = attrData?.data || [];
+
+      for (const [key, value] of Object.entries(formValues)) {
+        if (key === 'phone_number') {
+          systemPayload[key] = value;
+          continue;
+        }
+        if (RESERVED_SYSTEM_KEYS.has(key)) {
+          // System field — coerce priority to int
+          if (key === 'priority') {
+            systemPayload[key] = parseInt(value) || 100;
+          } else {
+            systemPayload[key] = value || null;
+          }
+        } else {
+          // Custom field — find its def for type coercion
+          const def = allDefs.find((d: any) => d.field_key === key);
+          const v = def ? coerceCustom(def, value) : value;
+          if (v !== undefined) customPayload[key] = v;
+        }
       }
-      return addContact({ contact_list_id: id, ...contact, priority: parseInt(contact.priority), custom_fields: cf });
+      return addContact({ ...systemPayload, custom_fields: customPayload });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts', id] });
@@ -394,17 +411,49 @@ export default function ContactListDetailPage() {
 
   const bulkMut = useMutation({
     mutationFn: async () => {
-      const candidates = bulkRows.map((r, i) => ({ row: r, idx: i })).filter(({ row }) => String(row.phone_number || '').trim() !== '');
+      const candidates = bulkRows
+        .map((r, i) => ({ row: r, idx: i }))
+        .filter(({ row }) => String(row.phone_number || '').trim() !== '');
       const total = candidates.length;
       setBulkProgress({ done: 0, failed: 0, total, errors: [] });
-      let done = 0; let failed = 0; const errors: { row: number; error: string }[] = [];
+      let done = 0;
+      let failed = 0;
+      const errors: { row: number; error: string }[] = [];
+      const allDefs = attrData?.data || [];
+
       for (const { row, idx } of candidates) {
         try {
-          const cf: Record<string, any> = {};
-          for (const def of customFieldDefs) { const v = coerceCustom(def, row[def.field_key]); if (v !== undefined) cf[def.field_key] = v; }
-          await addContact({ contact_list_id: id, phone_number: String(row.phone_number).trim(), priority: 100, custom_fields: cf });
+          const systemPayload: Record<string, any> = {
+            contact_list_id: id,
+            phone_number: String(row.phone_number).trim(),
+          };
+          const customPayload: Record<string, any> = {};
+
+          for (const def of allDefs.filter((d: any) => d.is_selected && d.field_key !== 'phone_number')) {
+            const rawVal = row[def.field_key];
+            if (RESERVED_SYSTEM_KEYS.has(def.field_key)) {
+              // System field
+              if (def.field_key === 'priority') {
+                systemPayload[def.field_key] = parseInt(rawVal) || 100;
+              } else {
+                systemPayload[def.field_key] = rawVal || null;
+              }
+            } else {
+              // Custom field
+              const v = coerceCustom(def, rawVal);
+              if (v !== undefined) customPayload[def.field_key] = v;
+            }
+          }
+
+          await addContact({ ...systemPayload, custom_fields: customPayload });
           done += 1;
-        } catch (e: any) { failed += 1; errors.push({ row: idx + 1, error: e?.response?.data?.error || e?.message || 'Insert failed' }); }
+        } catch (e: any) {
+          failed += 1;
+          errors.push({
+            row: idx + 1,
+            error: e?.response?.data?.error || e?.message || 'Insert failed',
+          });
+        }
         setBulkProgress({ done, failed, total, errors });
       }
       return { done, failed, total, errors };
@@ -735,40 +784,78 @@ export default function ContactListDetailPage() {
 
         {addMode === 'single' ? (
           <div className='space-y-4 max-h-[70vh] overflow-y-auto pr-1'>
-            <Input label='Phone Number (E.164) *' value={contact.phone_number} onChange={(e) => setContact((c) => ({ ...c, phone_number: e.target.value }))} placeholder='+12125550101' />
-            {customFieldDefs.length > 0 && (
-              <div className='grid grid-cols-2 gap-3'>
-                {customFieldDefs.map((def: any) => {
-                  const t = String(def.data_type).toUpperCase();
-                  const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
-                  const isDate = t === 'TIMESTAMP';
-                  const isBool = t === 'BOOLEAN';
-                  if (isBool) {
-                    return (
-                      <label key={def.id} className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'>
-                        <input type='checkbox' checked={!!customFieldValues[def.field_key]} onChange={(e) => setCustomFieldValues((v) => ({ ...v, [def.field_key]: e.target.checked }))} className='rounded text-indigo-600' />
-                        {def.name}
-                      </label>
-                    );
-                  }
-                  return (
-                    <div key={def.id}>
-                      <label className='block text-xs text-gray-500 mb-1'>{def.name}</label>
-                      <input type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'} value={customFieldValues[def.field_key] ?? ''} onChange={(e) => setCustomFieldValues((v) => ({ ...v, [def.field_key]: e.target.value }))} placeholder={def.field_key} className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500' />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {/* Phone number always first */}
+            <Input
+              label='Phone Number (E.164) *'
+              value={formValues.phone_number ?? ''}
+              onChange={(e) => setFormValues((v) => ({ ...v, phone_number: e.target.value }))}
+              placeholder='+12125550101'
+            />
+
+            {/* Render ALL selected attributes except phone_number dynamically */}
+            {(attrData?.data || [])
+              .filter((r: any) => r.is_selected && r.field_key !== 'phone_number')
+              .length > 0 && (
+                <div className='grid grid-cols-2 gap-3'>
+                  {(attrData?.data || [])
+                    .filter((r: any) => r.is_selected && r.field_key !== 'phone_number')
+                    .map((def: any) => {
+                      const t = String(def.data_type).toUpperCase();
+                      const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                      const isDate = t === 'TIMESTAMP';
+                      const isBool = t === 'BOOLEAN';
+
+                      if (isBool) {
+                        return (
+                          <label
+                            key={def.field_key}
+                            className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
+                          >
+                            <input
+                              type='checkbox'
+                              checked={!!formValues[def.field_key]}
+                              onChange={(e) =>
+                                setFormValues((v) => ({ ...v, [def.field_key]: e.target.checked }))
+                              }
+                              className='rounded text-indigo-600'
+                            />
+                            {def.name}
+                          </label>
+                        );
+                      }
+
+                      return (
+                        <div key={def.field_key}>
+                          <label className='block text-xs text-gray-500 mb-1'>{def.name}</label>
+                          <input
+                            type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
+                            value={formValues[def.field_key] ?? ''}
+                            onChange={(e) =>
+                              setFormValues((v) => ({ ...v, [def.field_key]: e.target.value }))
+                            }
+                            placeholder={def.field_key}
+                            className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                          />
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
           </div>
         ) : (
-          <BulkGrid customFieldDefs={customFieldDefs} rows={bulkRows} setRows={setBulkRows} progress={bulkProgress} disabled={bulkMut.isPending} />
+          <BulkGrid
+            allFieldDefs={(attrData?.data || []).filter((r: any) => r.is_selected && r.field_key !== 'phone_number')}
+            rows={bulkRows}
+            setRows={setBulkRows}
+            progress={bulkProgress}
+            disabled={bulkMut.isPending}
+          />
         )}
 
         <div className='flex gap-3 pt-4 mt-4 border-t border-gray-100'>
           <Button variant='secondary' className='flex-1' onClick={closeAddContact}>Cancel</Button>
           {addMode === 'single' ? (
-            <Button className='flex-1' loading={addMut.isPending} disabled={!contact.phone_number} onClick={() => addMut.mutate()}>Add Contact</Button>
+            <Button className='flex-1' loading={addMut.isPending} disabled={!formValues.phone_number} onClick={() => addMut.mutate()}>Add Contact</Button>
           ) : (
             <Button className='flex-1' loading={bulkMut.isPending} disabled={bulkRows.every((r) => String(r.phone_number || '').trim() === '')} onClick={() => bulkMut.mutate()}>Import Contacts</Button>
           )}
