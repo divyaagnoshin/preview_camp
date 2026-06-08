@@ -20,7 +20,8 @@ type Provider = (typeof PROVIDERS)[number];
 const SELECT_COLS = `id, name, provider, credentials, options,
   created_at, updated_at, last_used_at,
   schedule_enabled, cron_expression, timezone, contact_list_ids,
-  next_refresh, last_refresh, last_run_status, last_run_error`;
+  next_refresh, last_refresh, last_run_status, last_run_error,
+  last_run_imported_rows, last_run_failed_rows`;
 
 // Validates a cron expression against the caller's timezone and returns the
 // next fire time. Throws AppError(400) with the parser's message on bad input.
@@ -57,8 +58,28 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       [req.user!.orgId],
     );
     res.json({ data: rows.map(sanitize) });
-  } catch (e) {
-    next(e);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/history', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const cfg = await pool.query(`SELECT id FROM cloud_import_configs WHERE id = $1 AND org_id = $2`, [req.params.id, req.user!.orgId]);
+    if (!cfg.rows.length) {
+      throw new AppError(404, 'Configuration not found');
+    }
+    
+    const { rows } = await pool.query(
+      `SELECT id, run_at, status, imported_rows, failed_rows, error_log
+         FROM cloud_import_run_history
+        WHERE config_id = $1
+        ORDER BY run_at DESC`,
+      [req.params.id],
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    next(err);
   }
 });
 
@@ -165,6 +186,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
         `provider must be one of ${PROVIDERS.join(', ')}`,
       );
 
+    if (options.source_path) {
+      const pathCheck = await pool.query(
+        `SELECT id FROM cloud_import_configs WHERE org_id = $1 AND options->>'source_path' = $2`,
+        [req.user!.orgId, options.source_path]
+      );
+      if (pathCheck.rows.length > 0) {
+        throw new AppError(409, 'This source path is already mapped to another configuration');
+      }
+    }
+
     const { rows } = await pool.query(
       `INSERT INTO cloud_import_configs
          (org_id, name, provider, credentials, options, created_by, contact_list_ids)
@@ -202,6 +233,16 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
         400,
         `provider must be one of ${PROVIDERS.join(', ')}`,
       );
+
+    if (options.source_path) {
+      const pathCheck = await pool.query(
+        `SELECT id FROM cloud_import_configs WHERE org_id = $1 AND options->>'source_path' = $2 AND id != $3`,
+        [req.user!.orgId, options.source_path, req.params.id]
+      );
+      if (pathCheck.rows.length > 0) {
+        throw new AppError(409, 'This source path is already mapped to another configuration');
+      }
+    }
 
     const existing = await pool.query(
       `SELECT credentials FROM cloud_import_configs
@@ -313,6 +354,32 @@ router.put(
       );
       if (!rows.length) throw new AppError(404, 'Config not found');
       res.json(sanitize(rows[0]));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// GET /:id/history
+router.get(
+  '/:id/history',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const cfg = await pool.query(
+        `SELECT id FROM cloud_import_configs WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId],
+      );
+      if (!cfg.rows[0]) throw new AppError(404, 'Config not found');
+
+      const { rows } = await pool.query(
+        `SELECT id, created_at AS run_date, status, imported_rows AS contacts_imported, failed_rows AS contacts_failed, error_log AS error_message
+         FROM cloud_import_run_history
+         WHERE config_id = $1
+         ORDER BY created_at DESC
+         LIMIT 50`,
+        [req.params.id],
+      );
+      res.json({ data: rows });
     } catch (e) {
       next(e);
     }

@@ -11,11 +11,13 @@ import {
   testCloudImportConnection,
   runCloudImport,
   getContactLists,
-  type CloudImportConfig
+  getCloudImportHistory,
+  type CloudImportConfig,
+  type CloudImportRunHistory
 } from '../api/client';
-import { Card, Button, Table, Badge } from '../components/ui';
+import { Card, Button, Table, Badge, Modal } from '../components/ui';
 import { CloudConfigEditor } from '../components/CloudConfigEditor';
-import { Plus, Pencil, Trash2, X, Power, PowerOff, Play } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Power, PowerOff, Play, BarChart2 } from 'lucide-react';
 
 export function formatTimeAgo(dateString: string): string {
   const date = new Date(dateString);
@@ -49,9 +51,10 @@ function parseCronToWords(cron: string): string {
 export default function TaskScheduler() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [showCfgEditor, setShowCfgEditor] = useState(false);
   const [editingCfg, setEditingCfg] = useState<CloudImportConfig | null>(null);
+  const [statsCfg, setStatsCfg] = useState<CloudImportConfig | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<string | null>(null);
 
   // Fetch configs
   const { data: configs = [], isLoading } = useQuery({
@@ -92,11 +95,13 @@ export default function TaskScheduler() {
     mutationFn: (cfgId: string) => runCloudImport([], { config_id: cfgId }),
     onSuccess: (res: any) => {
       if (res.status === 'failed') setCloudStatus(`Error: ${res.failed_rows} rows failed`);
-      else if (res.status === 'partial_failure') setCloudStatus(`Partial: ${res.imported_rows} imported, ${res.failed_rows} failed`);
+      else if (res.status === 'partial_failure') setCloudStatus(`Partial: ${res.imported_rows} imported, ${res.updated_rows} updated, ${res.failed_rows} failed`);
       else setCloudStatus(`✓ Successfully imported ${res.imported_rows} rows`);
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
     },
     onError: (err: any) => {
       setCloudStatus(`Error: ${err?.response?.data?.error || err.message}`);
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
     }
   });
 
@@ -123,10 +128,13 @@ export default function TaskScheduler() {
       header: 'Target Lists',
       render: (r: CloudImportConfig) => {
         const ids = r.contact_list_ids || [];
+        const names = ids.map((id) => contactLists.find((cl: any) => cl.id === id)?.name).filter(Boolean);
         return (
-          <div className="flex flex-wrap gap-1">
-            {ids.length === 0 ? <span className="text-gray-400">None</span> : 
-              <Badge color="blue">{ids.length} lists</Badge>
+          <div className="flex flex-col items-start gap-1">
+            {names.length === 0 ? <span className="text-gray-400">None</span> : 
+              names.map((n, i) => (
+                <Badge key={i} color="blue">{n}</Badge>
+              ))
             }
           </div>
         );
@@ -142,7 +150,7 @@ export default function TaskScheduler() {
             ) : (
               <Badge color="gray">Paused</Badge>
             )}
-            <span className="text-sm">{r.cron_expression || 'No schedule'}</span>
+            <span className="text-sm">{r.cron_expression ? parseCronToWords(r.cron_expression) : 'No schedule'}</span>
           </div>
         </div>
       ),
@@ -156,14 +164,14 @@ export default function TaskScheduler() {
             <div className="flex items-center space-x-1.5">
               <div
                 className={`w-1.5 h-1.5 rounded-full ${
-                  r.last_run_status === 'done'
+                  r.last_run_status === 'done' || r.last_run_status === 'ok'
                     ? 'bg-green-500'
                     : r.last_run_status === 'failed'
                       ? 'bg-red-500'
                       : 'bg-amber-500'
                 }`}
               />
-              <span className="text-sm capitalize text-gray-700">
+              <span className="text-sm capitalize text-gray-700 font-medium">
                 {r.last_run_status?.replace('_', ' ')}
               </span>
             </div>
@@ -174,12 +182,32 @@ export default function TaskScheduler() {
         );
       },
     },
+
+    {
+      header: 'Next Run',
+      render: (r: CloudImportConfig) => (
+        <div>
+          {r.next_refresh ? (
+            <p className="text-sm text-gray-700">
+              {new Date(r.next_refresh).toLocaleString(undefined, {
+                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+              })}
+            </p>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </div>
+      ),
+    },
     {
       header: 'Actions',
       render: (r: CloudImportConfig) => (
         <div className="flex items-center space-x-2">
-          <Button size="sm" variant="secondary" onClick={() => runCfgMut.mutate(r.id)} loading={runCfgMut.isPending && runCfgMut.variables === r.id}>
+          <Button size="sm" variant="secondary" onClick={() => runCfgMut.mutate(r.id)} loading={runCfgMut.isPending && runCfgMut.variables === r.id} disabled={!r.schedule_enabled}>
             <Play className="w-4 h-4 mr-1" /> Run Now
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setStatsCfg(r)}>
+            <BarChart2 className="w-4 h-4 mr-1" /> Statistics
           </Button>
           <Button size="sm" variant="ghost" onClick={() => openCfgEditor(r)}>
             <Pencil className="w-4 h-4" />
@@ -243,6 +271,87 @@ export default function TaskScheduler() {
           qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
         }}
       />
+
+      {/* Stats Modal */}
+      {statsCfg && (
+        <StatsModal cfg={statsCfg} onClose={() => setStatsCfg(null)} />
+      )}
     </div>
+  );
+}
+
+function StatsModal({ cfg, onClose }: { cfg: CloudImportConfig, onClose: () => void }) {
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['cloud-import-history', cfg.id],
+    queryFn: () => getCloudImportHistory(cfg.id),
+  });
+  const history = response?.data || [];
+
+  return (
+    <Modal open={true} onClose={onClose} title={`Task Statistics: ${cfg.name}`} size="lg">
+      <div className="p-6">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Run History</h3>
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-gray-500">Loading history...</div>
+        ) : history.length === 0 ? (
+          <div className="py-8 text-center text-sm text-gray-500 bg-gray-50 rounded border border-dashed border-gray-200">
+            No runs recorded yet.
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+            {history.map((run) => (
+              <div key={run.id} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Badge color={run.status === 'done' || run.status === 'ok' ? 'green' : run.status === 'failed' ? 'red' : 'yellow'}>
+                      {run.status.replace('_', ' ')}
+                    </Badge>
+                    <span className="text-sm font-medium text-gray-900">
+                      {new Date(run.run_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-500">{formatTimeAgo(run.run_at)}</span>
+                </div>
+                <div className="flex items-center space-x-4 text-sm mt-1">
+                  <div className="flex items-center text-green-700">
+                    <span className="font-semibold mr-1.5">{run.imported_rows}</span> created
+                  </div>
+                  <div className="flex items-center text-blue-700">
+                    <span className="font-semibold mr-1.5">{run.updated_rows || 0}</span> updated
+                  </div>
+                  <div className="flex items-center text-red-700">
+                    <span className="font-semibold mr-1.5">{run.failed_rows}</span> failed
+                  </div>
+                </div>
+                {run.error_log && (
+                  <div className="mt-2 bg-red-50 text-red-700 text-xs p-2 rounded border border-red-100 max-h-40 overflow-y-auto">
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(run.error_log);
+                        if (Array.isArray(parsed)) {
+                          return (
+                            <ul className="list-disc pl-4 space-y-1">
+                              {parsed.map((err: any, i: number) => (
+                                <li key={i}>
+                                  <span className="font-semibold">Row {err.row}:</span> {err.error}
+                                </li>
+                              ))}
+                            </ul>
+                          );
+                        }
+                      } catch (e) {}
+                      return <span className="break-words font-mono">{run.error_log}</span>;
+                    })()}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end pt-6">
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

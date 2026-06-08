@@ -28,6 +28,7 @@ import {
   UsersRound,
   Cloud,
   ClipboardList,
+  FileText,
 } from 'lucide-react';
 
 type NavItem = {
@@ -156,9 +157,9 @@ const navItems: NavItem[] = [
         ],
       },
       {
-        to: '/reports/static',
-        icon: ClipboardList,
-        label: 'Static Reports',
+        to: '/reports/historical-reports',
+        icon: FileText,
+        label: 'Historical Reports',
         roles: ['admin', 'supervisor', 'superadmin'],
       },
     ],
@@ -398,16 +399,8 @@ export default function Layout({ children }: { children: ReactNode }) {
                     }
 
                     // Regular child (no sub-children)
-                    const showDivider = c.to === '/reports/static' && n.to === '/reports-group';
                     return (
                       <React.Fragment key={c.to}>
-                        {showDivider && (
-                          <div className='px-3 pt-3 pb-1'>
-                            <span className='text-[9px] font-bold uppercase tracking-[0.14em] text-[#5A3A22]'>
-                              Static
-                            </span>
-                          </div>
-                        )}
                         <NavLink
                           to={c.to}
                           end={c.to === '/reports'}

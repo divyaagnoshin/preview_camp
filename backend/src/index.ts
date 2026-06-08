@@ -43,6 +43,7 @@ import usersRouter from './routes/users';
 
 import supervisorTeamsRouter from './routes/supervisorTeamsAndCampaigns';
 import campaignMappingRouter from './routes/Campaignmappingroute';
+import analyticsRouter from './routes/analytics';
 
 dotenv.config();
 
@@ -128,6 +129,7 @@ app.use('/v1/users', usersRouter);
 app.use('/v1/supervisor-teams', supervisorTeamsRouter);
 
 app.use('/v1/campaign-mapping', campaignMappingRouter);
+app.use('/v1/analytics', analyticsRouter);
 // /v1/workspace/* and the mutating /v1/sessions/{ready,heartbeat,offline}
 // endpoints are served by the backend-queue service (see ../backend-queue).
 

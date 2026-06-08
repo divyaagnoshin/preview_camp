@@ -6,6 +6,7 @@ import {
   ListObjectsV2Command,
   CopyObjectCommand,
   DeleteObjectCommand,
+  PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import SftpClient from 'ssh2-sftp-client';
 import * as FtpClient from 'basic-ftp';
@@ -29,10 +30,17 @@ async function downloadFromFtp(
   let folder =
     (opts.reading_folder || opts.folder || '').replace(/\/+$/, '') || '.';
   let wantedFile: string | undefined = opts.file_name;
+  let matchRegex: RegExp | undefined;
+
   if (opts.source_path) {
     const sp = String(opts.source_path).replace(/\/+$/, '');
-    if (/\.csv$/i.test(sp)) {
-      const idx = sp.lastIndexOf('/');
+    const idx = sp.lastIndexOf('/');
+    if (sp.includes('*')) {
+      folder = idx >= 0 ? sp.slice(0, idx) || '.' : '.';
+      const filePart = idx >= 0 ? sp.slice(idx + 1) : sp;
+      matchRegex = new RegExp('^' + filePart.replace(/\*/g, '.*') + '$', 'i');
+      wantedFile = undefined;
+    } else if (/\.csv$/i.test(sp)) {
       folder = idx >= 0 ? sp.slice(0, idx) || '.' : '.';
       wantedFile = idx >= 0 ? sp.slice(idx + 1) : sp;
     } else {
@@ -61,16 +69,11 @@ async function downloadFromFtp(
       let listResult: any[] = [];
       if (!wantedFile) {
         listResult = (await sftp.list(folder)) as any[];
-        console.log(
-          '[SFTP DEBUG] Listed folder:',
-          folder,
-          'Result length:',
-          listResult.length,
-        );
-        console.log('[SFTP DEBUG] First few items:', listResult.slice(0, 3));
       }
-      const csvItems = listResult.filter((e) => /\.csv$/i.test(e.name));
-      console.log('[SFTP DEBUG] All items ending in .csv:', csvItems);
+      let csvItems = listResult.filter((e) => /\.csv$/i.test(e.name));
+      if (matchRegex) {
+        csvItems = csvItems.filter(e => matchRegex!.test(e.name));
+      }
 
       const targets: string[] = wantedFile
         ? [`${folder}/${wantedFile}`]
@@ -93,11 +96,17 @@ async function downloadFromFtp(
         password: cred.password,
         secure: false,
       });
+      let listResult: any[] = [];
+      if (!wantedFile) {
+        listResult = await client.list(folder);
+      }
+      let csvItems = listResult.filter((e: any) => e.isFile && /\.csv$/i.test(e.name));
+      if (matchRegex) {
+        csvItems = csvItems.filter((e: any) => matchRegex!.test(e.name));
+      }
       const targets: string[] = wantedFile
         ? [wantedFile]
-        : (await client.list(folder))
-            .filter((e: any) => e.isFile && /\.csv$/i.test(e.name))
-            .map((e: any) => e.name);
+        : csvItems.map((e: any) => e.name);
       for (const name of targets) {
         const chunks: Buffer[] = [];
         const sink = new Writable({
@@ -219,6 +228,108 @@ async function archiveS3File(
   }
 }
 
+function csvField(v: any): string {
+  if (v === null || v === undefined) return '';
+  const s = typeof v === 'string' ? v : String(v);
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 34 || c === 44 || c === 10 || c === 13)
+      return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+async function uploadFailedFtpFile(
+  cred: any,
+  opts: any,
+  filename: string,
+  failedCsvText: string
+): Promise<void> {
+  const protocol: 'ftp' | 'sftp' = cred.protocol === 'ftp' ? 'ftp' : 'sftp';
+  const archiveFolder = (opts.archive_folder || '').replace(/\/+$/, '');
+  if (!archiveFolder) return;
+
+  const parts = filename.split('.');
+  const ext = parts.length > 1 ? '.' + parts.pop() : '';
+  const base = parts.join('.');
+  const newPath = `${archiveFolder}/${base}_failed${ext}`;
+
+  const port = cred.port
+    ? parseInt(cred.port, 10)
+    : protocol === 'sftp'
+      ? 22
+      : 21;
+
+  if (protocol === 'sftp') {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect({
+        host: cred.host,
+        port,
+        username: cred.username,
+        password: cred.password,
+      });
+      await sftp.mkdir(archiveFolder, true).catch(() => {});
+      await sftp.put(Buffer.from(failedCsvText, 'utf-8'), newPath);
+      console.log(`[SFTP ARCHIVE] Uploaded failed contacts to ${newPath}`);
+    } catch (e) {
+      console.error(`[SFTP ARCHIVE] Failed to upload failed contacts to ${newPath}:`, e);
+    } finally {
+      await sftp.end();
+    }
+  } else {
+    const client = new FtpClient.Client();
+    try {
+      await client.access({
+        host: cred.host,
+        port,
+        user: cred.username,
+        password: cred.password,
+        secure: false,
+      });
+      await client.ensureDir(archiveFolder).catch(() => {});
+      const stream = Readable.from(Buffer.from(failedCsvText, 'utf-8'));
+      await client.uploadFrom(stream, newPath);
+      console.log(`[FTP ARCHIVE] Uploaded failed contacts to ${newPath}`);
+    } catch (e) {
+      console.error(`[FTP ARCHIVE] Failed to upload failed contacts to ${newPath}:`, e);
+    } finally {
+      client.close();
+    }
+  }
+}
+
+async function uploadFailedS3File(
+  client: S3Client,
+  bucket: string,
+  opts: any,
+  key: string,
+  failedCsvText: string
+) {
+  const archiveFolder = (opts.archive_folder || '').replace(/\/+$/, '');
+  if (!archiveFolder) return;
+
+  const filename = key.split('/').pop() || key;
+  const parts = filename.split('.');
+  const ext = parts.length > 1 ? '.' + parts.pop() : '';
+  const base = parts.join('.');
+  const newKey = `${archiveFolder}/${base}_failed${ext}`;
+
+  try {
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: newKey,
+        Body: failedCsvText,
+        ContentType: 'text/csv'
+      })
+    );
+    console.log(`[S3 ARCHIVE] Uploaded failed contacts to ${newKey}`);
+  } catch (e) {
+    console.error(`[S3 ARCHIVE] Failed to upload failed contacts to ${newKey}:`, e);
+  }
+}
+
 const router = Router();
 router.use(authenticate);
 
@@ -275,6 +386,16 @@ function parseCsv(text: string, delimiter = ','): Promise<any[]> {
   });
 }
 
+function parseCsvHeaders(text: string, delimiter = ','): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    parse(
+      text,
+      { columns: false, delimiter, skip_empty_lines: true, trim: true },
+      (err, data) => (err ? reject(err) : resolve(data[0] || [])),
+    );
+  });
+}
+
 // Resolves the list of remote keys/paths to download. sourcePath, when set,
 // overrides folder + fileName: if it ends with .csv it's a single key,
 // otherwise it's used as the prefix to list. Without it we fall back to
@@ -288,14 +409,36 @@ async function listS3Keys(
 ): Promise<string[]> {
   if (sourcePath) {
     const sp = sourcePath.replace(/^\/+/, '');
-    if (/\.csv$/i.test(sp)) return [sp];
-    const prefix = sp.replace(/\/+$/, '') + '/';
+    
+    let prefix = sp.replace(/\/+$/, '') + '/';
+    let matchPattern: string | undefined;
+
+    if (sp.includes('*')) {
+      const idx = sp.lastIndexOf('/');
+      const folderPart = idx >= 0 ? sp.slice(0, idx) + '/' : '';
+      const filePart = idx >= 0 ? sp.slice(idx + 1) : sp;
+      prefix = folderPart + filePart.split('*')[0];
+      matchPattern = filePart.replace(/\*/g, '.*');
+    } else if (/\.csv$/i.test(sp)) {
+      return [sp];
+    }
+    
     const out = await client.send(
       new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }),
     );
-    return (out.Contents || [])
+    
+    let keys = (out.Contents || [])
       .map((o) => o.Key!)
       .filter((k) => k.toLowerCase().endsWith('.csv'));
+      
+    if (matchPattern) {
+      const regex = new RegExp('^' + matchPattern + '$', 'i');
+      keys = keys.filter(k => {
+        const kFile = k.split('/').pop() || k;
+        return regex.test(kFile);
+      });
+    }
+    return keys;
   }
   const prefix = folder ? folder.replace(/\/+$/, '') + '/' : '';
   if (fileName) return [prefix + fileName];
@@ -314,11 +457,13 @@ export interface CloudImportResult {
   files: {
     file: string;
     imported: number;
+    updated: number;
     failed: number;
     skipped: number;
   }[];
   total_rows: number;
   imported_rows: number;
+  updated_rows: number;
   failed_rows: number;
   skipped_rows: number;
   errors: { file: string; row: number; error: string }[];
@@ -397,18 +542,23 @@ export async function runCloudImport(args: {
     const fileResults: {
       file: string;
       imported: number;
+      updated: number;
       failed: number;
       skipped: number;
     }[] = [];
     const allErrors: { file: string; row: number; error: string }[] = [];
     let totalRows = 0;
     let totalImported = 0;
+    let totalUpdated = 0;
     let totalFailed = 0;
     let totalSkipped = 0;
 
     const handleCsv = async (label: string, text: string) => {
       const records = await parseCsv(text);
       totalRows += records.length;
+      
+      const rowErrors = new Map<number, string[]>();
+      
       for (let i = 0; i < args.contactListIds.length; i++) {
         const listId = args.contactListIds[i];
         const bId = currentBatchIds[i];
@@ -418,19 +568,38 @@ export async function runCloudImport(args: {
           args.orgId,
           bId,
           ingestionMethod,
+          options?.mapping,
+          options?.import_mode || 'append'
         );
         totalImported += r.imported;
+        totalUpdated += r.updated || 0;
         totalFailed += r.failed;
         fileResults.push({
           file:
             label + (args.contactListIds.length > 1 ? ` (List ${i + 1})` : ''),
           imported: r.imported,
+          updated: r.updated || 0,
           failed: r.failed,
           skipped: 0,
         });
-        for (const e of r.errors)
+        for (const e of r.errors) {
           allErrors.push({ file: label, row: e.row, error: e.error });
+          if (e.row > 0 && e.row <= records.length) {
+            const arr = rowErrors.get(e.row) || [];
+            arr.push(e.error);
+            rowErrors.set(e.row, arr);
+          }
+        }
       }
+      
+      const failedRecords = [];
+      for (const [rowIdx, errs] of rowErrors.entries()) {
+        failedRecords.push({
+          ...records[rowIdx - 1],
+          error_message: errs.join('; ')
+        });
+      }
+      return failedRecords;
     };
 
     if (provider === 's3') {
@@ -463,8 +632,16 @@ export async function runCloudImport(args: {
             new GetObjectCommand({ Bucket: options.bucket_name, Key: k }),
           );
           const text = await streamToString(obj.Body as Readable);
-          await handleCsv(k, text);
+          const failedRecords = await handleCsv(k, text);
           if (options.archive_folder) {
+            if (failedRecords.length > 0) {
+              const headers = Object.keys(failedRecords[0]);
+              let csvStr = headers.map(csvField).join(',') + '\n';
+              for (const r of failedRecords) {
+                csvStr += headers.map(h => csvField(r[h])).join(',') + '\n';
+              }
+              await uploadFailedS3File(client, options.bucket_name, options, k, csvStr);
+            }
             await archiveS3File(client, options.bucket_name, options, k);
           }
         }
@@ -478,8 +655,16 @@ export async function runCloudImport(args: {
         if (!files.length)
           throw new AppError(404, 'No .csv files found on the server');
         for (const f of files) {
-          await handleCsv(f.name, f.text);
+          const failedRecords = await handleCsv(f.name, f.text);
           if (options.archive_folder) {
+            if (failedRecords.length > 0) {
+              const headers = Object.keys(failedRecords[0]);
+              let csvStr = headers.map(csvField).join(',') + '\n';
+              for (const r of failedRecords) {
+                csvStr += headers.map(h => csvField(r[h])).join(',') + '\n';
+              }
+              await uploadFailedFtpFile(credentials, options, f.name, csvStr);
+            }
             await archiveFtpFile(credentials, options, f.name);
           }
         }
@@ -498,10 +683,28 @@ export async function runCloudImport(args: {
     for (const bId of currentBatchIds) {
       await pool.query(
         `UPDATE contact_upload_batches
-           SET total_rows=$1, imported_rows=$2, failed_rows=$3,
-               status=$4, completed_at=NOW()
-           WHERE id=$5`,
-        [totalRows, totalImported, totalFailed, status, bId],
+           SET total_rows=$1, imported_rows=$2, updated_rows=$3, failed_rows=$4,
+               status=$5, completed_at=NOW()
+           WHERE id=$6`,
+        [totalRows, totalImported, totalUpdated, totalFailed, status, bId],
+      );
+    }
+
+    if (args.configId) {
+      const errorLogStr = allErrors.length > 0 ? JSON.stringify(allErrors.slice(0, 50), null, 2) : null;
+      
+      await pool.query(
+        `UPDATE cloud_import_configs 
+           SET last_run_status=$1, last_run_error=NULL, last_refresh=NOW(),
+               last_run_imported_rows=$2, last_run_failed_rows=$3
+         WHERE id=$4`,
+        [status, totalImported, totalFailed, args.configId]
+      );
+      
+      await pool.query(
+        `INSERT INTO cloud_import_run_history (config_id, status, imported_rows, updated_rows, failed_rows, error_log)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [args.configId, status, totalImported, totalUpdated, totalFailed, errorLogStr]
       );
     }
 
@@ -512,6 +715,7 @@ export async function runCloudImport(args: {
       files: fileResults,
       total_rows: totalRows,
       imported_rows: totalImported,
+      updated_rows: totalUpdated,
       failed_rows: totalFailed,
       skipped_rows: totalSkipped,
       errors: allErrors,
@@ -527,6 +731,23 @@ export async function runCloudImport(args: {
         )
         .catch(() => undefined);
     }
+    
+    if (args.configId) {
+      const errorMsg = err?.message || String(err);
+      await pool.query(
+        `UPDATE cloud_import_configs 
+           SET last_run_status='failed', last_run_error=$1, last_refresh=NOW()
+         WHERE id=$2`,
+        [errorMsg, args.configId]
+      ).catch(() => undefined);
+      
+      await pool.query(
+        `INSERT INTO cloud_import_run_history (config_id, status, error_log)
+         VALUES ($1, 'failed', $2)`,
+        [args.configId, errorMsg]
+      ).catch(() => undefined);
+    }
+
     throw err;
   }
 }
@@ -539,10 +760,13 @@ router.post('/run', async (req: Request, res: Response, next: NextFunction) => {
     // If a config_id is provided, grab its contact_list_ids.
     if (config_id && finalLists.length === 0) {
       const cfg = await pool.query(
-        `SELECT contact_list_ids FROM cloud_import_configs WHERE id = $1 AND org_id = $2`,
+        `SELECT contact_list_ids, schedule_enabled FROM cloud_import_configs WHERE id = $1 AND org_id = $2`,
         [config_id, req.user!.orgId],
       );
       if (cfg.rows.length) {
+        if (!cfg.rows[0].schedule_enabled) {
+          throw new AppError(400, 'Cannot run a paused task. Please activate it first.');
+        }
         finalLists = cfg.rows[0].contact_list_ids || [];
       }
     }
@@ -563,6 +787,169 @@ router.post('/run', async (req: Request, res: Response, next: NextFunction) => {
     res.status(202).json(result);
   } catch (err) {
     next(err);
+  }
+});
+
+async function fetchFtpHeader(cred: any, opts: any): Promise<string[]> {
+  const protocol: 'ftp' | 'sftp' = cred.protocol === 'ftp' ? 'ftp' : 'sftp';
+  let folder = (opts.reading_folder || opts.folder || '').replace(/\/+$/, '') || '.';
+  let wantedFile: string | undefined = opts.file_name;
+  let matchRegex: RegExp | undefined;
+
+  if (opts.source_path) {
+    const sp = String(opts.source_path).replace(/\/+$/, '');
+    const idx = sp.lastIndexOf('/');
+    if (sp.includes('*')) {
+      folder = idx >= 0 ? sp.slice(0, idx) || '.' : '.';
+      const filePart = idx >= 0 ? sp.slice(idx + 1) : sp;
+      matchRegex = new RegExp('^' + filePart.replace(/\*/g, '.*') + '$', 'i');
+      wantedFile = undefined;
+    } else if (/\.csv$/i.test(sp)) {
+      folder = idx >= 0 ? sp.slice(0, idx) || '.' : '.';
+      wantedFile = idx >= 0 ? sp.slice(idx + 1) : sp;
+    } else {
+      folder = sp || '.';
+      wantedFile = undefined;
+    }
+  }
+
+  const port = cred.port ? parseInt(cred.port, 10) : protocol === 'sftp' ? 22 : 21;
+  let text = '';
+
+  if (protocol === 'sftp') {
+    const sftp = new SftpClient();
+    try {
+      await sftp.connect({ host: cred.host, port, username: cred.username, password: cred.password });
+      let listResult: any[] = [];
+      if (!wantedFile) listResult = (await sftp.list(folder)) as any[];
+      let csvItems = listResult.filter((e) => /\.csv$/i.test(e.name));
+      if (matchRegex) csvItems = csvItems.filter(e => matchRegex!.test(e.name));
+      const target = wantedFile ? `${folder}/${wantedFile}` : csvItems.length ? `${folder}/${csvItems[0].name}` : null;
+      if (!target) throw new AppError(404, 'No .csv files found');
+
+      await new Promise<void>((resolve, reject) => {
+        const sink = new Writable({
+          write(chunk, enc, cb) {
+            text += chunk.toString('utf-8');
+            if (text.includes('\n')) {
+              resolve();
+              return cb(new Error('ABORT_EARLY'));
+            }
+            cb();
+          }
+        });
+        sftp.get(target, sink).then(() => resolve()).catch((err: any) => {
+          if (err.message === 'ABORT_EARLY') resolve();
+          else reject(err);
+        });
+      });
+    } finally {
+      await sftp.end();
+    }
+  } else {
+    const client = new FtpClient.Client();
+    try {
+      await client.access({ host: cred.host, port, user: cred.username, password: cred.password, secure: false });
+      let listResult: any[] = [];
+      if (!wantedFile) listResult = await client.list(folder);
+      let csvItems = listResult.filter((e: any) => e.isFile && /\.csv$/i.test(e.name));
+      if (matchRegex) csvItems = csvItems.filter((e: any) => matchRegex!.test(e.name));
+      const target = wantedFile ? wantedFile : csvItems.length ? csvItems[0].name : null;
+      if (!target) throw new AppError(404, 'No .csv files found');
+
+      await new Promise<void>((resolve, reject) => {
+        const sink = new Writable({
+          write(chunk, enc, cb) {
+            text += chunk.toString('utf-8');
+            if (text.includes('\n')) {
+              resolve();
+              return cb(new Error('ABORT_EARLY'));
+            }
+            cb();
+          }
+        });
+        client.downloadTo(sink, `${folder}/${target}`).then(() => resolve()).catch((err: any) => {
+          if (err.message === 'ABORT_EARLY') resolve();
+          else reject(err);
+        });
+      });
+    } finally {
+      client.close();
+    }
+  }
+
+  const lines = text.split(/\r?\n/);
+  if (lines.length === 0) return [];
+  const firstLine = lines[0] + '\n';
+  return parseCsvHeaders(firstLine);
+}
+
+async function fetchS3Header(client: S3Client, bucket: string, folder: string, fileName?: string, sourcePath?: string): Promise<string[]> {
+  const keys = await listS3Keys(client, bucket, folder, fileName, sourcePath);
+  if (!keys.length) throw new AppError(404, 'No .csv files found');
+
+  const obj = await client.send(
+    new GetObjectCommand({ Bucket: bucket, Key: keys[0] })
+  );
+  
+  let text = '';
+  await new Promise<void>((resolve, reject) => {
+    const stream = obj.Body as Readable;
+    stream.on('data', (chunk) => {
+      text += chunk.toString('utf-8');
+      if (text.includes('\n')) {
+        stream.destroy();
+        resolve();
+      }
+    });
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+
+  const lines = text.split(/\r?\n/);
+  if (lines.length === 0) return [];
+  return parseCsvHeaders(lines[0] + '\n');
+}
+
+// POST /v1/cloud-imports/fetch-headers
+router.post('/fetch-headers', async (req: Request, res: Response, next: NextFunction) => {
+  const { provider } = req.body;
+  try {
+    const { credentials, options, config_id } = req.body;
+    let cred = credentials || {};
+    let opts = options || {};
+
+    if (config_id) {
+      const cfg = await pool.query(
+        `SELECT provider, credentials, options FROM cloud_import_configs WHERE id = $1 AND org_id = $2`,
+        [config_id, req.user!.orgId]
+      );
+      if (cfg.rows.length) {
+        cred = { ...cfg.rows[0].credentials, ...cred };
+        opts = { ...cfg.rows[0].options, ...opts };
+      }
+    }
+
+    if (provider === 's3') {
+      const client = new S3Client({
+        region: cred.region || 'us-east-1',
+        credentials: {
+          accessKeyId: cred.access_key_id,
+          secretAccessKey: cred.secret_access_key,
+        },
+      });
+      const headers = await fetchS3Header(client, opts.bucket_name, opts.folder || '', opts.file_name, opts.source_path);
+      res.json({ headers });
+    } else {
+      const headers = await fetchFtpHeader(cred, opts);
+      res.json({ headers });
+    }
+  } catch (err: any) {
+    if (err instanceof AppError) {
+      next(err);
+    } else {
+      next(new AppError(400, provider === 's3' ? formatS3Error(err) : formatFtpError(err)));
+    }
   }
 });
 

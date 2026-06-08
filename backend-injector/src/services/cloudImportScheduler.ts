@@ -79,9 +79,13 @@ async function runDueCloudImports() {
       
       const result = (await response.json()) as any;
 
+      const finalStatus = result.status || 'ok';
+      const importedRows = result.imported_rows || 0;
+      const failedRows = result.failed_rows || 0;
+
       await pool.query(
-        `UPDATE cloud_import_configs SET last_run_status = 'ok', last_run_error = NULL WHERE id = $1`,
-        [cfg.id]
+        `UPDATE cloud_import_configs SET last_run_status = $2, last_run_error = NULL, last_run_imported_rows = $3, last_run_failed_rows = $4 WHERE id = $1`,
+        [cfg.id, finalStatus, importedRows, failedRows]
       );
       
       // After successful import, inject into campaigns

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
+  host:     process.env.DB_HOST     || '192.168.9.30',
   port:     parseInt(process.env.DB_PORT || '5432'),
   database: process.env.DB_NAME     || 'preview_campaign',
   user:     process.env.DB_USER     || 'postgres',

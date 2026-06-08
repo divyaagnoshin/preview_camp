@@ -1,5 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   getContactList,
@@ -21,7 +26,18 @@ import {
   type CloudImportConfig,
   type CloudProvider,
 } from '../api/client';
-import { Card, Button, Modal, Input, Table, Badge, StatCard, PageLoader, EmptyState, Pagination } from '../components/ui';
+import {
+  Card,
+  Button,
+  Modal,
+  Input,
+  Table,
+  Badge,
+  StatCard,
+  PageLoader,
+  EmptyState,
+  Pagination,
+} from '../components/ui';
 import { CloudConfigEditor } from '../components/CloudConfigEditor';
 import {
   ArrowLeft,
@@ -41,7 +57,6 @@ import {
   Save,
 } from 'lucide-react';
 
-
 // ─── Cron helpers ────────────────────────────────────────────────────────────
 
 function buildCron(
@@ -52,7 +67,9 @@ function buildCron(
   custom: string,
 ): string {
   if (freq === 'custom') return custom.trim();
-  const [hh, mm] = (time || '00:00').split(':').map((s) => parseInt(s, 10) || 0);
+  const [hh, mm] = (time || '00:00')
+    .split(':')
+    .map((s) => parseInt(s, 10) || 0);
   if (freq === 'hourly') return `0 * * * *`;
   if (freq === 'daily') return `${mm} ${hh} * * *`;
   if (freq === 'weekly') return `${mm} ${hh} * * ${dow}`;
@@ -81,12 +98,13 @@ function MenuItem({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${disabled
-        ? 'text-gray-300 cursor-not-allowed'
-        : danger
-          ? 'text-red-600 hover:bg-red-50'
-          : 'text-gray-700 hover:bg-gray-50'
-        }`}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${
+        disabled
+          ? 'text-gray-300 cursor-not-allowed'
+          : danger
+            ? 'text-red-600 hover:bg-red-50'
+            : 'text-gray-700 hover:bg-gray-50'
+      }`}
     >
       <span className='shrink-0'>{icon}</span>
       <span>{label}</span>
@@ -105,23 +123,39 @@ function BulkGrid({
   allFieldDefs: any[];
   rows: Record<string, any>[];
   setRows: React.Dispatch<React.SetStateAction<Record<string, any>[]>>;
-  progress: { done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null;
+  progress: {
+    done: number;
+    failed: number;
+    total: number;
+    errors: { row: number; error: string }[];
+  } | null;
   disabled: boolean;
 }) {
   const updateCell = (i: number, key: string, value: any) =>
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+    setRows((rs) =>
+      rs.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)),
+    );
   const addRow = () => setRows((rs) => [...rs, { phone_number: '' }]);
   const removeRow = (i: number) =>
     setRows((rs) => (rs.length === 1 ? rs : rs.filter((_, idx) => idx !== i)));
-  const cellCls = 'w-full border-0 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-inset bg-transparent';
-  const thCls = 'text-left text-[11px] uppercase tracking-wide text-gray-500 font-medium px-2 py-2 border-b border-gray-200 bg-gray-50';
+  const cellCls =
+    'w-full border-0 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-inset bg-transparent';
+  const thCls =
+    'text-left text-[11px] uppercase tracking-wide text-gray-500 font-medium px-2 py-2 border-b border-gray-200 bg-gray-50';
   const tdCls = 'border-b border-gray-100 align-top';
 
   return (
     <div className='space-y-3'>
       <div className='flex items-center justify-between'>
-        <p className='text-xs text-gray-500'>Enter one contact per row. Empty rows are skipped.</p>
-        <Button variant='secondary' icon={<Plus className='w-3.5 h-3.5' />} onClick={addRow} disabled={disabled}>
+        <p className='text-xs text-gray-500'>
+          Enter one contact per row. Empty rows are skipped.
+        </p>
+        <Button
+          variant='secondary'
+          icon={<Plus className='w-3.5 h-3.5' />}
+          onClick={addRow}
+          disabled={disabled}
+        >
           Add Row
         </Button>
       </div>
@@ -134,7 +168,9 @@ function BulkGrid({
               {allFieldDefs.map((def: any) => (
                 <th key={def.field_key} className={thCls + ' min-w-[160px]'}>
                   {def.name}
-                  {def.field_key === 'system_contact_id' && <span className='text-red-500 ml-0.5'>*</span>}
+                  {def.field_key === 'system_contact_id' && (
+                    <span className='text-red-500 ml-0.5'>*</span>
+                  )}
                 </th>
               ))}
               <th className={thCls + ' w-10'} />
@@ -143,12 +179,16 @@ function BulkGrid({
           <tbody>
             {rows.map((row, i) => (
               <tr key={i} className='hover:bg-gray-50/50'>
-                <td className={tdCls + ' text-xs text-gray-400 px-2 py-1.5'}>{i + 1}</td>
+                <td className={tdCls + ' text-xs text-gray-400 px-2 py-1.5'}>
+                  {i + 1}
+                </td>
                 <td className={tdCls}>
                   <input
                     type='tel'
                     value={row.phone_number ?? ''}
-                    onChange={(e) => updateCell(i, 'phone_number', e.target.value)}
+                    onChange={(e) =>
+                      updateCell(i, 'phone_number', e.target.value)
+                    }
                     placeholder='+12125550101'
                     disabled={disabled}
                     className={cellCls}
@@ -156,16 +196,22 @@ function BulkGrid({
                 </td>
                 {allFieldDefs.map((def: any) => {
                   const t = String(def.data_type).toUpperCase();
-                  const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                  const isNum =
+                    t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
                   const isDate = t === 'TIMESTAMP';
                   const isBool = t === 'BOOLEAN';
                   if (isBool) {
                     return (
-                      <td key={def.field_key} className={tdCls + ' px-2 py-1.5'}>
+                      <td
+                        key={def.field_key}
+                        className={tdCls + ' px-2 py-1.5'}
+                      >
                         <input
                           type='checkbox'
                           checked={!!row[def.field_key]}
-                          onChange={(e) => updateCell(i, def.field_key, e.target.checked)}
+                          onChange={(e) =>
+                            updateCell(i, def.field_key, e.target.checked)
+                          }
                           disabled={disabled}
                           className='rounded text-indigo-600'
                         />
@@ -175,9 +221,13 @@ function BulkGrid({
                   return (
                     <td key={def.field_key} className={tdCls}>
                       <input
-                        type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
+                        type={
+                          isNum ? 'number' : isDate ? 'datetime-local' : 'text'
+                        }
                         value={row[def.field_key] ?? ''}
-                        onChange={(e) => updateCell(i, def.field_key, e.target.value)}
+                        onChange={(e) =>
+                          updateCell(i, def.field_key, e.target.value)
+                        }
                         disabled={disabled}
                         className={cellCls}
                       />
@@ -202,12 +252,16 @@ function BulkGrid({
         <div className='text-xs space-y-1'>
           <p className='text-gray-600'>
             Imported {progress.done} of {progress.total}
-            {progress.failed > 0 && <span className='text-red-600'> · {progress.failed} failed</span>}
+            {progress.failed > 0 && (
+              <span className='text-red-600'> · {progress.failed} failed</span>
+            )}
           </p>
           {progress.errors.length > 0 && (
             <ul className='text-red-500 list-disc pl-5 max-h-24 overflow-y-auto'>
               {progress.errors.map((e, idx) => (
-                <li key={idx}>Row {e.row}: {e.error}</li>
+                <li key={idx}>
+                  Row {e.row}: {e.error}
+                </li>
               ))}
             </ul>
           )}
@@ -226,14 +280,18 @@ export default function ContactListDetailPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const [uploadErrors, setUploadErrors] = useState<{ row: number; phone: string; error: string }[]>([]);
+  const [uploadErrors, setUploadErrors] = useState<
+    { row: number; phone: string; error: string }[]
+  >([]);
   const [showUploadErrors, setShowUploadErrors] = useState(false);
 
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const anySelected = selectedContactIds.size > 0;
 
@@ -243,19 +301,43 @@ export default function ContactListDetailPage() {
 
   // ── Edit contact modal state ──────────────────────────────────────────────
   const [editContactTarget, setEditContactTarget] = useState<any | null>(null);
-  const [editContactForm, setEditContactForm] = useState<Record<string, any>>({});
+  const [editContactForm, setEditContactForm] = useState<Record<string, any>>(
+    {},
+  );
 
   const [showAddContact, setShowAddContact] = useState(false);
   const [addMode, setAddMode] = useState<'single' | 'bulk'>('single');
-  const [formValues, setFormValues] = useState<Record<string, any>>({ priority: '100' });
-  const [bulkRows, setBulkRows] = useState<Record<string, any>[]>([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null>(null);
+  const [importMode, setImportMode] = useState<'fresh' | 'append'>('append');
+
+  const [showCsvUploadModal, setShowCsvUploadModal] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImportMode, setCsvImportMode] = useState<'fresh' | 'append'>(
+    'append',
+  );
+  const [formValues, setFormValues] = useState<Record<string, any>>({
+    priority: '100',
+  });
+  const [bulkRows, setBulkRows] = useState<Record<string, any>[]>([
+    { phone_number: '' },
+    { phone_number: '' },
+    { phone_number: '' },
+  ]);
+  const [bulkProgress, setBulkProgress] = useState<{
+    done: number;
+    failed: number;
+    total: number;
+    errors: { row: number; error: string }[];
+  } | null>(null);
 
   const [showCloudImport, setShowCloudImport] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [showCfgEditor, setShowCfgEditor] = useState(false);
   const [editingCfg, setEditingCfg] = useState<CloudImportConfig | null>(null);
-  const [rowMenu, setRowMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // ── Queries ───────────────────────────────────────────────────────────────
   const { data: list, isLoading: listLoading } = useQuery({
@@ -284,8 +366,23 @@ export default function ContactListDetailPage() {
   const total: number = contactsData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const RESERVED_SYSTEM_KEYS = new Set(['phone_number', 'first_name', 'last_name', 'email', 'timezone', 'alternate_phone_number', 'priority', 'assigned_agent_id']);
-  const SYSTEM_KEYS = new Set(['id', 'phone_number', 'contact_list_id', 'created_at', 'updated_at']);
+  const RESERVED_SYSTEM_KEYS = new Set([
+    'phone_number',
+    'first_name',
+    'last_name',
+    'email',
+    'timezone',
+    'alternate_phone_number',
+    'priority',
+    'assigned_agent_id',
+  ]);
+  const SYSTEM_KEYS = new Set([
+    'id',
+    'phone_number',
+    'contact_list_id',
+    'created_at',
+    'updated_at',
+  ]);
 
   const attrColumns: { key: string; label: string }[] = useMemo(() => {
     const attrs: any[] = attrData?.data || [];
@@ -294,15 +391,25 @@ export default function ContactListDetailPage() {
       .map((a: any) => ({ key: a.field_key, label: a.name }));
   }, [attrData]);
 
-  const customFieldDefs = useMemo(() =>
-    (attrData?.data || []).filter((r: any) => r.is_selected && !RESERVED_SYSTEM_KEYS.has(r.field_key)),
-    [attrData]);
+  const customFieldDefs = useMemo(
+    () =>
+      (attrData?.data || []).filter(
+        (r: any) => r.is_selected && !RESERVED_SYSTEM_KEYS.has(r.field_key),
+      ),
+    [attrData],
+  );
 
   const coerceCustom = (def: any, raw: any) => {
     if (raw === '' || raw == null) return undefined;
     const t = String(def.data_type).toUpperCase();
-    if (t === 'INTEGER' || t === 'LONG') { const n = parseInt(raw, 10); return isNaN(n) ? raw : n; }
-    if (t === 'FLOAT') { const n = parseFloat(raw); return isNaN(n) ? raw : n; }
+    if (t === 'INTEGER' || t === 'LONG') {
+      const n = parseInt(raw, 10);
+      return isNaN(n) ? raw : n;
+    }
+    if (t === 'FLOAT') {
+      const n = parseFloat(raw);
+      return isNaN(n) ? raw : n;
+    }
     if (t === 'BOOLEAN') return !!raw;
     return raw;
   };
@@ -311,7 +418,11 @@ export default function ContactListDetailPage() {
     setShowAddContact(false);
     setAddMode('single');
     setFormValues({ priority: '100' });
-    setBulkRows([{ phone_number: '' }, { phone_number: '' }, { phone_number: '' }]);
+    setBulkRows([
+      { phone_number: '' },
+      { phone_number: '' },
+      { phone_number: '' },
+    ]);
     setBulkProgress(null);
   };
 
@@ -345,23 +456,29 @@ export default function ContactListDetailPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleCsvSubmit = async () => {
+    if (!csvFile) return;
     setUploadStatus('Uploading…');
     setUploadErrors([]);
     setShowUploadErrors(false);
+    setShowCsvUploadModal(false);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', csvFile);
       fd.append('contact_list_id', id!);
+      fd.append('import_mode', csvImportMode);
       const result = await uploadCSV(fd);
-      const errs = (result.errors || []) as { row: number; phone: string; error: string }[];
+      const errs = (result.errors || []) as {
+        row: number;
+        phone: string;
+        error: string;
+      }[];
       setUploadErrors(errs);
       setShowUploadErrors(errs.length > 0 && errs.length <= 50);
-      const prefix = result.imported_rows > 0 ? '✓' : '⚠';
+      const prefix =
+        result.imported_rows > 0 || result.updated_rows > 0 ? '✓' : '⚠';
       setUploadStatus(
-        `${prefix} Imported ${result.imported_rows} of ${result.total_rows} contacts${result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''}`,
+        `${prefix} Processed ${result.total_rows} contacts: ${result.imported_rows} created, ${result.updated_rows || 0} updated${result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''}`,
       );
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
@@ -369,7 +486,7 @@ export default function ContactListDetailPage() {
     } catch (err: any) {
       setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
     }
-    if (fileRef.current) fileRef.current.value = '';
+    setCsvFile(null);
   };
 
   const addMut = useMutation({
@@ -429,7 +546,9 @@ export default function ContactListDetailPage() {
           };
           const customPayload: Record<string, any> = {};
 
-          for (const def of allDefs.filter((d: any) => d.is_selected && d.field_key !== 'phone_number')) {
+          for (const def of allDefs.filter(
+            (d: any) => d.is_selected && d.field_key !== 'phone_number',
+          )) {
             const rawVal = row[def.field_key];
             if (RESERVED_SYSTEM_KEYS.has(def.field_key)) {
               // System field
@@ -445,7 +564,11 @@ export default function ContactListDetailPage() {
             }
           }
 
-          await addContact({ ...systemPayload, custom_fields: customPayload });
+          await addContact({
+            ...systemPayload,
+            custom_fields: customPayload,
+            import_mode: importMode,
+          });
           done += 1;
         } catch (e: any) {
           failed += 1;
@@ -524,44 +647,80 @@ export default function ContactListDetailPage() {
 
   const deleteCfgMut = useMutation({
     mutationFn: (cfgId: string) => deleteCloudImportConfig(cfgId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['cloud-import-configs'] }),
   });
 
   const toggleScheduleMut = useMutation({
-    mutationFn: ({ cfg, enabled }: { cfg: CloudImportConfig; enabled: boolean }) =>
-      updateCloudImportConfigSchedule(cfg.id, { enabled, cron_expression: enabled ? cfg.cron_expression || undefined : undefined, timezone: cfg.timezone || 'UTC', contact_list_ids: cfg.contact_list_ids || [id!] }),
+    mutationFn: ({
+      cfg,
+      enabled,
+    }: {
+      cfg: CloudImportConfig;
+      enabled: boolean;
+    }) =>
+      updateCloudImportConfigSchedule(cfg.id, {
+        enabled,
+        cron_expression: enabled ? cfg.cron_expression || undefined : undefined,
+        timezone: cfg.timezone || 'UTC',
+        contact_list_ids: cfg.contact_list_ids || [id!],
+      }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
-      setCloudStatus(`✓ Schedule ${vars.enabled ? 'activated' : 'deactivated'}.`);
+      setCloudStatus(
+        `✓ Schedule ${vars.enabled ? 'activated' : 'deactivated'}.`,
+      );
     },
-    onError: (err: any) => setCloudStatus(`Error: ${err.response?.data?.error || err.message || 'Failed'}`),
+    onError: (err: any) =>
+      setCloudStatus(
+        `Error: ${err.response?.data?.error || err.message || 'Failed'}`,
+      ),
   });
 
   const runCfgMut = useMutation({
     mutationFn: (cfgId: string) => runCloudImport([id!], { config_id: cfgId }),
     onMutate: () => setCloudStatus('Connecting and downloading…'),
     onSuccess: (result: any) => {
-      const failedNote = result.failed_rows > 0 ? `, ${result.failed_rows} failed` : '';
-      setCloudStatus(`✓ Imported ${result.imported_rows} of ${result.total_rows} contacts from ${result.files?.length || 0} file(s)${failedNote}.`);
+      const failedNote =
+        result.failed_rows > 0 ? ` (${result.failed_rows} failed)` : '';
+      setCloudStatus(
+        `✓ Processed ${result.total_rows} contacts (${result.imported_rows} created, ${result.updated_rows || 0} updated) from ${result.files?.length || 0} file(s)${failedNote}.`,
+      );
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
       qc.invalidateQueries({ queryKey: ['contact-lists'] });
       qc.invalidateQueries({ queryKey: ['cloud-import-configs'] });
     },
-    onError: (err: any) => setCloudStatus(`Error: ${err.response?.data?.error || err.message || 'Cloud import failed'}`),
+    onError: (err: any) =>
+      setCloudStatus(
+        `Error: ${err.response?.data?.error || err.message || 'Cloud import failed'}`,
+      ),
   });
 
   // ── Select helpers ────────────────────────────────────────────────────────
-  const allOnPageSelected = contacts.length > 0 && contacts.every((c) => selectedContactIds.has(c.id));
+  const allOnPageSelected =
+    contacts.length > 0 && contacts.every((c) => selectedContactIds.has(c.id));
   const toggleSelectAll = () => {
     if (allOnPageSelected) {
-      setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.delete(c.id)); return next; });
+      setSelectedContactIds((prev) => {
+        const next = new Set(prev);
+        contacts.forEach((c) => next.delete(c.id));
+        return next;
+      });
     } else {
-      setSelectedContactIds((prev) => { const next = new Set(prev); contacts.forEach((c) => next.add(c.id)); return next; });
+      setSelectedContactIds((prev) => {
+        const next = new Set(prev);
+        contacts.forEach((c) => next.add(c.id));
+        return next;
+      });
     }
   };
   const toggleOne = (cid: string) => {
-    setSelectedContactIds((prev) => { const next = new Set(prev); next.has(cid) ? next.delete(cid) : next.add(cid); return next; });
+    setSelectedContactIds((prev) => {
+      const next = new Set(prev);
+      next.has(cid) ? next.delete(cid) : next.add(cid);
+      return next;
+    });
   };
 
   if (listLoading) return <PageLoader />;
@@ -569,62 +728,146 @@ export default function ContactListDetailPage() {
 
   return (
     <div className='p-6 space-y-5'>
-
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className='flex items-center gap-3'>
-        <button onClick={() => navigate('/contact-lists')} className='p-1.5 hover:bg-gray-100 rounded-lg transition'>
+        <button
+          onClick={() => navigate('/contact-lists')}
+          className='p-1.5 hover:bg-gray-100 rounded-lg transition'
+        >
           <ArrowLeft className='w-4 h-4 text-gray-500' />
         </button>
         <div className='flex-1'>
-          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>{listData?.name || 'Contact List'}</h1>
-          {listData?.description && <p className='text-sm text-gray-400 mt-0.5'>{listData.description}</p>}
+          <h1
+            className='text-2xl font-bold page-heading'
+            style={{ fontFamily: 'Sora, sans-serif' }}
+          >
+            {listData?.name || 'Contact List'}
+          </h1>
+          {listData?.description && (
+            <p className='text-sm text-gray-400 mt-0.5'>
+              {listData.description}
+            </p>
+          )}
         </div>
         <div className='flex items-center gap-2 flex-wrap justify-end'>
-          <Button variant='secondary' icon={<Cloud className='w-4 h-4' />} onClick={() => setShowCloudImport(true)}>Cloud Import</Button>
-          <Button variant='secondary' icon={<Settings2 className='w-4 h-4' />} onClick={() => navigate(`/contact-lists/${id}/attributes`)}>Manage Attributes</Button>
-          <Button variant='secondary' icon={<Download className='w-4 h-4' />} onClick={() => downloadContactListCsvTemplate(id!, listData?.name || 'contacts')}>CSV Template</Button>
-          <Button variant='secondary' icon={<Upload className='w-4 h-4' />} onClick={() => fileRef.current?.click()}>Upload CSV</Button>
-          <input ref={fileRef} type='file' accept='.csv' className='hidden' onChange={handleFileUpload} />
-          <Button icon={<Plus className='w-4 h-4' />} onClick={() => setShowAddContact(true)}>Add Contact</Button>
+          <Button
+            variant='secondary'
+            icon={<Settings2 className='w-4 h-4' />}
+            onClick={() => navigate(`/contact-lists/${id}/attributes`)}
+          >
+            Manage Attributes
+          </Button>
+          <Button
+            variant='secondary'
+            icon={<Download className='w-4 h-4' />}
+            onClick={() =>
+              downloadContactListCsvTemplate(id!, listData?.name || 'contacts')
+            }
+          >
+            CSV Template
+          </Button>
+          <Button
+            variant='secondary'
+            icon={<Upload className='w-4 h-4' />}
+            onClick={() => fileRef.current?.click()}
+          >
+            Upload CSV
+          </Button>
+          <Button
+            variant='secondary'
+            icon={<Cloud className='w-4 h-4' />}
+            onClick={() => setShowCloudImport(true)}
+          >
+            Cloud Import
+          </Button>
+          <input
+            ref={fileRef}
+            type='file'
+            accept='.csv'
+            className='hidden'
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setCsvFile(file);
+                setShowCsvUploadModal(true);
+              }
+            }}
+          />
+          <Button
+            icon={<Plus className='w-4 h-4' />}
+            onClick={() => setShowAddContact(true)}
+          >
+            Add Contact
+          </Button>
         </div>
       </div>
 
       {/* Upload status banner */}
       {uploadStatus && (
-        <div className={`p-3 rounded-lg text-sm flex items-center justify-between ${uploadStatus.startsWith('✓') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⚠') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+        <div
+          className={`p-3 rounded-lg text-sm flex items-center justify-between ${uploadStatus.startsWith('✓') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⚠') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}
+        >
           <span>{uploadStatus}</span>
-          <button onClick={() => setUploadStatus(null)} className='ml-2 opacity-60 hover:opacity-100'><X className='w-4 h-4' /></button>
+          <button
+            onClick={() => setUploadStatus(null)}
+            className='ml-2 opacity-60 hover:opacity-100'
+          >
+            <X className='w-4 h-4' />
+          </button>
         </div>
       )}
 
       {/* Upload validation errors panel */}
       {uploadErrors.length > 0 && (
         <div className='border border-amber-200 bg-amber-50 rounded-lg text-sm'>
-          <button type='button' onClick={() => setShowUploadErrors((s) => !s)} className='w-full flex items-center justify-between px-4 py-2.5 text-left text-amber-800 font-medium'>
-            <span>{uploadErrors.length} validation {uploadErrors.length === 1 ? 'error' : 'errors'}</span>
-            <span className='text-xs text-amber-600'>{showUploadErrors ? 'Hide' : 'Show'} details</span>
+          <button
+            type='button'
+            onClick={() => setShowUploadErrors((s) => !s)}
+            className='w-full flex items-center justify-between px-4 py-2.5 text-left text-amber-800 font-medium'
+          >
+            <span>
+              {uploadErrors.length} validation{' '}
+              {uploadErrors.length === 1 ? 'error' : 'errors'}
+            </span>
+            <span className='text-xs text-amber-600'>
+              {showUploadErrors ? 'Hide' : 'Show'} details
+            </span>
           </button>
           {showUploadErrors && (
             <div className='border-t border-amber-200 max-h-64 overflow-auto'>
               <table className='w-full text-xs'>
                 <thead className='bg-amber-100/50 sticky top-0'>
                   <tr>
-                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium w-16'>Row</th>
-                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium w-40'>Phone</th>
-                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium'>Error</th>
+                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium w-16'>
+                      Row
+                    </th>
+                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium w-40'>
+                      Phone
+                    </th>
+                    <th className='text-left px-3 py-1.5 text-amber-800 font-medium'>
+                      Error
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {uploadErrors.slice(0, 200).map((e, i) => (
                     <tr key={i} className='border-t border-amber-100 align-top'>
-                      <td className='px-3 py-1.5 font-mono text-amber-700'>{e.row === 0 ? '—' : e.row}</td>
-                      <td className='px-3 py-1.5 font-mono text-gray-700'>{e.phone || '—'}</td>
+                      <td className='px-3 py-1.5 font-mono text-amber-700'>
+                        {e.row === 0 ? '—' : e.row}
+                      </td>
+                      <td className='px-3 py-1.5 font-mono text-gray-700'>
+                        {e.phone || '—'}
+                      </td>
                       <td className='px-3 py-1.5 text-gray-700'>{e.error}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {uploadErrors.length > 200 && <div className='px-3 py-2 text-xs text-amber-700 border-t border-amber-100'>Showing first 200 of {uploadErrors.length} errors.</div>}
+              {uploadErrors.length > 200 && (
+                <div className='px-3 py-2 text-xs text-amber-700 border-t border-amber-100'>
+                  Showing first 200 of {uploadErrors.length} errors.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -632,9 +875,25 @@ export default function ContactListDetailPage() {
 
       {/* ── Stats cards ──────────────────────────────────────────────────── */}
       <div className='grid grid-cols-3 gap-4'>
-        <StatCard label='Total Contacts' value={(listData?.contact_count ?? total).toLocaleString()} color='orange' />
-        <StatCard label='Field Definitions' value={listData?.field_count ?? attrColumns.length} color='blue' />
-        <StatCard label='Last Updated' value={listData?.updated_at ? new Date(listData.updated_at).toLocaleDateString() : '—'} color='amber' />
+        <StatCard
+          label='Total Contacts'
+          value={(listData?.contact_count ?? total).toLocaleString()}
+          color='orange'
+        />
+        <StatCard
+          label='Field Definitions'
+          value={listData?.field_count ?? attrColumns.length}
+          color='blue'
+        />
+        <StatCard
+          label='Last Updated'
+          value={
+            listData?.updated_at
+              ? new Date(listData.updated_at).toLocaleDateString()
+              : '—'
+          }
+          color='amber'
+        />
       </div>
 
       {/* ── Contacts table ───────────────────────────────────────────────── */}
@@ -642,19 +901,34 @@ export default function ContactListDetailPage() {
         {/* Toolbar */}
         <div className='flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-wrap'>
           <div className='flex items-center gap-3 flex-1 min-w-0'>
-            <h3 className='font-semibold text-gray-900 text-sm whitespace-nowrap'>Contacts ({total})</h3>
+            <h3 className='font-semibold text-gray-900 text-sm whitespace-nowrap'>
+              Contacts ({total})
+            </h3>
             <div className='relative w-64'>
               <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none' />
               <input
                 type='text'
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 placeholder='Search contacts…'
                 className='w-full pl-9 pr-8 py-1.5 text-sm rounded-xl transition placeholder:text-[#C09070]'
-                style={{ border: '2px solid #FFD0B0', background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)', color: '#1A0F00' }}
+                style={{
+                  border: '2px solid #FFD0B0',
+                  background: 'linear-gradient(135deg, #FFFAF7, #FFF4EE)',
+                  color: '#1A0F00',
+                }}
               />
               {search && (
-                <button onClick={() => { setSearch(''); setPage(1); }} className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'>
+                <button
+                  onClick={() => {
+                    setSearch('');
+                    setPage(1);
+                  }}
+                  className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition'
+                >
                   <X className='w-3.5 h-3.5' />
                 </button>
               )}
@@ -662,11 +936,19 @@ export default function ContactListDetailPage() {
           </div>
           <div className='flex items-center gap-2'>
             {anySelected && (
-              <button onClick={() => setShowDeleteSelected(true)} className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 transition'>
-                <Trash2 className='w-3.5 h-3.5' /> Delete Selected ({selectedContactIds.size})
+              <button
+                onClick={() => setShowDeleteSelected(true)}
+                className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 transition'
+              >
+                <Trash2 className='w-3.5 h-3.5' /> Delete Selected (
+                {selectedContactIds.size})
               </button>
             )}
-            <button onClick={() => setShowDeleteAll(true)} disabled={total === 0} className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed'>
+            <button
+              onClick={() => setShowDeleteAll(true)}
+              disabled={total === 0}
+              className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed'
+            >
               <Trash2 className='w-3.5 h-3.5' /> Delete All
             </button>
           </div>
@@ -674,14 +956,25 @@ export default function ContactListDetailPage() {
 
         {/* ── Fixed-height scrollable table ─────────────────────────────── */}
         {contactsLoading ? (
-          <div className='py-12 text-center text-sm text-gray-400'>Loading…</div>
+          <div className='py-12 text-center text-sm text-gray-400'>
+            Loading…
+          </div>
         ) : contacts.length === 0 ? (
           <div className='py-16 text-center'>
-            <p className='text-sm font-medium text-gray-500'>No contacts found</p>
-            <p className='text-xs text-gray-400 mt-1'>{search ? 'Try a different search term' : 'Upload a CSV or add contacts manually'}</p>
+            <p className='text-sm font-medium text-gray-500'>
+              No contacts found
+            </p>
+            <p className='text-xs text-gray-400 mt-1'>
+              {search
+                ? 'Try a different search term'
+                : 'Upload a CSV or add contacts manually'}
+            </p>
           </div>
         ) : (
-          <div className='overflow-x-auto overflow-y-auto' style={{ maxHeight: '565px' }}>
+          <div
+            className='overflow-x-auto overflow-y-auto'
+            style={{ maxHeight: '565px' }}
+          >
             <table className='w-full text-sm'>
               {/* Sticky header stays visible while scrolling */}
               <thead className='sticky top-0 z-10'>
@@ -697,13 +990,20 @@ export default function ContactListDetailPage() {
                       />
                     )}
                   </th>
-                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>Phone</th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>
+                    Phone
+                  </th>
                   {attrColumns.map((col) => (
-                    <th key={col.key} className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50'>
+                    <th
+                      key={col.key}
+                      className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap bg-gray-50'
+                    >
                       {col.label}
                     </th>
                   ))}
-                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>Actions</th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50'>
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className='divide-y divide-gray-50'>
@@ -719,18 +1019,36 @@ export default function ContactListDetailPage() {
                       className={`transition-colors ${isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''}`}
                     >
                       <td className='px-4 py-2.5 w-10'>
-                        {checkboxVisible
-                          ? <input type='checkbox' checked={isSelected} onChange={() => toggleOne(c.id)} className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer' />
-                          : <span className='inline-block w-4 h-4' />}
+                        {checkboxVisible ? (
+                          <input
+                            type='checkbox'
+                            checked={isSelected}
+                            onChange={() => toggleOne(c.id)}
+                            className='w-4 h-4 text-indigo-600 rounded border-gray-300 cursor-pointer'
+                          />
+                        ) : (
+                          <span className='inline-block w-4 h-4' />
+                        )}
                       </td>
-                      <td className='px-4 py-2.5 text-gray-900 font-medium whitespace-nowrap'>{c.phone_number}</td>
+                      <td className='px-4 py-2.5 text-gray-900 font-medium whitespace-nowrap'>
+                        {c.phone_number}
+                      </td>
                       {attrColumns.map((col) => {
                         const value = c[col.key] ?? c.custom_fields?.[col.key];
                         return (
-                          <td key={col.key} className='px-4 py-2.5 text-gray-600 whitespace-nowrap'>
-                            {value != null && value !== ''
-                              ? (typeof value === 'object' ? JSON.stringify(value) : String(value))
-                              : <span className='text-gray-300'>—</span>}
+                          <td
+                            key={col.key}
+                            className='px-4 py-2.5 text-gray-600 whitespace-nowrap'
+                          >
+                            {value != null && value !== '' ? (
+                              typeof value === 'object' ? (
+                                JSON.stringify(value)
+                              ) : (
+                                String(value)
+                              )
+                            ) : (
+                              <span className='text-gray-300'>—</span>
+                            )}
                           </td>
                         );
                       })}
@@ -741,13 +1059,15 @@ export default function ContactListDetailPage() {
                             onClick={() => openEditContact(c)}
                             className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
                           >
-                            <Pencil className='w-3 h-3' />Edit
+                            <Pencil className='w-3 h-3' />
+                            Edit
                           </button>
                           <button
                             onClick={() => setDeleteTarget(c)}
                             className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
                           >
-                            <Trash2 className='w-3 h-3' />Delete
+                            <Trash2 className='w-3 h-3' />
+                            Delete
                           </button>
                         </div>
                       </td>
@@ -767,19 +1087,59 @@ export default function ContactListDetailPage() {
             totalItems={total}
             pageSize={pageSize as any}
             onPageChange={(p) => setPage(p)}
-            onPageSizeChange={(ps) => { setPageSize(ps); setPage(1); }}
+            onPageSizeChange={(ps) => {
+              setPageSize(ps);
+              setPage(1);
+            }}
           />
         )}
       </Card>
 
       {/* ── Add Contact modal ─────────────────────────────────────────────── */}
-      <Modal title='Add Contact' open={showAddContact} onClose={closeAddContact} size={addMode === 'bulk' ? 'xl' : 'lg'}>
-        <div className='mb-4 flex items-center gap-3'>
-          <label className='text-xs text-gray-500'>Mode</label>
-          <select value={addMode} onChange={(e) => setAddMode(e.target.value as 'single' | 'bulk')} className='border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'>
-            <option value='single'>Single Upload</option>
-            <option value='bulk'>Bulk Upload</option>
-          </select>
+      <Modal
+        title='Add Contact'
+        open={showAddContact}
+        onClose={closeAddContact}
+        size={addMode === 'bulk' ? 'xl' : 'lg'}
+      >
+        <div className='mb-4 grid grid-cols-2 gap-4'>
+          <div className='flex items-center gap-3'>
+            <label className='text-xs text-gray-500'>Mode</label>
+            <select
+              value={addMode}
+              onChange={(e) => setAddMode(e.target.value as 'single' | 'bulk')}
+              className='border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+            >
+              <option value='single'>Single Upload</option>
+              <option value='bulk'>Bulk Upload</option>
+            </select>
+          </div>
+          <div className='flex items-center gap-4 justify-end'>
+            <div className='flex p-1 bg-gray-100 rounded-lg'>
+              <button
+                type='button'
+                onClick={() => setImportMode('fresh')}
+                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${
+                  importMode === 'fresh'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Fresh Contacts (Insert All)
+              </button>
+              <button
+                type='button'
+                onClick={() => setImportMode('append')}
+                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${
+                  importMode === 'append'
+                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Append Contacts (Update Existing)
+              </button>
+            </div>
+          </div>
         </div>
 
         {addMode === 'single' ? (
@@ -788,63 +1148,84 @@ export default function ContactListDetailPage() {
             <Input
               label='Phone Number (E.164) *'
               value={formValues.phone_number ?? ''}
-              onChange={(e) => setFormValues((v) => ({ ...v, phone_number: e.target.value }))}
+              onChange={(e) =>
+                setFormValues((v) => ({ ...v, phone_number: e.target.value }))
+              }
               placeholder='+12125550101'
             />
 
             {/* Render ALL selected attributes except phone_number dynamically */}
-            {(attrData?.data || [])
-              .filter((r: any) => r.is_selected && r.field_key !== 'phone_number')
-              .length > 0 && (
-                <div className='grid grid-cols-2 gap-3'>
-                  {(attrData?.data || [])
-                    .filter((r: any) => r.is_selected && r.field_key !== 'phone_number')
-                    .map((def: any) => {
-                      const t = String(def.data_type).toUpperCase();
-                      const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
-                      const isDate = t === 'TIMESTAMP';
-                      const isBool = t === 'BOOLEAN';
+            {(attrData?.data || []).filter(
+              (r: any) => r.is_selected && r.field_key !== 'phone_number',
+            ).length > 0 && (
+              <div className='grid grid-cols-2 gap-3'>
+                {(attrData?.data || [])
+                  .filter(
+                    (r: any) => r.is_selected && r.field_key !== 'phone_number',
+                  )
+                  .map((def: any) => {
+                    const t = String(def.data_type).toUpperCase();
+                    const isNum =
+                      t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                    const isDate = t === 'TIMESTAMP';
+                    const isBool = t === 'BOOLEAN';
 
-                      if (isBool) {
-                        return (
-                          <label
-                            key={def.field_key}
-                            className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
-                          >
-                            <input
-                              type='checkbox'
-                              checked={!!formValues[def.field_key]}
-                              onChange={(e) =>
-                                setFormValues((v) => ({ ...v, [def.field_key]: e.target.checked }))
-                              }
-                              className='rounded text-indigo-600'
-                            />
-                            {def.name}
-                          </label>
-                        );
-                      }
-
+                    if (isBool) {
                       return (
-                        <div key={def.field_key}>
-                          <label className='block text-xs text-gray-500 mb-1'>{def.name}</label>
+                        <label
+                          key={def.field_key}
+                          className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
+                        >
                           <input
-                            type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
-                            value={formValues[def.field_key] ?? ''}
+                            type='checkbox'
+                            checked={!!formValues[def.field_key]}
                             onChange={(e) =>
-                              setFormValues((v) => ({ ...v, [def.field_key]: e.target.value }))
+                              setFormValues((v) => ({
+                                ...v,
+                                [def.field_key]: e.target.checked,
+                              }))
                             }
-                            placeholder={def.field_key}
-                            className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                            className='rounded text-indigo-600'
                           />
-                        </div>
+                          {def.name}
+                        </label>
                       );
-                    })}
-                </div>
-              )}
+                    }
+
+                    return (
+                      <div key={def.field_key}>
+                        <label className='block text-xs text-gray-500 mb-1'>
+                          {def.name}
+                        </label>
+                        <input
+                          type={
+                            isNum
+                              ? 'number'
+                              : isDate
+                                ? 'datetime-local'
+                                : 'text'
+                          }
+                          value={formValues[def.field_key] ?? ''}
+                          onChange={(e) =>
+                            setFormValues((v) => ({
+                              ...v,
+                              [def.field_key]: e.target.value,
+                            }))
+                          }
+                          placeholder={def.field_key}
+                          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
+                        />
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         ) : (
           <BulkGrid
-            allFieldDefs={(attrData?.data || []).filter((r: any) => r.is_selected && r.field_key !== 'phone_number')}
+            allFieldDefs={(attrData?.data || []).filter(
+              (r: any) => r.is_selected && r.field_key !== 'phone_number',
+            )}
             rows={bulkRows}
             setRows={setBulkRows}
             progress={bulkProgress}
@@ -853,67 +1234,281 @@ export default function ContactListDetailPage() {
         )}
 
         <div className='flex gap-3 pt-4 mt-4 border-t border-gray-100'>
-          <Button variant='secondary' className='flex-1' onClick={closeAddContact}>Cancel</Button>
+          <Button
+            variant='secondary'
+            className='flex-1'
+            onClick={closeAddContact}
+          >
+            Cancel
+          </Button>
           {addMode === 'single' ? (
-            <Button className='flex-1' loading={addMut.isPending} disabled={!formValues.phone_number} onClick={() => addMut.mutate()}>Add Contact</Button>
+            <Button
+              className='flex-1'
+              loading={addMut.isPending}
+              disabled={!formValues.phone_number}
+              onClick={() => addMut.mutate()}
+            >
+              Add Contact
+            </Button>
           ) : (
-            <Button className='flex-1' loading={bulkMut.isPending} disabled={bulkRows.every((r) => String(r.phone_number || '').trim() === '')} onClick={() => bulkMut.mutate()}>Import Contacts</Button>
+            <Button
+              className='flex-1'
+              loading={bulkMut.isPending}
+              disabled={bulkRows.every(
+                (r) => String(r.phone_number || '').trim() === '',
+              )}
+              onClick={() => bulkMut.mutate()}
+            >
+              Import Contacts
+            </Button>
           )}
         </div>
         {addMut.isError && addMode === 'single' && (
-          <p className='text-xs text-red-500 mt-2'>{(addMut.error as any)?.response?.data?.error}</p>
+          <p className='text-xs text-red-500 mt-2'>
+            {(addMut.error as any)?.response?.data?.error}
+          </p>
         )}
       </Modal>
 
+      {/* ── CSV Upload modal ──────────────────────────────────────────────── */}
+      <Modal
+        title='Upload CSV'
+        open={showCsvUploadModal}
+        onClose={() => {
+          setShowCsvUploadModal(false);
+          setCsvFile(null);
+        }}
+      >
+        <div className='mb-4 flex p-1 bg-gray-100 rounded-lg w-full'>
+          <button
+            type='button'
+            onClick={() => setCsvImportMode('fresh')}
+            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+              csvImportMode === 'fresh'
+                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Fresh Contacts (Insert All)
+          </button>
+          <button
+            type='button'
+            onClick={() => setCsvImportMode('append')}
+            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
+              csvImportMode === 'append'
+                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Append Contacts (Update Existing)
+          </button>
+        </div>
+        <div className='mt-4 flex flex-col gap-2'>
+          <div className='flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50'>
+            <span className='text-sm text-gray-700 font-medium truncate flex-1'>
+              {csvFile?.name}
+            </span>
+            <button
+              onClick={() => setCsvFile(null)}
+              className='p-1 text-gray-400 hover:text-red-500'
+            >
+              <X className='w-4 h-4' />
+            </button>
+          </div>
+          {!csvFile && (
+            <input
+              type='file'
+              accept='.csv'
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) setCsvFile(file);
+              }}
+              className='mt-2 text-sm'
+            />
+          )}
+        </div>
+        <div className='flex gap-3 pt-4 mt-4 border-t border-gray-100'>
+          <Button
+            variant='secondary'
+            className='flex-1'
+            onClick={() => {
+              setShowCsvUploadModal(false);
+              setCsvFile(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            className='flex-1'
+            disabled={!csvFile}
+            onClick={handleCsvSubmit}
+          >
+            Upload
+          </Button>
+        </div>
+      </Modal>
+
       {/* ── Cloud Import modal ────────────────────────────────────────────── */}
-      <Modal title='Cloud Import' open={showCloudImport} onClose={() => { setShowCloudImport(false); setCloudStatus(null); }} size='xl'>
+      <Modal
+        title='Cloud Import'
+        open={showCloudImport}
+        onClose={() => {
+          setShowCloudImport(false);
+          setCloudStatus(null);
+        }}
+        size='xl'
+      >
         <div className='space-y-4'>
           <div className='flex items-center justify-between'>
-            <p className='text-xs text-gray-500'>Saved connections to S3, FTP/SFTP, or GCS. Run a profile to import its CSVs into <span className='font-medium text-gray-700'>{listData?.name}</span>.</p>
-            <Button size='sm' icon={<Plus className='w-4 h-4' />} onClick={() => openCfgEditor()}>Add New</Button>
+            <p className='text-xs text-gray-500'>
+              Saved connections to S3, FTP/SFTP, or GCS. Run a profile to import
+              its CSVs into{' '}
+              <span className='font-medium text-gray-700'>
+                {listData?.name}
+              </span>
+              .
+            </p>
+            <Button
+              size='sm'
+              icon={<Plus className='w-4 h-4' />}
+              onClick={() => openCfgEditor()}
+            >
+              Add New
+            </Button>
           </div>
 
           {cloudStatus && (
-            <div className={`p-3 rounded-lg text-xs flex items-center justify-between ${cloudStatus.startsWith('✓') ? 'bg-green-50 text-green-700' : cloudStatus.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+            <div
+              className={`p-3 rounded-lg text-xs flex items-center justify-between ${cloudStatus.startsWith('✓') ? 'bg-green-50 text-green-700' : cloudStatus.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}
+            >
               <span>{cloudStatus}</span>
-              <button onClick={() => setCloudStatus(null)} className='ml-2 opacity-60 hover:opacity-100'><X className='w-3.5 h-3.5' /></button>
+              <button
+                onClick={() => setCloudStatus(null)}
+                className='ml-2 opacity-60 hover:opacity-100'
+              >
+                <X className='w-3.5 h-3.5' />
+              </button>
             </div>
           )}
 
           {cloudConfigsQ.isLoading ? (
-            <div className='py-10 text-center text-xs text-gray-400'>Loading…</div>
+            <div className='py-10 text-center text-xs text-gray-400'>
+              Loading…
+            </div>
           ) : (cloudConfigsQ.data || []).length === 0 ? (
-            <EmptyState title='No cloud connections yet' description='Add an S3 bucket, FTP server, or GCS bucket to import contacts on demand.' />
+            <EmptyState
+              title='No cloud connections yet'
+              description='Add an S3 bucket, FTP server, or GCS bucket to import contacts on demand.'
+            />
           ) : (
             <Table<CloudImportConfig>
               keyFn={(r) => r.id}
-              rows={(cloudConfigsQ.data || []).filter((c: CloudImportConfig) => (c.contact_list_ids || []).includes(id!))}
+              rows={(cloudConfigsQ.data || []).filter((c: CloudImportConfig) =>
+                (c.contact_list_ids || []).includes(id!),
+              )}
               cols={[
-                { header: 'Name', render: (r) => <span className='font-medium text-gray-900'>{r.name}</span> },
                 {
-                  header: 'Provider', width: '120px',
+                  header: 'Name',
+                  render: (r) => (
+                    <span className='font-medium text-gray-900'>{r.name}</span>
+                  ),
+                },
+                {
+                  header: 'Provider',
+                  width: '120px',
                   render: (r) => {
-                    const styles: Record<CloudProvider, string> = { s3: 'bg-orange-50 text-orange-700', ftp: 'bg-blue-50 text-blue-700', gcs: 'bg-emerald-50 text-emerald-700' };
-                    const labels: Record<CloudProvider, string> = { s3: 'Amazon S3', ftp: 'FTP / SFTP', gcs: 'Google Cloud' };
-                    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[r.provider]}`}>{labels[r.provider]}</span>;
+                    const styles: Record<CloudProvider, string> = {
+                      s3: 'bg-orange-50 text-orange-700',
+                      ftp: 'bg-blue-50 text-blue-700',
+                      gcs: 'bg-emerald-50 text-emerald-700',
+                    };
+                    const labels: Record<CloudProvider, string> = {
+                      s3: 'Amazon S3',
+                      ftp: 'FTP / SFTP',
+                      gcs: 'Google Cloud',
+                    };
+                    return (
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${styles[r.provider]}`}
+                      >
+                        {labels[r.provider]}
+                      </span>
+                    );
                   },
                 },
                 {
                   header: 'Source',
                   render: (r) => {
-                    const o = r.options || {}; const c = r.credentials || {};
-                    const path = o.source_path || `${o.folder || ''}${o.file_name ? (o.folder ? '/' : '') + o.file_name : ''}`;
-                    const prefix = r.provider === 'ftp' ? `${c.protocol || 'sftp'}://${c.host || '?'}/` : `${o.bucket_name || '?'}/`;
-                    return <span className='font-mono text-xs text-gray-600'>{prefix}{path}</span>;
+                    const o = r.options || {};
+                    const c = r.credentials || {};
+                    const path =
+                      o.source_path ||
+                      `${o.folder || ''}${o.file_name ? (o.folder ? '/' : '') + o.file_name : ''}`;
+                    const prefix =
+                      r.provider === 'ftp'
+                        ? `${c.protocol || 'sftp'}://${c.host || '?'}/`
+                        : `${o.bucket_name || '?'}/`;
+                    return (
+                      <span className='font-mono text-xs text-gray-600'>
+                        {prefix}
+                        {path}
+                      </span>
+                    );
                   },
                 },
-                { header: 'Status', width: '90px', render: (r) => r.schedule_enabled ? <Badge label='Active' color='green' /> : <Badge label='Inactive' color='gray' /> },
-                { header: 'Last Refresh', width: '150px', render: (r) => r.last_refresh ? <span className='text-xs text-gray-500'>{new Date(r.last_refresh).toLocaleString()}</span> : <span className='text-xs text-gray-300'>—</span> },
-                { header: 'Next Refresh', width: '150px', render: (r) => r.schedule_enabled && r.next_refresh ? <span className='text-xs text-indigo-700'>{new Date(r.next_refresh).toLocaleString()}</span> : <span className='text-xs text-gray-300'>—</span> },
                 {
-                  header: 'Actions', width: '60px',
+                  header: 'Status',
+                  width: '90px',
+                  render: (r) =>
+                    r.schedule_enabled ? (
+                      <Badge label='Active' color='green' />
+                    ) : (
+                      <Badge label='Inactive' color='gray' />
+                    ),
+                },
+                {
+                  header: 'Last Refresh',
+                  width: '150px',
+                  render: (r) =>
+                    r.last_refresh ? (
+                      <span className='text-xs text-gray-500'>
+                        {new Date(r.last_refresh).toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className='text-xs text-gray-300'>—</span>
+                    ),
+                },
+                {
+                  header: 'Next Refresh',
+                  width: '150px',
+                  render: (r) =>
+                    r.schedule_enabled && r.next_refresh ? (
+                      <span className='text-xs text-indigo-700'>
+                        {new Date(r.next_refresh).toLocaleString()}
+                      </span>
+                    ) : (
+                      <span className='text-xs text-gray-300'>—</span>
+                    ),
+                },
+                {
+                  header: 'Actions',
+                  width: '60px',
                   render: (r) => (
-                    <button type='button' onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setRowMenu(rowMenu?.id === r.id ? null : { id: r.id, x: rect.right, y: rect.bottom + 4 }); }} className='p-1.5 rounded hover:bg-gray-100 text-gray-500'>
+                    <button
+                      type='button'
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const rect = (
+                          e.currentTarget as HTMLElement
+                        ).getBoundingClientRect();
+                        setRowMenu(
+                          rowMenu?.id === r.id
+                            ? null
+                            : { id: r.id, x: rect.right, y: rect.bottom + 4 },
+                        );
+                      }}
+                      className='p-1.5 rounded hover:bg-gray-100 text-gray-500'
+                    >
                       <MoreVertical className='w-4 h-4' />
                     </button>
                   ),
@@ -922,23 +1517,67 @@ export default function ContactListDetailPage() {
             />
           )}
 
-          {rowMenu && (() => {
-            const r = (cloudConfigsQ.data || []).find((c: CloudImportConfig) => c.id === rowMenu.id);
-            if (!r) return null;
-            const close = () => setRowMenu(null);
-            return (
-              <>
-                <div className='fixed inset-0 z-40' onClick={close} />
-                <div style={{ position: 'fixed', left: rowMenu.x - 176, top: rowMenu.y }} className='z-50 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm'>
-                  {r.schedule_enabled
-                    ? <MenuItem icon={<PowerOff className='w-3.5 h-3.5' />} label='Deactivate' onClick={() => { close(); toggleScheduleMut.mutate({ cfg: r, enabled: false }); }} />
-                    : <MenuItem icon={<Power className='w-3.5 h-3.5' />} label='Activate' onClick={() => { close(); runCfgMut.mutate(r.id); if (r.cron_expression) toggleScheduleMut.mutate({ cfg: r, enabled: true }); }} />}
-                  <MenuItem icon={<Pencil className='w-3.5 h-3.5' />} label='Edit' onClick={() => { close(); openCfgEditor(r); }} />
-                  <MenuItem icon={<Trash2 className='w-3.5 h-3.5' />} label='Delete' danger onClick={() => { close(); if (window.confirm(`Delete "${r.name}"?`)) deleteCfgMut.mutate(r.id); }} />
-                </div>
-              </>
-            );
-          })()}
+          {rowMenu &&
+            (() => {
+              const r = (cloudConfigsQ.data || []).find(
+                (c: CloudImportConfig) => c.id === rowMenu.id,
+              );
+              if (!r) return null;
+              const close = () => setRowMenu(null);
+              return (
+                <>
+                  <div className='fixed inset-0 z-40' onClick={close} />
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: rowMenu.x - 176,
+                      top: rowMenu.y,
+                    }}
+                    className='z-50 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm'
+                  >
+                    {r.schedule_enabled ? (
+                      <MenuItem
+                        icon={<PowerOff className='w-3.5 h-3.5' />}
+                        label='Deactivate'
+                        onClick={() => {
+                          close();
+                          toggleScheduleMut.mutate({ cfg: r, enabled: false });
+                        }}
+                      />
+                    ) : (
+                      <MenuItem
+                        icon={<Power className='w-3.5 h-3.5' />}
+                        label='Activate'
+                        onClick={() => {
+                          close();
+                          runCfgMut.mutate(r.id);
+                          if (r.cron_expression)
+                            toggleScheduleMut.mutate({ cfg: r, enabled: true });
+                        }}
+                      />
+                    )}
+                    <MenuItem
+                      icon={<Pencil className='w-3.5 h-3.5' />}
+                      label='Edit'
+                      onClick={() => {
+                        close();
+                        openCfgEditor(r);
+                      }}
+                    />
+                    <MenuItem
+                      icon={<Trash2 className='w-3.5 h-3.5' />}
+                      label='Delete'
+                      danger
+                      onClick={() => {
+                        close();
+                        if (window.confirm(`Delete "${r.name}"?`))
+                          deleteCfgMut.mutate(r.id);
+                      }}
+                    />
+                  </div>
+                </>
+              );
+            })()}
         </div>
       </Modal>
 
@@ -959,11 +1598,18 @@ export default function ContactListDetailPage() {
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
               <div>
-                <h3 className='text-base font-semibold text-gray-900'>Edit Contact</h3>
-                <p className='text-xs text-gray-500 mt-0.5'>{editContactTarget.phone_number}</p>
+                <h3 className='text-base font-semibold text-gray-900'>
+                  Edit Contact
+                </h3>
+                <p className='text-xs text-gray-500 mt-0.5'>
+                  {editContactTarget.phone_number}
+                </p>
               </div>
               <button
-                onClick={() => { closeEditContact(); editContactMut.reset(); }}
+                onClick={() => {
+                  closeEditContact();
+                  editContactMut.reset();
+                }}
                 className='p-1 text-gray-400 hover:text-gray-600'
               >
                 <X className='w-5 h-5' />
@@ -973,10 +1619,17 @@ export default function ContactListDetailPage() {
             <div className='p-5 space-y-4 max-h-[60vh] overflow-y-auto'>
               {/* Phone number field */}
               <div>
-                <label className='block text-xs font-medium text-gray-600 mb-1'>Phone Number *</label>
+                <label className='block text-xs font-medium text-gray-600 mb-1'>
+                  Phone Number *
+                </label>
                 <input
                   value={editContactForm.phone_number ?? ''}
-                  onChange={(e) => setEditContactForm((f) => ({ ...f, phone_number: e.target.value }))}
+                  onChange={(e) =>
+                    setEditContactForm((f) => ({
+                      ...f,
+                      phone_number: e.target.value,
+                    }))
+                  }
                   placeholder='+12125550101'
                   className='w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500'
                 />
@@ -987,16 +1640,25 @@ export default function ContactListDetailPage() {
                 <div className='grid grid-cols-2 gap-3'>
                   {customFieldDefs.map((def: any) => {
                     const t = String(def.data_type).toUpperCase();
-                    const isNum = t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                    const isNum =
+                      t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
                     const isDate = t === 'TIMESTAMP';
                     const isBool = t === 'BOOLEAN';
                     if (isBool) {
                       return (
-                        <label key={def.id} className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'>
+                        <label
+                          key={def.id}
+                          className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
+                        >
                           <input
                             type='checkbox'
                             checked={!!editContactForm[def.field_key]}
-                            onChange={(e) => setEditContactForm((f) => ({ ...f, [def.field_key]: e.target.checked }))}
+                            onChange={(e) =>
+                              setEditContactForm((f) => ({
+                                ...f,
+                                [def.field_key]: e.target.checked,
+                              }))
+                            }
                             className='rounded text-indigo-600'
                           />
                           {def.name}
@@ -1005,11 +1667,24 @@ export default function ContactListDetailPage() {
                     }
                     return (
                       <div key={def.id}>
-                        <label className='block text-xs text-gray-500 mb-1'>{def.name}</label>
+                        <label className='block text-xs text-gray-500 mb-1'>
+                          {def.name}
+                        </label>
                         <input
-                          type={isNum ? 'number' : isDate ? 'datetime-local' : 'text'}
+                          type={
+                            isNum
+                              ? 'number'
+                              : isDate
+                                ? 'datetime-local'
+                                : 'text'
+                          }
                           value={editContactForm[def.field_key] ?? ''}
-                          onChange={(e) => setEditContactForm((f) => ({ ...f, [def.field_key]: e.target.value }))}
+                          onChange={(e) =>
+                            setEditContactForm((f) => ({
+                              ...f,
+                              [def.field_key]: e.target.value,
+                            }))
+                          }
                           placeholder={def.field_key}
                           className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
                         />
@@ -1024,7 +1699,8 @@ export default function ContactListDetailPage() {
                 <div className='flex items-center gap-2 p-3 rounded-lg bg-red-100 border border-red-300'>
                   <AlertCircle className='w-4 h-4 text-red-700 shrink-0' />
                   <p className='text-sm font-medium text-red-800'>
-                    {(editContactMut.error as any)?.response?.data?.error || 'Failed to update contact. Please try again.'}
+                    {(editContactMut.error as any)?.response?.data?.error ||
+                      'Failed to update contact. Please try again.'}
                   </p>
                 </div>
               )}
@@ -1033,7 +1709,10 @@ export default function ContactListDetailPage() {
             <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
               <Button
                 variant='secondary'
-                onClick={() => { closeEditContact(); editContactMut.reset(); }}
+                onClick={() => {
+                  closeEditContact();
+                  editContactMut.reset();
+                }}
               >
                 Cancel
               </Button>
@@ -1056,10 +1735,20 @@ export default function ContactListDetailPage() {
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
               <div>
-                <h3 className='text-base font-semibold text-gray-900'>Delete Contact</h3>
-                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+                <h3 className='text-base font-semibold text-gray-900'>
+                  Delete Contact
+                </h3>
+                <p className='text-xs text-gray-500 mt-0.5'>
+                  This action cannot be undone.
+                </p>
               </div>
-              <button onClick={() => { setDeleteTarget(null); deleteMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+              <button
+                onClick={() => {
+                  setDeleteTarget(null);
+                  deleteMut.reset();
+                }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
                 <X className='w-5 h-5' />
               </button>
             </div>
@@ -1067,15 +1756,37 @@ export default function ContactListDetailPage() {
               <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
                 <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
                 <div>
-                  <p className='text-sm font-semibold text-red-800'>Delete contact {deleteTarget.phone_number}?</p>
-                  <p className='text-xs text-red-600 mt-1'>This contact will be permanently removed from the list.</p>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete contact {deleteTarget.phone_number}?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1'>
+                    This contact will be permanently removed from the list.
+                  </p>
                 </div>
               </div>
-              {deleteMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
+              {deleteMut.isError && (
+                <p className='text-xs text-red-600'>
+                  Delete failed. Please try again.
+                </p>
+              )}
             </div>
             <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
-              <Button variant='secondary' onClick={() => { setDeleteTarget(null); deleteMut.reset(); }}>Cancel</Button>
-              <Button loading={deleteMut.isPending} onClick={() => deleteMut.mutate(deleteTarget.id)} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete Contact</Button>
+              <Button
+                variant='secondary'
+                onClick={() => {
+                  setDeleteTarget(null);
+                  deleteMut.reset();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteMut.isPending}
+                onClick={() => deleteMut.mutate(deleteTarget.id)}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete Contact
+              </Button>
             </div>
           </div>
         </div>
@@ -1087,10 +1798,20 @@ export default function ContactListDetailPage() {
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
               <div>
-                <h3 className='text-base font-semibold text-gray-900'>Delete Selected Contacts</h3>
-                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+                <h3 className='text-base font-semibold text-gray-900'>
+                  Delete Selected Contacts
+                </h3>
+                <p className='text-xs text-gray-500 mt-0.5'>
+                  This action cannot be undone.
+                </p>
               </div>
-              <button onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+              <button
+                onClick={() => {
+                  setShowDeleteSelected(false);
+                  deleteSelectedMut.reset();
+                }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
                 <X className='w-5 h-5' />
               </button>
             </div>
@@ -1098,16 +1819,38 @@ export default function ContactListDetailPage() {
               <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
                 <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
                 <div>
-                  <p className='text-sm font-semibold text-red-800'>Delete {selectedContactIds.size} selected contact{selectedContactIds.size !== 1 ? 's' : ''}?</p>
-                  <p className='text-xs text-red-600 mt-1'>These contacts will be permanently removed.</p>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete {selectedContactIds.size} selected contact
+                    {selectedContactIds.size !== 1 ? 's' : ''}?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1'>
+                    These contacts will be permanently removed.
+                  </p>
                 </div>
               </div>
-              {deleteSelectedMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
+              {deleteSelectedMut.isError && (
+                <p className='text-xs text-red-600'>
+                  Delete failed. Please try again.
+                </p>
+              )}
             </div>
             <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
-              <Button variant='secondary' onClick={() => { setShowDeleteSelected(false); deleteSelectedMut.reset(); }}>Cancel</Button>
-              <Button loading={deleteSelectedMut.isPending} onClick={() => deleteSelectedMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>
-                Delete {selectedContactIds.size} Contact{selectedContactIds.size !== 1 ? 's' : ''}
+              <Button
+                variant='secondary'
+                onClick={() => {
+                  setShowDeleteSelected(false);
+                  deleteSelectedMut.reset();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteSelectedMut.isPending}
+                onClick={() => deleteSelectedMut.mutate()}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete {selectedContactIds.size} Contact
+                {selectedContactIds.size !== 1 ? 's' : ''}
               </Button>
             </div>
           </div>
@@ -1120,10 +1863,20 @@ export default function ContactListDetailPage() {
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
               <div>
-                <h3 className='text-base font-semibold text-gray-900'>Delete All Contacts</h3>
-                <p className='text-xs text-gray-500 mt-0.5'>This action cannot be undone.</p>
+                <h3 className='text-base font-semibold text-gray-900'>
+                  Delete All Contacts
+                </h3>
+                <p className='text-xs text-gray-500 mt-0.5'>
+                  This action cannot be undone.
+                </p>
               </div>
-              <button onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }} className='p-1 text-gray-400 hover:text-gray-600'>
+              <button
+                onClick={() => {
+                  setShowDeleteAll(false);
+                  deleteAllMut.reset();
+                }}
+                className='p-1 text-gray-400 hover:text-gray-600'
+              >
                 <X className='w-5 h-5' />
               </button>
             </div>
@@ -1131,15 +1884,39 @@ export default function ContactListDetailPage() {
               <div className='flex items-start gap-3 p-4 bg-red-50 rounded-xl border border-red-100'>
                 <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
                 <div>
-                  <p className='text-sm font-semibold text-red-800'>Delete all {total} contact{total !== 1 ? 's' : ''} from this list?</p>
-                  <p className='text-xs text-red-600 mt-1 leading-relaxed'>Every contact in <strong>{listData?.name}</strong> will be permanently deleted. The contact list itself will remain.</p>
+                  <p className='text-sm font-semibold text-red-800'>
+                    Delete all {total} contact{total !== 1 ? 's' : ''} from this
+                    list?
+                  </p>
+                  <p className='text-xs text-red-600 mt-1 leading-relaxed'>
+                    Every contact in <strong>{listData?.name}</strong> will be
+                    permanently deleted. The contact list itself will remain.
+                  </p>
                 </div>
               </div>
-              {deleteAllMut.isError && <p className='text-xs text-red-600'>Delete failed. Please try again.</p>}
+              {deleteAllMut.isError && (
+                <p className='text-xs text-red-600'>
+                  Delete failed. Please try again.
+                </p>
+              )}
             </div>
             <div className='flex justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50'>
-              <Button variant='secondary' onClick={() => { setShowDeleteAll(false); deleteAllMut.reset(); }}>Cancel</Button>
-              <Button loading={deleteAllMut.isPending} onClick={() => deleteAllMut.mutate()} className='!bg-red-600 hover:!bg-red-700 !text-white'>Delete All Contacts</Button>
+              <Button
+                variant='secondary'
+                onClick={() => {
+                  setShowDeleteAll(false);
+                  deleteAllMut.reset();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                loading={deleteAllMut.isPending}
+                onClick={() => deleteAllMut.mutate()}
+                className='!bg-red-600 hover:!bg-red-700 !text-white'
+              >
+                Delete All Contacts
+              </Button>
             </div>
           </div>
         </div>

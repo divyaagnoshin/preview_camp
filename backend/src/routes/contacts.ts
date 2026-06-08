@@ -88,7 +88,8 @@ export function validatePhoneFormat(phone: any): string | null {
   if (!/^\+?[0-9]+$/.test(cleaned))
     return `phone_number contains invalid characters: "${phone}"`;
   const digits = cleaned.replace(/^\+/, '');
-  
+  if (digits.length < 7 || digits.length > 15)
+    return `phone_number must be between 7 and 15 digits: "${phone}"`;
   return null;
 }
 
@@ -108,10 +109,6 @@ async function validateCsvHeader(
     .filter((k: string) => !SYSTEM_FIELDS.includes(k));
   const allowed = new Set([...SYSTEM_FIELDS, ...customKeys, 'phone']);
   const errs: string[] = [];
-
-  const unknown = headerKeys.filter((k) => k && !allowed.has(k));
-  if (unknown.length)
-    errs.push(`Unknown column(s) in CSV: ${unknown.join(', ')}`);
 
   if (!headerKeys.includes('phone_number') && !headerKeys.includes('phone'))
     errs.push('Missing required column: phone_number');
@@ -160,10 +157,61 @@ export async function importCsvRecords(
   orgId: string,
   batchId: string,
   ingestionMethod: string,
+  optionsMapping?: Record<string, string[]>,
+  importMode: 'fresh' | 'append' = 'append'
 ) {
   let imported = 0;
+  let updated = 0;
   let failed = 0;
   const errors: { row: number; phone: string; error: string }[] = [];
+
+  // Pre-fetch field defs once. validateContact() used to run this per row.
+  const defsRes = await pool.query(
+    `SELECT field_key, is_required, aliases
+       FROM contact_list_field_definitions
+      WHERE contact_list_id = $1`,
+    [contactListId],
+  );
+
+  const fieldMapping: Record<string, string[]> = {};
+  for (const row of defsRes.rows) {
+    if (row.aliases && row.aliases.length > 0) {
+      fieldMapping[row.field_key] = row.aliases;
+    }
+  }
+
+  if (optionsMapping && Object.keys(optionsMapping).length > 0) {
+    for (const [k, v] of Object.entries(optionsMapping)) {
+      if (Array.isArray(v) && v.length > 0) {
+        fieldMapping[k] = v;
+      }
+    }
+  }
+
+  if (Object.keys(fieldMapping).length > 0) {
+    for (let i = 0; i < records.length; i++) {
+      const oldRow = records[i];
+      const newRow: Record<string, any> = {};
+      // 1. Copy all original columns (handles exact matches)
+      for (const [k, v] of Object.entries(oldRow)) {
+        newRow[k] = v;
+      }
+      // 2. Apply explicit mappings (aliases)
+      for (const [targetField, aliases] of Object.entries(fieldMapping)) {
+        // If the exact column name was already found in the CSV, prioritize it!
+        if (newRow[targetField] !== undefined && newRow[targetField] !== null && newRow[targetField] !== '') {
+          continue;
+        }
+        for (const alias of aliases) {
+          if (alias && typeof alias === 'string' && oldRow[alias] !== undefined && oldRow[alias] !== null && String(oldRow[alias]).trim() !== '') {
+            newRow[targetField] = oldRow[alias];
+            break; // Stop at the first alias that has a non-empty value
+          }
+        }
+      }
+      records[i] = newRow;
+    }
+  }
 
   // Header-level pre-check. If columns don't match the list's schema, fail
   // the whole batch with a single header error rather than per-row noise.
@@ -180,13 +228,6 @@ export async function importCsvRecords(
     }
   }
 
-  // Pre-fetch field defs once. validateContact() used to run this per row.
-  const defsRes = await pool.query(
-    `SELECT field_key, is_required
-       FROM contact_list_field_definitions
-      WHERE contact_list_id = $1`,
-    [contactListId],
-  );
   const customKeySet = new Set<string>(
     defsRes.rows
       .map((d: any) => d.field_key)
@@ -291,44 +332,122 @@ console.error({
     const alternatePhoneNumber = altTop ?? altCf ?? null;
     delete customFields.alternate_phone_number;
 
+    const emailRaw = row.email;
+    let emailNorm = emailRaw && typeof emailRaw === 'string' ? emailRaw.trim() : null;
+    if (emailNorm && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+      failed++;
+      errors.push({ row: i + 1, phone: phoneNorm, error: `Invalid email format: "${emailNorm}"` });
+      continue;
+    }
+
+    let priority = 100;
+    if (row.priority) {
+      priority = parseInt(row.priority);
+      if (isNaN(priority)) {
+        failed++;
+        errors.push({ row: i + 1, phone: phoneNorm, error: `Invalid priority format (expects INTEGER): "${row.priority}"` });
+        continue;
+      }
+    }
+
     validRows.push({
       rowIdx: i + 1,
       phone_number: phoneNorm,
       first_name: row.first_name ?? null,
       last_name: row.last_name ?? null,
-      email: row.email ?? null,
+      email: emailNorm,
       timezone: row.timezone ?? null,
       alternate_phone_number: alternatePhoneNumber,
-      priority: row.priority ? parseInt(row.priority) : 100,
+      priority,
       assigned_agent_id: assignedAgentId,
       custom_fields: customFields,
     });
   }
 
-  // Phase 2: load validRows via COPY FROM STDIN. 10000 rows / chunk balances
-  // per-statement overhead against the worst-case bisect depth (~14 retries
-  // for a single bad row). At ~100k rows/s throughput, a 500k upload runs in
-  // ~5s of pure DB time.
+  // Phase 2: load validRows.
+  // For 'append' mode we deduplicate and upsert via a temp table.
+  // For 'fresh' mode we directly bulk insert everything.
   const CHUNK_SIZE = 10000;
   if (validRows.length) {
     await withTransaction(async (client) => {
-      for (let start = 0; start < validRows.length; start += CHUNK_SIZE) {
-        const chunk = validRows.slice(start, start + CHUNK_SIZE);
-        const { imported: imp, failures } = await tryCopyChunkBisect(
-          client,
-          chunk,
-          contactListId,
-          batchId,
-          ingestionMethod,
-        );
-        imported += imp;
-        failed += failures.length;
-        for (const f of failures) errors.push(f);
+      for (let i = 0; i < validRows.length; i += CHUNK_SIZE) {
+        let chunk = validRows.slice(i, i + CHUNK_SIZE);
+        
+        if (importMode === 'append') {
+          const dedupe = new Map<string, ValidRowForCopy>();
+          for (const row of chunk) {
+            if (dedupe.has(row.phone_number)) {
+              const existing = dedupe.get(row.phone_number)!;
+              dedupe.set(row.phone_number, {
+                ...existing,
+                ...row,
+                custom_fields: { ...existing.custom_fields, ...row.custom_fields }
+              });
+            } else {
+              dedupe.set(row.phone_number, row);
+            }
+          }
+          const uniqueChunk = Array.from(dedupe.values());
+
+          const tempTable = `temp_chunk_${Date.now().toString(36)}_${Math.floor(Math.random() * 1000)}`;
+          await client.query(`CREATE TEMP TABLE ${tempTable} (LIKE contacts INCLUDING ALL) ON COMMIT DROP`);
+
+          const { imported: imp, failures } = await tryCopyChunkBisect(
+            client,
+            uniqueChunk,
+            contactListId,
+            batchId,
+            ingestionMethod,
+            tempTable
+          );
+
+          const updateRes = await client.query(`
+            UPDATE contacts c
+            SET custom_fields = c.custom_fields || t.custom_fields,
+                first_name = COALESCE(t.first_name, c.first_name),
+                last_name = COALESCE(t.last_name, c.last_name),
+                email = COALESCE(t.email, c.email),
+                timezone = COALESCE(t.timezone, c.timezone),
+                alternate_phone_number = COALESCE(t.alternate_phone_number, c.alternate_phone_number),
+                priority = COALESCE(t.priority, c.priority)
+            FROM ${tempTable} t
+            WHERE c.contact_list_id = t.contact_list_id AND c.phone_number = t.phone_number
+          `);
+
+          const insertRes = await client.query(`
+            INSERT INTO contacts (contact_list_id, phone_number, first_name, last_name, email, timezone, alternate_phone_number, priority, assigned_agent_id, custom_fields, upload_batch_id, ingestion_method)
+            SELECT contact_list_id, phone_number, first_name, last_name, email, timezone, alternate_phone_number, priority, assigned_agent_id, custom_fields, upload_batch_id, ingestion_method
+            FROM ${tempTable} t
+            WHERE NOT EXISTS (
+              SELECT 1 FROM contacts c WHERE c.contact_list_id = t.contact_list_id AND c.phone_number = t.phone_number
+            )
+          `);
+
+          await client.query(`DROP TABLE ${tempTable}`);
+
+          imported += insertRes.rowCount || 0;
+          updated += updateRes.rowCount || 0;
+          failed += failures.length;
+          for (const f of failures) errors.push(f);
+        } else {
+          // 'fresh' mode: Insert everything directly into contacts
+          const { imported: imp, failures } = await tryCopyChunkBisect(
+            client,
+            chunk,
+            contactListId,
+            batchId,
+            ingestionMethod,
+            'contacts'
+          );
+          imported += imp;
+          failed += failures.length;
+          for (const f of failures) errors.push(f);
+        }
       }
     });
   }
 
-  return { imported, failed, skipped: 0, errors };
+  return { imported, updated, failed, skipped: 0, errors };
 }
 
 // ─── COPY FROM STDIN helpers ──────────────────────────────────────────────
@@ -410,10 +529,11 @@ async function copyChunk(
   contactListId: string,
   batchId: string,
   ingestionMethod: string,
+  targetTable: string = 'contacts',
 ): Promise<void> {
   const ingest = client.query(
     copyFrom(
-      `COPY contacts
+      `COPY ${targetTable}
          (contact_list_id, phone_number, first_name, last_name, email,
           timezone, alternate_phone_number, priority, assigned_agent_id,
           custom_fields, upload_batch_id, ingestion_method)
@@ -435,6 +555,7 @@ async function tryCopyChunkBisect(
   contactListId: string,
   batchId: string,
   ingestionMethod: string,
+  targetTable: string = 'contacts',
 ): Promise<{
   imported: number;
   failures: { row: number; phone: string; error: string }[];
@@ -445,7 +566,7 @@ async function tryCopyChunkBisect(
   ).toString(36)}`;
   await client.query(`SAVEPOINT ${sp}`);
   try {
-    await copyChunk(client, rows, contactListId, batchId, ingestionMethod);
+    await copyChunk(client, rows, contactListId, batchId, ingestionMethod, targetTable);
     await client.query(`RELEASE SAVEPOINT ${sp}`);
     return { imported: rows.length, failures: [] };
   } catch (err: any) {
@@ -477,6 +598,7 @@ async function tryCopyChunkBisect(
       contactListId,
       batchId,
       ingestionMethod,
+      targetTable,
     );
     const right = await tryCopyChunkBisect(
       client,
@@ -484,6 +606,7 @@ async function tryCopyChunkBisect(
       contactListId,
       batchId,
       ingestionMethod,
+      targetTable,
     );
     return {
       imported: left.imported + right.imported,
@@ -505,14 +628,16 @@ export async function importCsvStream(
   _orgId: string,
   batchId: string,
   ingestionMethod: string,
-  opts: { hasHeader: boolean; delimiter: string },
+  opts: { hasHeader: boolean; delimiter: string; importMode?: 'fresh' | 'append' },
 ): Promise<{
   imported: number;
+  updated: number;
   failed: number;
   totalRows: number;
   errors: { row: number; phone: string; error: string }[];
 }> {
   let imported = 0;
+  let updated = 0;
   let failed = 0;
   let totalRows = 0;
   const errors: { row: number; phone: string; error: string }[] = [];
@@ -520,11 +645,18 @@ export async function importCsvStream(
   // Pre-fetch field defs once. Same lookups validateContact() used to run
   // per row in the legacy path.
   const defsRes = await pool.query(
-    `SELECT field_key, is_required
+    `SELECT field_key, is_required, aliases
        FROM contact_list_field_definitions
       WHERE contact_list_id = $1`,
     [contactListId],
   );
+
+  const fieldMapping: Record<string, string[]> = {};
+  for (const row of defsRes.rows) {
+    if (row.aliases && row.aliases.length > 0) {
+      fieldMapping[row.field_key] = row.aliases;
+    }
+  }
 
   // Fetch data_type for each custom field once — used for in-memory type validation
   const typeRes = await pool.query(
@@ -566,20 +698,82 @@ export async function importCsvStream(
   let headerFailed = false;
   console.log(`Flushing chunk with ${chunk.length} records...`);
   const flushChunk = async (client: PoolClient) => {
-    
     if (chunk.length === 0) return;
     console.log('Flushing chunk:', chunk.length); 
-    const { imported: imp, failures } = await tryCopyChunkBisect(
-      client,
-      chunk,
-      contactListId,
-      batchId,
-      ingestionMethod,
-    );
-    imported += imp;
-    console.log('Inserted rows:', imp);
-    failed += failures.length;
-    for (const f of failures) errors.push(f);
+
+    if (opts.importMode === 'append') {
+      // Deduplicate the chunk in memory by phone_number so we don't UPDATE the same row twice
+      const dedupe = new Map<string, ValidRowForCopy>();
+      for (const row of chunk) {
+        if (dedupe.has(row.phone_number)) {
+          const existing = dedupe.get(row.phone_number)!;
+          dedupe.set(row.phone_number, {
+            ...existing,
+            ...row,
+            custom_fields: { ...existing.custom_fields, ...row.custom_fields }
+          });
+        } else {
+          dedupe.set(row.phone_number, row);
+        }
+      }
+      const uniqueChunk = Array.from(dedupe.values());
+
+      const tempTable = `temp_chunk_${Date.now().toString(36)}_${Math.floor(Math.random() * 1000)}`;
+      await client.query(`CREATE TEMP TABLE ${tempTable} (LIKE contacts INCLUDING ALL) ON COMMIT DROP`);
+      
+      const { imported: imp, failures } = await tryCopyChunkBisect(
+        client,
+        uniqueChunk,
+        contactListId,
+        batchId,
+        ingestionMethod,
+        tempTable
+      );
+
+      // Merge existing contacts
+      const updateRes = await client.query(`
+        UPDATE contacts c
+        SET custom_fields = c.custom_fields || t.custom_fields,
+            first_name = COALESCE(t.first_name, c.first_name),
+            last_name = COALESCE(t.last_name, c.last_name),
+            email = COALESCE(t.email, c.email),
+            timezone = COALESCE(t.timezone, c.timezone),
+            alternate_phone_number = COALESCE(t.alternate_phone_number, c.alternate_phone_number),
+            priority = COALESCE(t.priority, c.priority)
+        FROM ${tempTable} t
+        WHERE c.contact_list_id = t.contact_list_id AND c.phone_number = t.phone_number
+      `);
+
+      // Insert new contacts
+      const insertRes = await client.query(`
+        INSERT INTO contacts (contact_list_id, phone_number, first_name, last_name, email, timezone, alternate_phone_number, priority, assigned_agent_id, custom_fields, upload_batch_id, ingestion_method)
+        SELECT contact_list_id, phone_number, first_name, last_name, email, timezone, alternate_phone_number, priority, assigned_agent_id, custom_fields, upload_batch_id, ingestion_method
+        FROM ${tempTable} t
+        WHERE NOT EXISTS (
+          SELECT 1 FROM contacts c WHERE c.contact_list_id = t.contact_list_id AND c.phone_number = t.phone_number
+        )
+      `);
+
+      await client.query(`DROP TABLE ${tempTable}`);
+
+      imported += insertRes.rowCount || 0;
+      updated += updateRes.rowCount || 0;
+      failed += failures.length;
+      for (const f of failures) errors.push(f);
+    } else {
+      // 'fresh' mode: Insert everything without duplicate filtering
+      const { imported: imp, failures } = await tryCopyChunkBisect(
+        client,
+        chunk,
+        contactListId,
+        batchId,
+        ingestionMethod,
+        'contacts'
+      );
+      imported += imp;
+      failed += failures.length;
+      for (const f of failures) errors.push(f);
+    }
     chunk = [];
   };
 
@@ -590,8 +784,27 @@ export async function importCsvStream(
     // integrity (FKs, constraints, MVCC) is unaffected. Saves one fsync
     // per upload (≈5-50 ms on typical SSD-backed installs).
     await client.query('SET LOCAL synchronous_commit = OFF');
-    for await (const row of parser as AsyncIterable<any>) {
+
+    for await (const oldRow of parser as AsyncIterable<any>) {
       totalRows++;
+
+      let row = { ...oldRow };
+      if (fieldMapping && Object.keys(fieldMapping).length > 0) {
+        let mappedRow = { ...row };
+        for (const [targetField, aliases] of Object.entries(fieldMapping)) {
+          // If the exact column name was already found in the CSV, prioritize it!
+          if (mappedRow[targetField] !== undefined && mappedRow[targetField] !== null && mappedRow[targetField] !== '') {
+            continue;
+          }
+          for (const alias of aliases) {
+            if (alias && typeof alias === 'string' && row[alias] !== undefined && row[alias] !== null && String(row[alias]).trim() !== '') {
+              mappedRow[targetField] = row[alias];
+              break; // Stop at the first alias that has a non-empty value
+            }
+          }
+        }
+        row = mappedRow;
+      }
 
       // Lazy header check fires once on the first record. If columns don't
       // match the list's schema, fail the whole batch with a single error
@@ -696,15 +909,33 @@ console.error({
         phone: phoneNorm,
       });
 
+      const emailRaw = row.email;
+      let emailNorm = emailRaw && typeof emailRaw === 'string' ? emailRaw.trim() : null;
+      if (emailNorm && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm)) {
+        failed++;
+        errors.push({ row: totalRows, phone: phoneNorm, error: `Invalid email format: "${emailNorm}"` });
+        continue;
+      }
+
+      let priority = 100;
+      if (row.priority) {
+        priority = parseInt(row.priority);
+        if (isNaN(priority)) {
+          failed++;
+          errors.push({ row: totalRows, phone: phoneNorm, error: `Invalid priority format (expects INTEGER): "${row.priority}"` });
+          continue;
+        }
+      }
+
       chunk.push({
         rowIdx: totalRows,
         phone_number: phoneNorm,
         first_name: row.first_name ?? null,
         last_name: row.last_name ?? null,
-        email: row.email ?? null,
+        email: emailNorm,
         timezone: row.timezone ?? null,
         alternate_phone_number: alternatePhoneNumber,
-        priority: row.priority ? parseInt(row.priority) : 100,
+        priority,
         assigned_agent_id: assignedAgentId,
         custom_fields: customFields,
       });
@@ -721,7 +952,7 @@ console.error({
         failed,
         errors,
       });
-  return { imported, failed, totalRows, errors };
+  return { imported, updated, failed, totalRows, errors };
 }
 
 // POST /contacts — single
@@ -737,6 +968,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       priority,
       assigned_agent_id,
       custom_fields,
+      import_mode = 'append',
     } = req.body;
     if (!contact_list_id) throw new AppError(400, 'contact_list_id required');
     if (!phone_number) throw new AppError(400, 'phone_number required');
@@ -751,6 +983,40 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       cfRaw,
     );
     if (errors.length) throw new AppError(400, errors.join('; '));
+
+    if (import_mode === 'append') {
+      const existing = await pool.query(
+        `SELECT id, custom_fields FROM contacts WHERE contact_list_id = $1 AND phone_number = $2 LIMIT 1`,
+        [contact_list_id, phone_number]
+      );
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0];
+        const mergedCf = { ...row.custom_fields, ...cf };
+        const updateRes = await pool.query(
+          `UPDATE contacts
+             SET custom_fields = $1,
+                 first_name = COALESCE($2, first_name),
+                 last_name = COALESCE($3, last_name),
+                 email = COALESCE($4, email),
+                 timezone = COALESCE($5, timezone),
+                 alternate_phone_number = COALESCE($6, alternate_phone_number),
+                 priority = COALESCE($7, priority)
+           WHERE id = $8 RETURNING *`,
+          [
+            JSON.stringify(mergedCf),
+            first_name,
+            last_name,
+            email,
+            timezone,
+            alternate_phone_number,
+            priority || 100,
+            row.id,
+          ]
+        );
+        res.status(200).json(updateRes.rows[0]);
+        return;
+      }
+    }
 
     const batchRes = await pool.query(
       `INSERT INTO contact_upload_batches
@@ -796,6 +1062,7 @@ router.post(
         contacts,
         on_duplicate = 'skip',
         validate_only = false,
+        import_mode = 'append',
       } = req.body;
       if (!contact_list_id) throw new AppError(400, 'contact_list_id required');
       if (!Array.isArray(contacts) || !contacts.length)
@@ -816,7 +1083,7 @@ router.post(
         if (errs.length) {
           errors.push({
             row: i + 1,
-            phone: c.phone_number || '',
+        phone: c.phone_number || '',
             error: errs.join('; '),
           });
         } else {
@@ -826,10 +1093,13 @@ router.post(
         }
       }
 
+      let validRowsForBatch = valid;
+
+
       if (validate_only) {
         res.json({
           total_rows: contacts.length,
-          valid_rows: valid.length,
+          valid_rows: validRowsForBatch.length,
           failed_rows: errors.length,
           errors,
         });
@@ -845,7 +1115,42 @@ router.post(
       const batchId = batchRes.rows[0].id;
 
       let imported = 0;
-      for (const c of valid) {
+      let updated = 0;
+      for (const c of validRowsForBatch) {
+        if (import_mode === 'append') {
+          const existing = await pool.query(
+            `SELECT id, custom_fields FROM contacts WHERE contact_list_id = $1 AND phone_number = $2 LIMIT 1`,
+            [contact_list_id, c.phone_number]
+          );
+          if (existing.rows.length > 0) {
+            const row = existing.rows[0];
+            const mergedCf = { ...row.custom_fields, ...c.custom_fields };
+            await pool.query(
+              `UPDATE contacts
+                 SET custom_fields = $1,
+                     first_name = COALESCE($2, first_name),
+                     last_name = COALESCE($3, last_name),
+                     email = COALESCE($4, email),
+                     timezone = COALESCE($5, timezone),
+                     alternate_phone_number = COALESCE($6, alternate_phone_number),
+                     priority = COALESCE($7, priority)
+               WHERE id = $8`,
+              [
+                JSON.stringify(mergedCf),
+                c.first_name,
+                c.last_name,
+                c.email,
+                c.timezone,
+                c.alternate_phone_number,
+                c.priority || 100,
+                row.id,
+              ]
+            );
+            updated++;
+            continue;
+          }
+        }
+
         await pool.query(
           `INSERT INTO contacts
            (contact_list_id, phone_number, first_name, last_name, email, timezone,
@@ -870,9 +1175,10 @@ router.post(
       }
 
       await pool.query(
-        'UPDATE contact_upload_batches SET imported_rows=$1, failed_rows=$2, status=$3, completed_at=NOW() WHERE id=$4',
+        'UPDATE contact_upload_batches SET imported_rows=$1, updated_rows=$2, failed_rows=$3, status=$4, completed_at=NOW() WHERE id=$5',
         [
           imported,
+          updated,
           errors.length,
           errors.length > 0 ? 'partial_failure' : 'done',
           batchId,
@@ -883,6 +1189,7 @@ router.post(
         batch_id: batchId,
         total_rows: contacts.length,
         imported_rows: imported,
+        updated_rows: updated,
         failed_rows: errors.length,
         status: errors.length > 0 ? 'partial_failure' : 'done',
         errors,
@@ -904,6 +1211,7 @@ router.post(
         has_header = 'true',
         delimiter = ',',
         on_duplicate = 'skip',
+        import_mode = 'append',
       } = req.body;
 
       console.log('================ CSV UPLOAD START ================');
@@ -927,25 +1235,26 @@ router.post(
       // Stream the CSV: parse → validate → COPY in one pipeline. Avoids
       // materialising the full record array (saves ~150 MB on a 300k upload)
       // and overlaps parse / validate / DB work inside one transaction.
-      const { imported, failed, totalRows, errors } = await importCsvStream(
+      const { imported, updated, failed, totalRows, errors } = await importCsvStream(
         req.file.buffer,
         contact_list_id,
         req.user!.orgId,
         batchId,
         'CSV_UPLOAD',
-        { hasHeader: has_header === 'true', delimiter },
+        { hasHeader: has_header === 'true', delimiter, importMode: import_mode },
       );
 
       await pool.query(
         `UPDATE contact_upload_batches
-       SET total_rows=$1, imported_rows=$2, failed_rows=$3,
-           status=$4, completed_at=NOW()
-       WHERE id=$5`,
+       SET total_rows=$1, imported_rows=$2, updated_rows=$3, failed_rows=$4,
+           status=$5, completed_at=NOW()
+       WHERE id=$6`,
         [
           totalRows,
           imported,
+          updated,
           failed,
-          failed > 0 && imported === 0
+          failed > 0 && imported === 0 && updated === 0
             ? 'failed'
             : failed > 0
               ? 'partial_failure'
@@ -959,6 +1268,7 @@ router.post(
         status: 'done',
         total_rows: totalRows,
         imported_rows: imported,
+        updated_rows: updated,
         failed_rows: failed,
         errors,
       });

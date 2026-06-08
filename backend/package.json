@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1043.0",
+    "axios": "^1.17.0",
+    "axios-cookiejar-support": "^7.0.0",
     "basic-ftp": "^6.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -29,6 +31,7 @@
     "pg-copy-streams": "^7.0.0",
     "socket.io": "^4.8.3",
     "ssh2-sftp-client": "^12.1.1",
+    "tough-cookie": "^6.0.1",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
@@ -43,6 +46,7 @@
     "@types/pg-copy-streams": "^1.2.5",
     "@types/socket.io": "^3.0.2",
     "@types/ssh2-sftp-client": "^9.0.6",
+    "@types/tough-cookie": "^4.0.5",
     "@types/uuid": "^9.0.7",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",

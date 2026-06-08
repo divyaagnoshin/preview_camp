@@ -126,6 +126,43 @@ router.patch(
   },
 );
 
+// PUT /contact-lists/:id/aliases
+router.put(
+  '/:id/aliases',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { aliases } = req.body; // Record<string, string[]>
+      if (!aliases || typeof aliases !== 'object') throw new AppError(400, 'Invalid aliases payload');
+
+      // Verify ownership
+      const cl = await pool.query(`SELECT id FROM contact_lists WHERE id = $1 AND org_id = $2`, [req.params.id, req.user!.orgId]);
+      if (!cl.rows.length) throw new AppError(404, 'Contact list not found');
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const [fieldKey, aliasArray] of Object.entries(aliases)) {
+          if (Array.isArray(aliasArray)) {
+            await client.query(
+              `UPDATE contact_list_field_definitions SET aliases = $1 WHERE contact_list_id = $2 AND field_key = $3`,
+              [JSON.stringify(aliasArray), req.params.id, fieldKey]
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // DELETE /contact-lists/:id
 router.delete(
   '/:id',
@@ -442,6 +479,12 @@ async function syncFieldDefinitions(client: any, listId: string) {
      ORDER BY display_order ASC, field_key ASC`,
     [listId],
   );
+  const { rows: existingDefs } = await client.query(
+    `SELECT field_key, aliases FROM contact_list_field_definitions WHERE contact_list_id = $1`,
+    [listId]
+  );
+  const aliasMap = Object.fromEntries(existingDefs.map((d: any) => [d.field_key, JSON.stringify(d.aliases || [])]));
+
   await client.query(
     `DELETE FROM contact_list_field_definitions WHERE contact_list_id = $1`,
     [listId],
@@ -449,9 +492,9 @@ async function syncFieldDefinitions(client: any, listId: string) {
   await client.query(
     `INSERT INTO contact_list_field_definitions
        (contact_list_id, field_key, field_label, data_type, field_type,
-        is_required, display_order, is_visible_to_agent)
-     VALUES ($1,'phone_number','Phone Number','text','predefined',true,1,true)`,
-    [listId],
+        is_required, display_order, is_visible_to_agent, aliases)
+     VALUES ($1,'phone_number','Phone Number','text','predefined',true,1,true,$2)`,
+    [listId, aliasMap['phone_number'] || '[]'],
   );
   let pos = 1;
   for (const r of rows) {
@@ -462,8 +505,8 @@ async function syncFieldDefinitions(client: any, listId: string) {
     await client.query(
       `INSERT INTO contact_list_field_definitions
          (contact_list_id, field_key, field_label, data_type, field_type,
-          is_required, display_order, is_visible_to_agent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          is_required, display_order, is_visible_to_agent, aliases)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
       [
         listId,
         r.field_key,
@@ -473,6 +516,7 @@ async function syncFieldDefinitions(client: any, listId: string) {
         REQUIRED_FIELD_KEYS.includes(r.field_key),
         pos,
         true,
+        aliasMap[r.field_key] || '[]'
       ],
     );
   }

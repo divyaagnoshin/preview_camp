@@ -252,10 +252,26 @@ export interface CloudImportConfig {
   last_refresh?: string | null;
   last_run_status?: string | null;
   last_run_error?: string | null;
+  last_run_imported_rows?: number;
+  last_run_failed_rows?: number;
 }
+export interface CloudImportRunHistory {
+  id: string;
+  run_at: string;
+  status: string;
+  imported_rows: number;
+  updated_rows: number;
+  failed_rows: number;
+  error_log: string | null;
+}
+
 export const listCloudImportConfigs = (): Promise<{
   data: CloudImportConfig[];
 }> => api.get('/cloud-import-configs').then((r) => r.data);
+
+export const getCloudImportHistory = (id: string): Promise<{
+  data: CloudImportRunHistory[];
+}> => api.get(`/cloud-import-configs/${id}/history`).then((r) => r.data);
 export const createCloudImportConfig = (body: {
   name: string;
   provider: CloudProvider;
@@ -267,11 +283,18 @@ export const testCloudImportConnection = (body: {
   credentials: Record<string, any>;
   options: Record<string, any>;
 }) => api.post('/cloud-import-configs/test-connection', body).then((r) => r.data);
+export const fetchCloudImportHeaders = (body: {
+  config_id?: string;
+  provider: CloudProvider;
+  credentials: Record<string, any>;
+  options: Record<string, any>;
+}): Promise<{ headers: string[] }> => api.post('/cloud-imports/fetch-headers', body).then((r) => r.data);
 export const updateCloudImportConfig = (
   id: string,
   body: {
     name: string;
     provider: CloudProvider;
+    contact_list_ids?: string[];
     credentials: Record<string, any>;
     options: Record<string, any>;
   },
@@ -620,4 +643,11 @@ export const createGlobalAttribute = (body: {
     .replace(/^_|_$/g, '');
   return api.post('/field-library', { ...body, field_key }).then((r) => r.data);
 };
+
+// ── Superset Analytics ────────────────────────────────────
+export const getSupersetDashboards = (): Promise<{ success: boolean, dashboards: any[] }> =>
+  api.get('/analytics/dashboards').then((r) => r.data);
+
+export const getSupersetGuestToken = (dashboardId: string, rls: any[] = []): Promise<{ success: boolean, guestToken: string, uuid: string }> =>
+  api.post('/analytics/guest-token', { dashboardId, rls }).then((r) => r.data);
 

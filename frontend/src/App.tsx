@@ -335,6 +335,16 @@ function AppRoutes() {
         }
       />
       <Route
+        path='/reports/historical-reports'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <ReportsPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
         path='/reports/settings'
         element={
           <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
