@@ -87,29 +87,31 @@ export function JobsPage() {
         {hasActiveFilters && filtered.length === 0 ? (
           <EmptyState title='No jobs match your filters' description='Try adjusting or clearing the filters above.' />
         ) : (
-        <PagedTable
-          cols={[
-            { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
-            { header: 'Run #', key: 'job_run_number', width: '70px' },
-            { header: 'Progress', render: (r: any) => {
-              const pct = parseFloat(r.prcnt_complete) || 0;
-              return (
-                <div className="flex items-center gap-2">
-                  <Progress value={pct} />
-                  <span className="text-xs text-gray-400 w-12">{pct.toFixed(1)}%</span>
-                </div>
-              );
-            }},
-            { header: 'Contacts', render: (r: any) => `${r.processed_contacts ?? 0} / ${r.total_contacts ?? 0}` },
-            { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
-            { header: 'Started', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
-            { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
-          ]}
-          rows={filtered}
-          keyFn={(r: any) => r.id}
-          onRowClick={(r: any) => navigate(`/jobs/${r.id}`)}
-          emptyMessage="No jobs found"
-        />
+          <PagedTable
+            cols={[
+              { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
+              { header: 'Run #', key: 'job_run_number', width: '70px' },
+              {
+                header: 'Progress', render: (r: any) => {
+                  const pct = parseFloat(r.prcnt_complete) || 0;
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Progress value={pct} />
+                      <span className="text-xs text-gray-400 w-12">{pct.toFixed(1)}%</span>
+                    </div>
+                  );
+                }
+              },
+              { header: 'Contacts', render: (r: any) => `${r.processed_contacts ?? 0} / ${r.total_contacts ?? 0}` },
+              { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+              { header: 'Started', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
+              { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
+            ]}
+            rows={filtered}
+            keyFn={(r: any) => r.id}
+            onRowClick={(r: any) => navigate(`/jobs/${r.id}`)}
+            emptyMessage="No jobs found"
+          />
         )}
       </Card>
     </div>
@@ -185,12 +187,12 @@ export function JobDetailPage() {
   // --- PROGRESS SOURCE OF TRUTH ---
   // Prefer live-computed values from stats (which counts directly from CCS rows).
   // Fall back to job fields so the page works even before stats loads.
-  const totalContacts     = stats?.total_contacts     ?? job.total_contacts     ?? 0;
+  const totalContacts = stats?.total_contacts ?? job.total_contacts ?? 0;
   const processedContacts = stats?.processed_contacts ?? job.processed_contacts ?? 0;
-  const prcntComplete     = stats?.prcnt_complete     ?? job.prcnt_complete     ?? 0;
-  const isFinished        = job.status === 'completed' || job.status === 'stopped';
+  const prcntComplete = stats?.prcnt_complete ?? job.prcnt_complete ?? 0;
+  const isFinished = job.status === 'completed' || job.status === 'stopped';
   // When the job is marked completed, clamp to 100% visually
-  const displayPrcnt      = job.status === 'completed' ? 100 : prcntComplete;
+  const displayPrcnt = job.status === 'completed' ? 100 : prcntComplete;
 
   return (
     <div className="p-6 space-y-5">
@@ -228,11 +230,10 @@ export function JobDetailPage() {
               {displayPrcnt.toFixed(1)}%
             </span>
             {isFinished && (
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                job.status === 'completed'
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${job.status === 'completed'
                   ? 'bg-green-50 text-green-700'
                   : 'bg-gray-100 text-gray-600'
-              }`}>
+                }`}>
                 {job.status}
               </span>
             )}
@@ -246,11 +247,11 @@ export function JobDetailPage() {
 
       {/* Status breakdown */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="Queued"     value={byStatus.queued      || 0} color="yellow" />
-        <StatCard label="With Agent" value={byStatus.with_agent  || 0} color="indigo" />
-        <StatCard label="Completed"  value={byStatus.completed   || 0} color="green" />
-        <StatCard label="Exhausted"  value={byStatus.exhausted   || 0} color="orange" />
-        <StatCard label="DNC"        value={byStatus.dnc         || 0} color="red" />
+        <StatCard label="Queued" value={byStatus.queued || 0} color="yellow" />
+        <StatCard label="With Agent" value={byStatus.with_agent || 0} color="indigo" />
+        <StatCard label="Completed" value={byStatus.completed || 0} color="green" />
+        <StatCard label="Exhausted" value={byStatus.exhausted || 0} color="orange" />
+        <StatCard label="DNC" value={byStatus.dnc || 0} color="red" />
       </div>
 
       {/* Per-agent breakdown */}
@@ -278,12 +279,12 @@ export function JobDetailPage() {
               <Select label="" value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
                 options={[
-                  {value:'',label:'All statuses'},
-                  {value:'queued',label:'Queued'},
-                  {value:'with_agent',label:'With Agent'},
-                  {value:'completed',label:'Completed'},
-                  {value:'exhausted',label:'Exhausted'},
-                  {value:'dnc',label:'DNC'},
+                  { value: '', label: 'All statuses' },
+                  { value: 'queued', label: 'Queued' },
+                  { value: 'with_agent', label: 'With Agent' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'exhausted', label: 'Exhausted' },
+                  { value: 'dnc', label: 'DNC' },
                 ]} />
             </div>
           } />
@@ -295,31 +296,34 @@ export function JobDetailPage() {
             return hay.includes(q);
           });
           return (
-          <PagedTable
-            cols={[
-              { header: 'Contact', render: (r: any) => (
-                <div>
-                  <div className="font-medium text-gray-900">{r.first_name} {r.last_name}</div>
-                  <div className="text-xs text-gray-400">{r.phone_number}</div>
-                </div>
-              )},
-              { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
-              { header: 'Priority', key: 'priority' },
-              { header: 'Attempts', key: 'attempts_made' },
-              { header: 'Assigned Agent', render: (r: any) => r.assigned_agent_name || <span className="text-gray-400">—</span> },
-              { header: 'Next Attempt', render: (r: any) => r.next_attempt_at
-                ? new Date(r.next_attempt_at).toLocaleString() : '—' },
-              { header: 'Actions', render: (r: any) => (
-                <Button size="sm" variant="ghost"
-                  onClick={e => { e.stopPropagation(); setReassignModal(r); setNewAgent(r.assigned_agent_id||''); setNewPriority(String(r.priority)); }}>
-                  Edit
-                </Button>
-              )},
-            ]}
-            rows={rows}
-            keyFn={(r: any) => r.id}
-            emptyMessage="No contacts match filter"
-          />
+            <PagedTable
+              cols={[
+                {
+                  header: 'Contact', render: (r: any) => (
+                    <div className="font-semibold text-gray-900">{r.phone_number}</div>
+                  )
+                },
+                { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
+                { header: 'Priority', key: 'priority' },
+                { header: 'Attempts', key: 'attempts_made' },
+                { header: 'Assigned Agent', render: (r: any) => r.assigned_agent_name || <span className="text-gray-400">—</span> },
+                {
+                  header: 'Next Attempt', render: (r: any) => r.next_attempt_at
+                    ? new Date(r.next_attempt_at).toLocaleString() : '—'
+                },
+                {
+                  header: 'Actions', render: (r: any) => (
+                    <Button size="sm" variant="ghost"
+                      onClick={e => { e.stopPropagation(); setReassignModal(r); setNewAgent(r.assigned_agent_id || ''); setNewPriority(String(r.priority)); }}>
+                      Edit
+                    </Button>
+                  )
+                },
+              ]}
+              rows={rows}
+              keyFn={(r: any) => r.id}
+              emptyMessage="No contacts match filter"
+            />
           );
         })()}
       </Card>
