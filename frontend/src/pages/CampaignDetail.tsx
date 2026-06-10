@@ -114,37 +114,34 @@ export default function CampaignDetailPage() {
           {/* Contact accounting: raw list count vs unique queued vs collapsed dupes */}
           <div className='grid grid-cols-2 lg:grid-cols-3 gap-4'>
             <StatCard label='Total Contacts' value={report.total_contacts || 0} icon={Users}
-              gradient='linear-gradient(135deg,#6B7280,#4B5563)' tint='linear-gradient(135deg,#F9FAFB,#F3F4F6)' border='#E5E7EB' textColor='#374151'/>
-            <StatCard label='Successful Contacts' value={report.successful_contacts || 0} icon={CheckCircle}
-              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/>
-            <StatCard label='Duplicate Contacts' value={report.duplicate_contacts || 0} icon={XCircle}
-              gradient='linear-gradient(135deg,#F59E0B,#D97706)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E'/>
+              gradient='linear-gradient(135deg,#6B7280,#4B5563)' tint='linear-gradient(135deg,#F9FAFB,#F3F4F6)' border='#E5E7EB' textColor='#374151' />
+            <StatCard label='Queued' value={report.queued || 0} icon={Clock}
+              gradient='linear-gradient(135deg,#F59E0B,#D97706)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E' />
+            <StatCard label='With Agent' value={report.with_agent || 0} icon={Phone}
+              gradient='linear-gradient(135deg,#8B5CF6,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6' />
           </div>
 
           <div className='grid grid-cols-2 lg:grid-cols-3 gap-4'>
-            <StatCard label='Attempted' value={report.attempted || 0} icon={Phone}
-              gradient='linear-gradient(135deg,#8B5CF6,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6'/>
-           {/*  <StatCard label='Connected' value={report.connected || 0} icon={CheckCircle}
-              gradient='linear-gradient(135deg,#10B981,#059669)' tint='linear-gradient(135deg,#ECFDF5,#D1FAE5)' border='#A7F3D0' textColor='#065F46'/> */}
             <StatCard label='Completed' value={report.completed_total || 0} icon={TrendingUp}
-              gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' tint='linear-gradient(135deg,#EFF6FF,#DBEAFE)' border='#BFDBFE' textColor='#1E40AF'/>
+              gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' tint='linear-gradient(135deg,#EFF6FF,#DBEAFE)' border='#BFDBFE' textColor='#1E40AF' />
+            <StatCard label='Exhausted' value={report.exhausted || 0} icon={XCircle}
+              gradient='linear-gradient(135deg,#F97316,#EA580C)' tint='linear-gradient(135deg,#FFF7ED,#FFEDD5)' border='#FED7AA' textColor='#9A3412' />
             <StatCard label='DNC' value={report.dnc || 0} icon={XCircle}
-              gradient='linear-gradient(135deg,#EF4444,#DC2626)' tint='linear-gradient(135deg,#FEF2F2,#FEE2E2)' border='#FECACA' textColor='#991B1B'/>
+              gradient='linear-gradient(135deg,#EF4444,#DC2626)' tint='linear-gradient(135deg,#FEF2F2,#FEE2E2)' border='#FECACA' textColor='#991B1B' />
           </div>
-
           <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
             <StatCard label='Avg Preview Time' value={`${report.avg_preview_duration_sec || 0}s`} icon={Clock}
-              gradient='linear-gradient(135deg,#E8470A,#F59E0B)' tint='linear-gradient(135deg,#FFF4EE,#FFE6D2)' border='#FFD3B5' textColor='#C43A06'/>
+              gradient='linear-gradient(135deg,#E8470A,#F59E0B)' tint='linear-gradient(135deg,#FFF4EE,#FFE6D2)' border='#FFD3B5' textColor='#C43A06' />
             <StatCard label='Avg Talk Time' value={`${report.avg_talk_time_sec || 0}s`} icon={Phone}
-              gradient='linear-gradient(135deg,#F59E0B,#EAB308)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E'/>
+              gradient='linear-gradient(135deg,#F59E0B,#EAB308)' tint='linear-gradient(135deg,#FFFBEB,#FEF3C7)' border='#FDE68A' textColor='#92400E' />
             <StatCard label='Avg Wrap-up' value={`${report.avg_wrapup_duration_sec || 0}s`} icon={Clock}
-              gradient='linear-gradient(135deg,#06B6D4,#0891B2)' tint='linear-gradient(135deg,#ECFEFF,#CFFAFE)' border='#A5F3FC' textColor='#164E63'/>
+              gradient='linear-gradient(135deg,#06B6D4,#0891B2)' tint='linear-gradient(135deg,#ECFEFF,#CFFAFE)' border='#A5F3FC' textColor='#164E63' />
             <StatCard label='Avg Total Handle' value={`${report.avg_total_handling_sec || 0}s`} icon={TrendingUp}
-              gradient='linear-gradient(135deg,#A855F7,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6'/>
+              gradient='linear-gradient(135deg,#A855F7,#7C3AED)' tint='linear-gradient(135deg,#F5F3FF,#EDE9FE)' border='#DDD6FE' textColor='#5B21B6' />
           </div>
 
           {/* Disposition breakdown */}
-          {report.dispositions?.length > 0 && (
+          {/* {report.dispositions?.length > 0 && (
             <Card>
               <CardHeader title='Disposition Breakdown' />
               <div className='p-5 space-y-3'>
@@ -163,7 +160,7 @@ export default function CampaignDetailPage() {
                 ))}
               </div>
             </Card>
-          )}
+          )} */}
         </>
       )}
 

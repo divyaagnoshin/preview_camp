@@ -202,7 +202,7 @@ function StaffedAgentsChartView({ rows }: { rows: any[] }) {
   ];
 
   return (
-    <div style={{ background: '#f0f9ff', padding: '28px 32px 36px' }}>
+    <div style={{ background: '#f0f9ff', maxHeight: 900, overflowY: 'auto', padding: '28px 32px 36px' }}>
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, marginBottom: 32 }}>
         {kpis.map(k => (
@@ -325,7 +325,7 @@ export default function StaffedAgentsReport({ isMini, onExpand, miniTitle, pal }
               <div style={{ position: 'relative' }}>
                 <Search style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 13, height: 13, color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }} />
                 <input value={globalQ} onChange={e => setGlobalQ(e.target.value)} placeholder="Search agents…"
-                  style={{ height: 34, paddingLeft: 30, paddingRight: 10, fontSize: 12.5, borderRadius: 9, border: '1.5px solid rgba(251, 243, 243, 0.84)', background: 'rgba(255,255,255,0.1)', color: '#fff', outline: 'none', width: 200 }} />
+                  style={{ height: 34, paddingLeft: 30, paddingRight: 10, fontSize: 12.5, borderRadius: 9, border: '1.5px solid rgba(251, 243, 243, 0.22)', background: 'rgba(255,255,255,0.1)', color: '#fff', outline: 'none', width: 200 }} />
               </div>
             )}
             {!showChart && (

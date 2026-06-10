@@ -14,8 +14,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const offset = (page - 1) * perPage;
 
     const { rows } = await pool.query(
-  `SELECT cl.*,
+      `SELECT cl.*,
           COUNT(DISTINCT c.id)::int AS contact_count,
+          (COUNT(c.id) FILTER (WHERE c.phone_number IS NOT NULL AND c.phone_number != '') - COUNT(DISTINCT NULLIF(c.phone_number, '')))::int AS duplicate_count,
           (
             SELECT COUNT(*)::int
             FROM (
@@ -34,8 +35,8 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
    GROUP BY cl.id
    ORDER BY cl.created_at DESC
    LIMIT $2 OFFSET $3`,
-  [req.user!.orgId, perPage, offset],
-);
+      [req.user!.orgId, perPage, offset],
+    );
     const total = await pool.query(
       'SELECT COUNT(*)::int FROM contact_lists WHERE org_id = $1',
       [req.user!.orgId],
@@ -71,8 +72,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rows } = await pool.query(
-  `SELECT cl.*,
+      `SELECT cl.*,
           COUNT(DISTINCT c.id)::int AS contact_count,
+          (COUNT(c.id) FILTER (WHERE c.phone_number IS NOT NULL AND c.phone_number != '') - COUNT(DISTINCT NULLIF(c.phone_number, '')))::int AS duplicate_count,
           (
             SELECT COUNT(*)::int
             FROM (
@@ -89,8 +91,8 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
    LEFT JOIN contacts c ON c.contact_list_id = cl.id
    WHERE cl.id = $1 AND cl.org_id = $2
    GROUP BY cl.id`,
-  [req.params.id, req.user!.orgId],
-);
+      [req.params.id, req.user!.orgId],
+    );
     if (!rows[0]) throw new AppError(404, 'Contact list not found');
 
     const fields = await pool.query(
@@ -167,23 +169,105 @@ router.put(
 router.delete(
   '/:id',
   async (req: Request, res: Response, next: NextFunction) => {
+    const client = await pool.connect();
+
     try {
-      const active = await pool.query(
-        `SELECT 1 FROM campaign_contact_lists ccl
-       JOIN campaign_jobs cj ON cj.campaign_id = ccl.campaign_id
-       WHERE ccl.contact_list_id = $1 AND cj.status = 'active' LIMIT 1`,
+      console.log('========== DELETE CONTACT LIST START ==========');
+      console.log('Contact List ID:', req.params.id);
+      console.log('User ID:', req.user?.userId);
+      console.log('Org ID:', req.user?.orgId);
+
+      // 1. Verify the list exists
+      console.log('Checking if contact list exists...');
+
+      const list = await client.query(
+        `SELECT id, org_id FROM contact_lists WHERE id = $1`,
         [req.params.id],
       );
-      if (active.rows.length)
-        throw new AppError(409, 'Cannot delete list with active jobs');
 
-      await pool.query(
-        'DELETE FROM contact_lists WHERE id = $1 AND org_id = $2',
-        [req.params.id, req.user!.orgId],
+      if (!list.rows[0]) {
+        console.error('Contact list not found');
+        throw new AppError(404, 'Contact list not found');
+      }
+
+      console.log('Contact list found:', list.rows[0]);
+
+      if (list.rows[0].org_id !== req.user!.orgId) {
+        console.error('Forbidden - Org mismatch');
+        throw new AppError(403, 'Forbidden');
+      }
+
+      // 2. Check campaign mapping
+      console.log('Checking campaign mappings...');
+
+      const mapped = await client.query(
+        `SELECT 1
+         FROM campaign_contact_lists
+         WHERE contact_list_id = $1
+         LIMIT 1`,
+        [req.params.id],
       );
+
+      if (mapped.rows.length) {
+        console.error(
+          'Delete blocked: Contact list is mapped to a campaign',
+        );
+        throw new AppError(
+          409,
+          'Cannot delete: contact list is mapped to a campaign',
+        );
+      }
+
+      console.log('No campaign mappings found');
+
+      await client.query('BEGIN');
+
+      // ── 3. Delete contacts first (removes FK ref to upload_batches) ───────
+      const delContacts = await client.query(
+        `DELETE FROM contacts WHERE contact_list_id = $1`,
+        [req.params.id],
+      );
+      console.log('[DELETE] contacts deleted:', delContacts.rowCount);
+
+      // ── 4. Delete upload batches (no more refs from contacts) ─────────────
+      const delBatches = await client.query(
+        `DELETE FROM contact_upload_batches WHERE contact_list_id = $1`,
+        [req.params.id],
+      );
+      console.log('[DELETE] upload batches deleted:', delBatches.rowCount);
+
+      // ── 5. Delete list attributes ─────────────────────────────────────────
+      const delAttrs = await client.query(
+        `DELETE FROM contact_list_attributes WHERE contact_list_id = $1`,
+        [req.params.id],
+      );
+      console.log('[DELETE] list attributes deleted:', delAttrs.rowCount);
+
+      // ── 6. Delete the list ────────────────────────────────────────────────
+      const delList = await client.query(
+        `DELETE FROM contact_lists WHERE id = $1`,
+        [req.params.id],
+      );
+      console.log('[DELETE] contact list deleted:', delList.rowCount);
+
+      await client.query('COMMIT');
+      console.log('[DELETE] committed successfully');
+
+      console.log('Transaction committed successfully');
+      console.log('========== DELETE CONTACT LIST SUCCESS ==========');
+
       res.status(204).send();
     } catch (err) {
+      console.error('========== DELETE CONTACT LIST FAILED ==========');
+      console.error(err);
+
+      await client.query('ROLLBACK').catch(() => { });
+      console.log('Transaction rolled back');
+
       next(err);
+    } finally {
+      client.release();
+      console.log('Database connection released');
     }
   },
 );
@@ -660,7 +744,7 @@ router.put(
         field_definitions: defs,
       });
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       next(err);
     } finally {
       client.release();
@@ -857,7 +941,7 @@ router.post(
       await client.query('COMMIT');
       res.status(201).json({ data: inserted });
     } catch (err: any) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       next(err);
     } finally {
       client.release();
@@ -1027,7 +1111,7 @@ router.patch(
       await client.query('COMMIT');
       res.json({ data: updatedRow });
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       next(err);
     } finally {
       client.release();
@@ -1060,7 +1144,7 @@ router.delete(
       await client.query('COMMIT');
       res.json({ deleted: true });
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await client.query('ROLLBACK').catch(() => { });
       next(err);
     } finally {
       client.release();

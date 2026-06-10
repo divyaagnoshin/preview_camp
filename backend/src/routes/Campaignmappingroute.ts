@@ -77,20 +77,19 @@ router.get(
     try {
       const { rows } = await agnoPool.query(
         `SELECT
-            u.userid        AS id,
-            u.first_name,
-            u.last_name,
-            u.email_id      AS email,
-            CASE
-              WHEN u.role_id = 2 THEN 'supervisor'
-              ELSE 'agent'
-            END             AS role,
-            CASE
-              WHEN LOWER(u.status) = 'active' THEN true
-              ELSE false
-            END             AS is_active
-         FROM user_details u
-         ORDER BY u.first_name`,
+    u.userid        AS id,
+    u.first_name,
+    u.last_name,
+    u.email_id      AS email,
+    CASE
+      WHEN u.role_id = 2 THEN 'supervisor'
+      WHEN u.role_id = 4 THEN 'agent'
+    END             AS role,
+    true            AS is_active
+ FROM user_details u
+ WHERE u.role_id IN (2, 4)
+   AND LOWER(u.status) = 'active'
+ ORDER BY u.first_name`,
       );
       res.json({ data: rows });
     } catch (err) {
@@ -108,39 +107,28 @@ router.get(
   requireRole('admin', 'supervisor'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // ✅ FIX: Added WHERE cam.campaign_id = $1 — was missing before,
-      //         causing the route to return ALL mappings instead of
-      //         only the ones for the selected campaign.
       const { rows } = await agnoPool.query(
         `SELECT
-            cam.id               AS mapping_id,
-            cam.campaign_id,
-            cam.agent_userid     AS user_id,
-            cam.company_id,
-            cam.created_date,
-
-            u.first_name,
-            u.last_name,
-            u.email_id           AS email,
-
-            CASE
-              WHEN u.role_id = 2 THEN 'supervisor'
-              ELSE 'agent'
-            END AS role,
-
-            CASE
-              WHEN LOWER(u.status) = 'active' THEN true
-              ELSE false
-            END AS is_active
-
-         FROM campaign_agent_mapping cam
-
-         LEFT JOIN user_details u
-            ON u.userid = cam.agent_userid
-
-         WHERE cam.campaign_id = $1
-
-         ORDER BY u.first_name`,
+    cam.id               AS mapping_id,
+    cam.campaign_id,
+    cam.agent_userid     AS user_id,
+    cam.company_id,
+    cam.created_date,
+    u.first_name,
+    u.last_name,
+    u.email_id           AS email,
+    CASE
+      WHEN u.role_id = 2 THEN 'supervisor'
+      WHEN u.role_id = 4 THEN 'agent'
+    END AS role,
+    true AS is_active
+FROM campaign_agent_mapping cam
+INNER JOIN user_details u          -- ← INNER JOIN, not LEFT
+    ON u.userid = cam.agent_userid
+   AND u.role_id IN (2, 4)         -- ← move filters into JOIN condition
+   AND LOWER(u.status) = 'active'
+WHERE cam.campaign_id = $1
+ORDER BY u.first_name`,
         [req.params.campaignId],
       );
 
@@ -150,7 +138,6 @@ router.get(
     }
   },
 );
-
 // ─────────────────────────────────────────────────────────────
 // GET /v1/campaign-mapping/by-agent/:agentId
 // All campaigns a given agent is assigned to.

@@ -461,133 +461,145 @@ router.post(
       // already committed and visible to readers before the heavy INSERT
       // starts.
       const { camp, job, total } = phase1;
-      try {
-        const newCcsRows = await withTransaction(async (client) => {
-          // Register all contacts into CCS. Dedup is by (phone_number, job_id),
-          // NOT by (contact_id, job_id), because the same phone can exist in
-          // multiple contact_lists with different contact_id values. Two-layer
-          // dedup:
-          //   1. DISTINCT ON (phone_number) — collapses duplicates inside this
-          //      batch when a campaign is linked to multiple lists that share
-          //      a phone. Lowest priority number (= highest priority) wins,
-          //      then oldest contact row, for a deterministic pick.
-          //   2. NOT EXISTS against existing CCS rows joined back to contacts
-          //      by phone — skips a phone that is already queued for this job
-          //      from a previous run, even if its contact_id is now different.
-          // ON CONFLICT (contact_id, job_id) DO NOTHING is kept only as a
-          // defensive race-condition fallback. RETURNING drives the
-          // status-history insert below.
-          const { rows } = await client.query(
-            `INSERT INTO campaign_contact_status
-             (contact_id, job_id, status, priority, assigned_agent_id, next_attempt_at)
-           SELECT DISTINCT ON (c.phone_number)
-             c.id, $1,
-             CASE WHEN dn.phone_number IS NOT NULL THEN 'dnc' ELSE 'queued' END,
-             c.priority,
-             CASE WHEN $2 THEN c.assigned_agent_id ELSE NULL END,
-             NOW()
-           FROM contacts c
-           JOIN campaign_contact_lists ccl ON ccl.contact_list_id = c.contact_list_id
-           LEFT JOIN (
-             SELECT DISTINCT dn.phone_number
-             FROM dnc_numbers dn
-             JOIN campaign_dnc_groups cdg ON cdg.dnc_group_id = dn.dnc_group_id
-             WHERE cdg.campaign_id = $3
-           ) dn ON dn.phone_number = c.phone_number
-           WHERE ccl.campaign_id = $3
-             AND NOT EXISTS (
-               SELECT 1
-                 FROM campaign_contact_status ccs
-                 JOIN contacts c2 ON c2.id = ccs.contact_id
-                WHERE ccs.job_id = $1
-                  AND c2.phone_number = c.phone_number
-             )
-           ORDER BY c.phone_number, c.priority ASC, c.created_at ASC
-           ON CONFLICT (contact_id, job_id) DO NOTHING
-           RETURNING contact_id, status`,
-            [job.id, camp.agent_priority_enabled, camp.id],
-          );
 
-          // Write status history only for the newly-inserted CCS rows. Rows
-          // that were skipped by ON CONFLICT already have their original
-          // history entry from a prior run.
-          if (rows.length) {
-            const contactIds = rows.map((r: any) => r.contact_id);
-            const statuses = rows.map((r: any) => r.status);
-            await client.query(
-              `INSERT INTO contact_status_history (contact_id, job_id, to_status, trigger_type)
-               SELECT UNNEST($1::uuid[]), $2, UNNEST($3::text[]), 'system'`,
-              [contactIds, job.id, statuses],
-            );
-          }
+      // Return immediately so UI sees 'preparing' state
+      res.json({
+        campaign_id: camp.id,
+        job_id: job.id,
+        status: 'preparing',
+        started_at: job.start_time,
+      });
 
-          // Flip the job to 'active' inside the same transaction that
-          // wrote the CCS rows — readers either see (preparing + empty CCS)
-          // or (active + populated CCS), never a half-state.
-          // Also set excluded_contacts = total_contacts - (non-dnc contacts in CCS)
-          await client.query(
-            `UPDATE campaign_jobs
-   SET status='active',
-       excluded_contacts = (
-         -- DNC contacts
-         SELECT COUNT(*)::int
-         FROM campaign_contact_status
-         WHERE job_id = $1 AND status = 'dnc'
-       ) + (
-         -- Duplicate contacts: total from lists minus what got inserted into CCS
-         SELECT GREATEST(0, total_contacts - COUNT(*)::int)
-         FROM campaign_contact_status
-         WHERE job_id = $1
-       )
-   WHERE id=$1`,
-            [job.id],
-          );
-          return rows;
-        });
-
-        // Fetch mapped agents so UI knows who to notify
-        const mappedRes = await agnoPool.query(
-          `SELECT agent_userid FROM campaign_agent_mapping WHERE campaign_id=$1`,
-          [camp.id]
-        );
-        const mapped_agents = mappedRes.rows.map((r: any) => r.agent_userid);
-
-        // Broadcast to AgnoConV2 Angular clients
-        io.emit('campaign_update', {
-          campaign_id: camp.id,
-          event: 'started',
-          message: `Campaign ${camp.name || camp.id} has been started.`,
-          timestamp: new Date().toISOString(),
-          mapped_agents
-        });
-
-        res.json({
-          campaign_id: camp.id,
-          job_id: job.id,
-          status: 'active',
-          started_at: job.start_time,
-          contacts_registered: newCcsRows.length,
-          contacts_skipped_as_duplicate: total - newCcsRows.length,
-        });
-      } catch (err) {
-        // Best-effort rollback so the user can retry. We don't reuse the
-        // failed connection — withTransaction will grab a fresh one.
+      // Run Phase 2 in the background
+      setTimeout(async () => {
         try {
-          await withTransaction(async (client) => {
+          const newCcsRows = await withTransaction(async (client) => {
+            // Register all contacts into CCS. Dedup is by (phone_number, job_id),
+            // NOT by (contact_id, job_id), because the same phone can exist in
+            // multiple contact_lists with different contact_id values. Two-layer
+            // dedup:
+            //   1. DISTINCT ON (phone_number) — collapses duplicates inside this
+            //      batch when a campaign is linked to multiple lists that share
+            //      a phone. Lowest priority number (= highest priority) wins,
+            //      then oldest contact row, for a deterministic pick.
+            //   2. NOT EXISTS against existing CCS rows joined back to contacts
+            //      by phone — skips a phone that is already queued for this job
+            //      from a previous run, even if its contact_id is now different.
+            // ON CONFLICT (contact_id, job_id) DO NOTHING is kept only as a
+            // defensive race-condition fallback. RETURNING drives the
+            // status-history insert below.
+            const { rows } = await client.query(
+              `INSERT INTO campaign_contact_status
+               (contact_id, job_id, status, priority, assigned_agent_id, next_attempt_at)
+             SELECT DISTINCT ON (c.phone_number)
+               c.id, $1,
+               CASE WHEN dn.phone_number IS NOT NULL THEN 'dnc' ELSE 'queued' END,
+               c.priority,
+               CASE WHEN $2 THEN c.assigned_agent_id ELSE NULL END,
+               NOW()
+             FROM contacts c
+             JOIN campaign_contact_lists ccl ON ccl.contact_list_id = c.contact_list_id
+             LEFT JOIN (
+               SELECT DISTINCT dn.phone_number
+               FROM dnc_numbers dn
+               JOIN campaign_dnc_groups cdg ON cdg.dnc_group_id = dn.dnc_group_id
+               WHERE cdg.campaign_id = $3
+             ) dn ON dn.phone_number = c.phone_number
+             WHERE ccl.campaign_id = $3
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM campaign_contact_status ccs
+                   JOIN contacts c2 ON c2.id = ccs.contact_id
+                  WHERE ccs.job_id = $1
+                    AND c2.phone_number = c.phone_number
+               )
+             ORDER BY c.phone_number, c.priority ASC, c.created_at ASC
+             ON CONFLICT (contact_id, job_id) DO NOTHING
+             RETURNING contact_id, status`,
+              [job.id, camp.agent_priority_enabled, camp.id],
+            );
+
+            // Write status history only for the newly-inserted CCS rows. Rows
+            // that were skipped by ON CONFLICT already have their original
+            // history entry from a prior run.
+            if (rows.length) {
+              const contactIds = rows.map((r: any) => r.contact_id);
+              const statuses = rows.map((r: any) => r.status);
+              await client.query(
+                `INSERT INTO contact_status_history (contact_id, job_id, to_status, trigger_type)
+                 SELECT UNNEST($1::uuid[]), $2, UNNEST($3::text[]), 'system'`,
+                [contactIds, job.id, statuses],
+              );
+            }
+
+            // Update excluded_contacts while still in 'preparing' state.
+            // The job stays 'preparing' until AFTER this transaction commits,
+            // so readers always see either (preparing + no CCS) or (active + CCS).
             await client.query(
-              `UPDATE campaign_jobs SET status='stopped', end_time=NOW() WHERE id=$1`,
+              `UPDATE campaign_jobs
+     SET excluded_contacts = (
+           -- DNC contacts
+           SELECT COUNT(*)::int
+           FROM campaign_contact_status
+           WHERE job_id = $1 AND status = 'dnc'
+         ) + GREATEST(0, total_contacts - (
+           -- Duplicate contacts: total from lists minus what got inserted into CCS
+           SELECT COUNT(*)::int
+           FROM campaign_contact_status
+           WHERE job_id = $1
+         ))
+     WHERE id=$1`,
               [job.id],
             );
-            await client.query(
-              `UPDATE campaigns SET status='inactive', updated_at=NOW() WHERE id=$1`,
-              [camp.id],
-            );
+            return rows;
           });
-        } catch (rollbackErr) {
-          console.error('[campaigns/run] rollback failed:', rollbackErr);
+
+          // CCS is now fully populated — flip the job from 'preparing' → 'active'.
+          // This is intentionally outside the CCS transaction so the job stays
+          // 'preparing' (visible to the UI) until ALL contacts are inserted.
+          await pool.query(
+            `UPDATE campaign_jobs SET status='active' WHERE id=$1`,
+            [job.id],
+          );
+
+          // Fetch mapped agents so UI knows who to notify
+          const mappedRes = await agnoPool.query(
+            `SELECT agent_userid FROM campaign_agent_mapping WHERE campaign_id=$1`,
+            [camp.id]
+          );
+          const mapped_agents = mappedRes.rows.map((r: any) => r.agent_userid);
+
+          // Broadcast to AgnoConV2 Angular clients
+          io.emit('campaign_update', {
+            campaign_id: camp.id,
+            event: 'started',
+            // REPLACE WITH:
+            message: `Campaign ${camp.name || camp.id} has been started.`,
+            timestamp: new Date().toISOString(),
+            mapped_agents
+          });
+
+        } catch (err) {
+          console.error('[campaigns/run] Phase 2 background failed:', err);
+          // Best-effort rollback so the user can retry. We don't reuse the
+          // failed connection — withTransaction will grab a fresh one.
+          try {
+            await withTransaction(async (client) => {
+              await client.query(
+                `UPDATE campaign_jobs SET status='stopped', end_time=NOW() WHERE id=$1`,
+                [job.id],
+              );
+              await client.query(
+                `UPDATE campaigns SET status='inactive', updated_at=NOW() WHERE id=$1`,
+                [camp.id],
+              );
+            });
+          } catch (rollbackErr) {
+            console.error('[campaigns/run] rollback failed:', rollbackErr);
+          }
         }
-        throw err;
-      }
+      }, 0);
+
     } catch (err) {
       next(err);
     }

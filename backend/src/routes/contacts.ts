@@ -84,7 +84,17 @@ async function validateContact(
 export function validatePhoneFormat(phone: any): string | null {
   if (phone === undefined || phone === null || String(phone).trim() === '')
     return 'phone_number is empty';
-  const cleaned = String(phone).replace(/[\s\-()]/g, '');
+
+  let raw = String(phone).trim();
+
+  // Fix Excel scientific notation (e.g. "9.19139E+11" → "919139000000")
+  if (/^[0-9.]+[eE][+\-]?[0-9]+$/.test(raw)) {
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return `phone_number is invalid: "${phone}"`;
+    raw = Math.round(num).toString();
+  }
+
+  const cleaned = raw.replace(/[\s\-()]/g, '');
   if (!/^\+?[0-9]+$/.test(cleaned))
     return `phone_number contains invalid characters: "${phone}"`;
   const digits = cleaned.replace(/^\+/, '');
@@ -221,7 +231,7 @@ export async function importCsvRecords(
       contactListId,
     );
     if (headerErrs.length) {
-      
+
       for (const msg of headerErrs)
         errors.push({ row: 0, phone: '', error: msg });
       return { imported: 0, failed: records.length, errors };
@@ -262,7 +272,7 @@ export async function importCsvRecords(
     if (phoneErr) {
       console.error('PHONE VALIDATION FAILED');
       console.error({
-        
+
         phone: phoneRaw,
         error: phoneErr,
         fullRow: row,
@@ -271,7 +281,10 @@ export async function importCsvRecords(
       errors.push({ row: i + 1, phone: String(phoneRaw), error: phoneErr });
       continue;
     }
-    const phoneNorm = String(phoneRaw).replace(/[\s\-()]/g, '');
+    const phoneNorm = (/^[0-9.]+[eE][+\-]?[0-9]+$/.test(String(phoneRaw).trim())
+      ? Math.round(Number(phoneRaw)).toString()
+      : String(phoneRaw)
+    ).replace(/[\s\-()]/g, '');
 
     const assignedAgentId =
       typeof row.assigned_agent_id === 'string' &&
@@ -306,12 +319,12 @@ export async function importCsvRecords(
     }
     if (reqErr) {
       console.error('REQUIRED FIELD VALIDATION FAILED');
-console.error({
+      console.error({
 
-  phone: phoneNorm,
-  error: reqErr,
-  fullRow: row,
-});
+        phone: phoneNorm,
+        error: reqErr,
+        fullRow: row,
+      });
       failed++;
       errors.push({ row: i + 1, phone: phoneNorm, error: reqErr });
       continue;
@@ -372,7 +385,7 @@ console.error({
     await withTransaction(async (client) => {
       for (let i = 0; i < validRows.length; i += CHUNK_SIZE) {
         let chunk = validRows.slice(i, i + CHUNK_SIZE);
-        
+
         if (importMode === 'append') {
           const dedupe = new Map<string, ValidRowForCopy>();
           for (const row of chunk) {
@@ -674,7 +687,7 @@ export async function importCsvStream(
   );
   const schemaMap: SchemaMap = buildSchemaMap(typeRes.rows);
 
-  
+
   const customKeySet = new Set<string>(
     defsRes.rows
       .map((d: any) => d.field_key)
@@ -699,7 +712,7 @@ export async function importCsvStream(
   console.log(`Flushing chunk with ${chunk.length} records...`);
   const flushChunk = async (client: PoolClient) => {
     if (chunk.length === 0) return;
-    console.log('Flushing chunk:', chunk.length); 
+    console.log('Flushing chunk:', chunk.length);
 
     if (opts.importMode === 'append') {
       // Deduplicate the chunk in memory by phone_number so we don't UPDATE the same row twice
@@ -720,7 +733,7 @@ export async function importCsvStream(
 
       const tempTable = `temp_chunk_${Date.now().toString(36)}_${Math.floor(Math.random() * 1000)}`;
       await client.query(`CREATE TEMP TABLE ${tempTable} (LIKE contacts INCLUDING ALL) ON COMMIT DROP`);
-      
+
       const { imported: imp, failures } = await tryCopyChunkBisect(
         client,
         uniqueChunk,
@@ -874,12 +887,12 @@ export async function importCsvStream(
       }
       if (reqErr) {
         console.error('REQUIRED FIELD ERROR');
-console.error({
-  row: totalRows,
-  phone: phoneNorm,
-  error: reqErr,
-  rowData: row,
-});
+        console.error({
+          row: totalRows,
+          phone: phoneNorm,
+          error: reqErr,
+          rowData: row,
+        });
         failed++;
         errors.push({ row: totalRows, phone: phoneNorm, error: reqErr });
         continue;
@@ -946,12 +959,12 @@ console.error({
   });
   console.log('=========== IMPORT SUMMARY ===========');
 
-      console.log({
-        totalRows,
-        imported,
-        failed,
-        errors,
-      });
+  console.log({
+    totalRows,
+    imported,
+    failed,
+    errors,
+  });
   return { imported, updated, failed, totalRows, errors };
 }
 
@@ -1083,7 +1096,7 @@ router.post(
         if (errs.length) {
           errors.push({
             row: i + 1,
-        phone: c.phone_number || '',
+            phone: c.phone_number || '',
             error: errs.join('; '),
           });
         } else {

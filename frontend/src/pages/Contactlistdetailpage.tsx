@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   useQuery,
   useMutation,
@@ -98,13 +98,12 @@ function MenuItem({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${
-        disabled
-          ? 'text-gray-300 cursor-not-allowed'
-          : danger
-            ? 'text-red-600 hover:bg-red-50'
-            : 'text-gray-700 hover:bg-gray-50'
-      }`}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${disabled
+        ? 'text-gray-300 cursor-not-allowed'
+        : danger
+          ? 'text-red-600 hover:bg-red-50'
+          : 'text-gray-700 hover:bg-gray-50'
+        }`}
     >
       <span className='shrink-0'>{icon}</span>
       <span>{label}</span>
@@ -249,15 +248,41 @@ function BulkGrid({
         </table>
       </div>
       {progress && (
-        <div className='text-xs space-y-1'>
-          <p className='text-gray-600'>
-            Imported {progress.done} of {progress.total}
-            {progress.failed > 0 && (
-              <span className='text-red-600'> · {progress.failed} failed</span>
-            )}
-          </p>
+        <div className='space-y-2'>
+          {/* Centered status bar at 60% width */}
+          <div className='flex flex-col items-center gap-1.5'>
+            <div className='w-[60%]'>
+              <div className='flex items-center justify-between mb-1'>
+                <span className='text-xs font-medium text-green-700'>
+                  Uploading contacts…
+                </span>
+                <span className='text-xs font-semibold text-green-700'>
+                  {progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%
+                </span>
+              </div>
+              <div className='w-full h-2.5 bg-gray-100 rounded-full overflow-hidden'>
+                <div
+                  className='h-full rounded-full transition-all duration-300'
+                  style={{
+                    width: `${progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%`,
+                    background: 'linear-gradient(90deg, #22c55e, #16a34a)',
+                  }}
+                />
+              </div>
+              <div className='flex items-center justify-between mt-1'>
+                <span className='text-[11px] text-gray-500'>
+                  {progress.done} of {progress.total} uploaded
+                </span>
+                {progress.failed > 0 && (
+                  <span className='text-[11px] text-red-500 font-medium'>
+                    {progress.failed} failed
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
           {progress.errors.length > 0 && (
-            <ul className='text-red-500 list-disc pl-5 max-h-24 overflow-y-auto'>
+            <ul className='text-xs text-red-500 list-disc pl-5 max-h-24 overflow-y-auto'>
               {progress.errors.map((e, idx) => (
                 <li key={idx}>
                   Row {e.row}: {e.error}
@@ -279,10 +304,10 @@ export default function ContactListDetailPage() {
 
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const [uploadErrors, setUploadErrors] = useState<
-    { row: number; phone: string; error: string }[]
-  >([]);
+  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'done' | 'error'>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<{ row: number; phone: string; error: string }[]>([]);
   const [showUploadErrors, setShowUploadErrors] = useState(false);
 
   const [search, setSearch] = useState('');
@@ -338,6 +363,13 @@ export default function ContactListDetailPage() {
     x: number;
     y: number;
   } | null>(null);
+
+  // Auto-dismiss upload banner after 30s
+  useEffect(() => {
+    if (uploadPhase !== 'done' && uploadPhase !== 'error') return;
+    const timer = setTimeout(() => setUploadPhase('idle'), 15_000);
+    return () => clearTimeout(timer); // cleanup if user dismisses manually first
+  }, [uploadPhase]);
 
   // ── Queries ───────────────────────────────────────────────────────────────
   const { data: list, isLoading: listLoading } = useQuery({
@@ -456,35 +488,92 @@ export default function ContactListDetailPage() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  const handleCsvSubmit = async () => {
-    if (!csvFile) return;
-    setUploadStatus('Uploading…');
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadPhase('uploading');
+    setUploadProgress(0);
+    setUploadMessage(null);
     setUploadErrors([]);
     setShowUploadErrors(false);
+
+    // Simulate progress up to 90% while the real request is in flight.
+    // The bar deliberately stops at 90 so the jump to 100 (processing phase)
+    // feels intentional rather than a freeze.
+    let simProgress = 0;
+    const simInterval = setInterval(() => {
+      simProgress = Math.min(simProgress + Math.random() * 12, 90);
+      setUploadProgress(Math.floor(simProgress));
+    }, 300);
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('contact_list_id', id!);
+      fd.append('import_mode', csvImportMode);
+      const result = await uploadCSV(fd);
+      clearInterval(simInterval);
+      setUploadProgress(100);
+      setUploadPhase('processing');
+      // Small delay so the user sees "Processing on server…" at 100%
+      await new Promise((r) => setTimeout(r, 600));
+      const errs = (result.errors || []) as { row: number; phone: string; error: string }[];
+      setUploadErrors(errs);
+      setShowUploadErrors(errs.length > 0 && errs.length <= 50);
+      setUploadPhase('done');
+      setUploadMessage(
+        `Imported ${result.imported_rows} of ${result.total_rows} contacts${result.failed_rows > 0 ? ` · ${result.failed_rows} failed` : ''}`,
+      );
+      qc.invalidateQueries({ queryKey: ['contacts', id] });
+      qc.invalidateQueries({ queryKey: ['contact-list', id] });
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
+    } catch (err: any) {
+      clearInterval(simInterval);
+      setUploadPhase('error');
+      setUploadMessage(err.response?.data?.error || 'Upload failed');
+    }
+    setCsvFile(null);
+  };
+
+  const handleCsvSubmit = async () => {
+    if (!csvFile) return;
     setShowCsvUploadModal(false);
+    setUploadPhase('uploading');
+    setUploadProgress(0);
+    setUploadMessage(null);
+    setUploadErrors([]);
+    setShowUploadErrors(false);
+
+    let simProgress = 0;
+    const simInterval = setInterval(() => {
+      simProgress = Math.min(simProgress + Math.random() * 12, 90);
+      setUploadProgress(Math.floor(simProgress));
+    }, 300);
+
     try {
       const fd = new FormData();
       fd.append('file', csvFile);
       fd.append('contact_list_id', id!);
       fd.append('import_mode', csvImportMode);
       const result = await uploadCSV(fd);
-      const errs = (result.errors || []) as {
-        row: number;
-        phone: string;
-        error: string;
-      }[];
+      clearInterval(simInterval);
+      setUploadProgress(100);
+      setUploadPhase('processing');
+      await new Promise((r) => setTimeout(r, 600));
+      const errs = (result.errors || []) as { row: number; phone: string; error: string }[];
       setUploadErrors(errs);
       setShowUploadErrors(errs.length > 0 && errs.length <= 50);
-      const prefix =
-        result.imported_rows > 0 || result.updated_rows > 0 ? '✓' : '⚠';
-      setUploadStatus(
-        `${prefix} Processed ${result.total_rows} contacts: ${result.imported_rows} created, ${result.updated_rows || 0} updated${result.failed_rows > 0 ? `, ${result.failed_rows} failed` : ''}`,
+      setUploadPhase('done');
+      setUploadMessage(
+        `Imported ${result.imported_rows} of ${result.total_rows} contacts${result.failed_rows > 0 ? ` · ${result.failed_rows} failed` : ''}`,
       );
       qc.invalidateQueries({ queryKey: ['contacts', id] });
       qc.invalidateQueries({ queryKey: ['contact-list', id] });
       qc.invalidateQueries({ queryKey: ['contact-lists'] });
     } catch (err: any) {
-      setUploadStatus(`Error: ${err.response?.data?.error || 'Upload failed'}`);
+      clearInterval(simInterval);
+      setUploadPhase('error');
+      setUploadMessage(err.response?.data?.error || 'Upload failed');
     }
     setCsvFile(null);
   };
@@ -803,17 +892,73 @@ export default function ContactListDetailPage() {
       </div>
 
       {/* Upload status banner */}
-      {uploadStatus && (
+      {uploadPhase !== 'idle' && (
         <div
-          className={`p-3 rounded-lg text-sm flex items-center justify-between ${uploadStatus.startsWith('✓') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⚠') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}
+          className={`rounded-xl border px-5 py-4 space-y-3 transition-colors mx-auto min-w-[480px] max-w-[640px] ${uploadPhase === 'uploading' || uploadPhase === 'processing'
+            ? 'bg-[#E1F5EE] border-[#9FE1CB]'
+            : uploadPhase === 'done'
+              ? 'bg-[#d4edda] border-[#a3d9a5]'
+              : 'bg-red-50 border-red-300'
+            }`}
         >
-          <span>{uploadStatus}</span>
-          <button
-            onClick={() => setUploadStatus(null)}
-            className='ml-2 opacity-60 hover:opacity-100'
-          >
-            <X className='w-4 h-4' />
-          </button>
+          <div className='flex items-center gap-2.5'>
+            {(uploadPhase === 'uploading' || uploadPhase === 'processing') && (
+              <svg className='w-4 h-4 text-[#0F6E56] shrink-0 animate-spin' fill='none' viewBox='0 0 24 24'>
+                <circle className='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' strokeWidth='3' />
+                <path className='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z' />
+              </svg>
+            )}
+            {uploadPhase === 'done' && (
+              <span className='w-4 h-4 rounded-full bg-[#2d6a4f] flex items-center justify-center shrink-0'>
+                <svg className='w-2.5 h-2.5 text-white' fill='none' viewBox='0 0 12 12'>
+                  <path d='M2 6l3 3 5-5' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round' />
+                </svg>
+              </span>
+            )}
+            {uploadPhase === 'error' && (
+              <span className='w-4 h-4 rounded-full bg-red-500 flex items-center justify-center shrink-0'>
+                <svg className='w-2.5 h-2.5 text-white' fill='none' viewBox='0 0 12 12'>
+                  <path d='M3 3l6 6M9 3l-6 6' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' />
+                </svg>
+              </span>
+            )}
+
+            <span className={`text-base font-semibold flex-1 ${uploadPhase === 'uploading' || uploadPhase === 'processing'
+              ? 'text-[#085041]'
+              : uploadPhase === 'done'
+                ? 'text-[#1b4332]'
+                : 'text-red-700'
+              }`}>
+              {uploadPhase === 'uploading' && 'Uploading CSV…'}
+              {uploadPhase === 'processing' && 'Processing on server…'}
+              {(uploadPhase === 'done' || uploadPhase === 'error') && uploadMessage}
+            </span>
+
+            {(uploadPhase === 'uploading' || uploadPhase === 'processing') && (
+              <span className='text-xs font-semibold tabular-nums bg-[#9FE1CB] text-[#085041] px-2 py-0.5 rounded-full'>
+                {uploadProgress}%
+              </span>
+            )}
+
+            {(uploadPhase === 'done' || uploadPhase === 'error') && (
+              <button
+                onClick={() => setUploadPhase('idle')}
+                className='p-0.5 rounded hover:bg-black/10 text-gray-400 hover:text-gray-600'
+                title='Dismiss'
+              >
+                <X className='w-3.5 h-3.5' />
+              </button>
+            )}
+          </div>
+
+          {(uploadPhase === 'uploading' || uploadPhase === 'processing') && (
+            <div className='h-2.5 w-full rounded-full bg-[#9FE1CB] overflow-hidden'>
+              <div
+                className='h-full rounded-full bg-[#1D9E75] transition-all duration-300'
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -874,26 +1019,11 @@ export default function ContactListDetailPage() {
       )}
 
       {/* ── Stats cards ──────────────────────────────────────────────────── */}
-      <div className='grid grid-cols-3 gap-4'>
-        <StatCard
-          label='Total Contacts'
-          value={(listData?.contact_count ?? total).toLocaleString()}
-          color='orange'
-        />
-        <StatCard
-          label='Field Definitions'
-          value={listData?.field_count ?? attrColumns.length}
-          color='blue'
-        />
-        <StatCard
-          label='Last Updated'
-          value={
-            listData?.updated_at
-              ? new Date(listData.updated_at).toLocaleDateString()
-              : '—'
-          }
-          color='amber'
-        />
+      <div className='grid grid-cols-4 gap-4'>
+        <StatCard label='Total Contacts' value={(listData?.contact_count ?? total).toLocaleString()} color='orange' />
+        <StatCard label='Duplicate Contacts' value={(listData?.duplicate_count ?? 0).toLocaleString()} color='red' />
+        <StatCard label='Field Definitions' value={listData?.field_count ?? attrColumns.length} color='blue' />
+        <StatCard label='Last Updated' value={listData?.updated_at ? new Date(listData.updated_at).toLocaleDateString() : '—'} color='amber' />
       </div>
 
       {/* ── Contacts table ───────────────────────────────────────────────── */}
@@ -971,10 +1101,7 @@ export default function ContactListDetailPage() {
             </p>
           </div>
         ) : (
-          <div
-            className='overflow-x-auto overflow-y-auto'
-            style={{ maxHeight: '565px' }}
-          >
+          <div className='overflow-x-auto overflow-y-auto' style={{ maxHeight: '750px' }}>
             <table className='w-full text-sm'>
               {/* Sticky header stays visible while scrolling */}
               <thead className='sticky top-0 z-10'>
@@ -1119,22 +1246,20 @@ export default function ContactListDetailPage() {
               <button
                 type='button'
                 onClick={() => setImportMode('fresh')}
-                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${
-                  importMode === 'fresh'
-                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${importMode === 'fresh'
+                  ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 Fresh Contacts (Insert All)
               </button>
               <button
                 type='button'
                 onClick={() => setImportMode('append')}
-                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${
-                  importMode === 'append'
-                    ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
+                className={`py-1.5 px-3 text-xs font-medium rounded-md transition-all duration-200 ${importMode === 'append'
+                  ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                  }`}
               >
                 Append Contacts (Update Existing)
               </button>
@@ -1158,68 +1283,68 @@ export default function ContactListDetailPage() {
             {(attrData?.data || []).filter(
               (r: any) => r.is_selected && r.field_key !== 'phone_number',
             ).length > 0 && (
-              <div className='grid grid-cols-2 gap-3'>
-                {(attrData?.data || [])
-                  .filter(
-                    (r: any) => r.is_selected && r.field_key !== 'phone_number',
-                  )
-                  .map((def: any) => {
-                    const t = String(def.data_type).toUpperCase();
-                    const isNum =
-                      t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
-                    const isDate = t === 'TIMESTAMP';
-                    const isBool = t === 'BOOLEAN';
+                <div className='grid grid-cols-2 gap-3'>
+                  {(attrData?.data || [])
+                    .filter(
+                      (r: any) => r.is_selected && r.field_key !== 'phone_number',
+                    )
+                    .map((def: any) => {
+                      const t = String(def.data_type).toUpperCase();
+                      const isNum =
+                        t === 'INTEGER' || t === 'LONG' || t === 'FLOAT';
+                      const isDate = t === 'TIMESTAMP';
+                      const isBool = t === 'BOOLEAN';
 
-                    if (isBool) {
+                      if (isBool) {
+                        return (
+                          <label
+                            key={def.field_key}
+                            className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
+                          >
+                            <input
+                              type='checkbox'
+                              checked={!!formValues[def.field_key]}
+                              onChange={(e) =>
+                                setFormValues((v) => ({
+                                  ...v,
+                                  [def.field_key]: e.target.checked,
+                                }))
+                              }
+                              className='rounded text-indigo-600'
+                            />
+                            {def.name}
+                          </label>
+                        );
+                      }
+
                       return (
-                        <label
-                          key={def.field_key}
-                          className='flex items-center gap-2 text-xs text-gray-700 col-span-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer'
-                        >
+                        <div key={def.field_key}>
+                          <label className='block text-xs text-gray-500 mb-1'>
+                            {def.name}
+                          </label>
                           <input
-                            type='checkbox'
-                            checked={!!formValues[def.field_key]}
+                            type={
+                              isNum
+                                ? 'number'
+                                : isDate
+                                  ? 'datetime-local'
+                                  : 'text'
+                            }
+                            value={formValues[def.field_key] ?? ''}
                             onChange={(e) =>
                               setFormValues((v) => ({
                                 ...v,
-                                [def.field_key]: e.target.checked,
+                                [def.field_key]: e.target.value,
                               }))
                             }
-                            className='rounded text-indigo-600'
+                            placeholder={def.field_key}
+                            className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
                           />
-                          {def.name}
-                        </label>
+                        </div>
                       );
-                    }
-
-                    return (
-                      <div key={def.field_key}>
-                        <label className='block text-xs text-gray-500 mb-1'>
-                          {def.name}
-                        </label>
-                        <input
-                          type={
-                            isNum
-                              ? 'number'
-                              : isDate
-                                ? 'datetime-local'
-                                : 'text'
-                          }
-                          value={formValues[def.field_key] ?? ''}
-                          onChange={(e) =>
-                            setFormValues((v) => ({
-                              ...v,
-                              [def.field_key]: e.target.value,
-                            }))
-                          }
-                          placeholder={def.field_key}
-                          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
-                        />
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+                    })}
+                </div>
+              )}
           </div>
         ) : (
           <BulkGrid
@@ -1283,22 +1408,20 @@ export default function ContactListDetailPage() {
           <button
             type='button'
             onClick={() => setCsvImportMode('fresh')}
-            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              csvImportMode === 'fresh'
-                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-            }`}
+            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${csvImportMode === 'fresh'
+              ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
           >
             Fresh Contacts (Insert All)
           </button>
           <button
             type='button'
             onClick={() => setCsvImportMode('append')}
-            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${
-              csvImportMode === 'append'
-                ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-            }`}
+            className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-all duration-200 ${csvImportMode === 'append'
+              ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
           >
             Append Contacts (Update Existing)
           </button>

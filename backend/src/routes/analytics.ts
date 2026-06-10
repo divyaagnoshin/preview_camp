@@ -49,8 +49,11 @@ router.get('/dashboards', async (req, res) => {
     );
 
     // Get only published ones, and fetch dataset IDs for each
+    // In your superset router, add at the top:
     const published = response.data.result.filter((d: any) => d.published);
-    
+
+
+
     const dashboards = await Promise.all(
       published.map(async (d: any) => {
         let dataset_ids: number[] = [];
@@ -88,7 +91,7 @@ router.post('/guest-token', async (req, res) => {
   try {
     const { dashboardId, rls } = req.body;
     const accessToken = await getSupersetAccessToken();
-    
+
     // Resolve Embedded UUID
     let dashboardUuid: string;
     try {
@@ -128,10 +131,10 @@ router.post('/guest-token', async (req, res) => {
 
     const guestTokenResp = await client.post(
       `${SUPERSET_URL}/api/v1/security/guest_token/`,
-      { 
-        resources: [{ type: 'dashboard', id: dashboardUuid }], 
-        rls: rls || [], 
-        user: { username: 'admin', first_name: 'Embed', last_name: 'User' } 
+      {
+        resources: [{ type: 'dashboard', id: dashboardUuid }],
+        rls: rls || [],
+        user: { username: 'admin', first_name: 'Embed', last_name: 'User' }
       },
       {
         headers: {

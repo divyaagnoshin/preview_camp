@@ -246,11 +246,14 @@ function ActiveCampaignsChartView({ rows, onGoToTable }: { rows: any[]; onGoToTa
   return (
     <div style={{
       background: '#f8fafc',
-      minHeight: '100%', padding: '28px 28px 36px',
+      minHeight: '100%',
+      maxHeight: 900,
+      overflowY: 'auto',
+      padding: '28px 28px 36px',
       fontFamily: "'DM Sans', 'Nunito', sans-serif",
     }}>
       {/* Go to Table button */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
+      {/* <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
         <button onClick={onGoToTable} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
@@ -264,7 +267,7 @@ function ActiveCampaignsChartView({ rows, onGoToTable }: { rows: any[]; onGoToTa
           <Table2 size={15} />
           View Table
         </button>
-      </div>
+      </div> */}
 
       {/* KPI Strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>

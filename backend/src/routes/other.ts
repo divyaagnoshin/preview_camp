@@ -1480,26 +1480,22 @@ reportsRouter.get(
       );
       if (!campRows[0]) throw new AppError(404, 'Campaign not found');
       const jobId = req.query.job_id || campRows[0].job_id;
-      const { rows: totals } = await pool.query(
-        `SELECT COUNT(c.id)::int AS total_contacts FROM contacts c
-         JOIN campaign_contact_lists ccl ON ccl.contact_list_id = c.contact_list_id
-        WHERE ccl.campaign_id = $1`,
-        [req.params.id],
-      );
       const { rows: stats } = await pool.query(
         `SELECT
-         COUNT(*)::int AS successful_contacts,
-         COUNT(*) FILTER (WHERE ci.dialed_at IS NOT NULL)::int AS attempted,
-         COUNT(*) FILTER (WHERE ci.call_status='connected')::int AS connected,
-         COUNT(*) FILTER (WHERE ccs.status IN ('completed','dnc','exhausted'))::int AS completed_total,
-         COUNT(*) FILTER (WHERE ccs.status='dnc')::int AS dnc,
-         ROUND(AVG(ci.preview_duration_sec))::int AS avg_preview_duration_sec,
-         ROUND(AVG(ci.talk_time_sec))::int AS avg_talk_time_sec,
-         ROUND(AVG(ci.wrapup_duration_sec))::int AS avg_wrapup_duration_sec,
-         ROUND(AVG(ci.total_handling_sec))::int AS avg_total_handling_sec
-       FROM campaign_contact_status ccs
-       LEFT JOIN contact_interactions ci ON ci.contact_id=ccs.contact_id AND ci.job_id=ccs.job_id
-       WHERE ccs.job_id=$1`,
+   COUNT(*) FILTER (WHERE ccs.status != 'dnc')::int       AS total_contacts,
+   COUNT(*) FILTER (WHERE ccs.status = 'dnc')::int        AS dnc,
+   COUNT(*) FILTER (WHERE ccs.status = 'completed')::int  AS completed_total,
+   COUNT(*) FILTER (WHERE ccs.status = 'exhausted')::int  AS exhausted,
+   COUNT(*) FILTER (WHERE ccs.status = 'queued')::int     AS queued,
+   COUNT(*) FILTER (WHERE ccs.status = 'with_agent')::int AS with_agent,
+   ROUND(AVG(ci.preview_duration_sec))::int               AS avg_preview_duration_sec,
+   ROUND(AVG(ci.talk_time_sec))::int                      AS avg_talk_time_sec,
+   ROUND(AVG(ci.wrapup_duration_sec))::int                AS avg_wrapup_duration_sec,
+   ROUND(AVG(ci.total_handling_sec))::int                 AS avg_total_handling_sec
+ FROM campaign_contact_status ccs
+ LEFT JOIN contact_interactions ci ON ci.contact_id = ccs.contact_id
+                                   AND ci.job_id = ccs.job_id
+ WHERE ccs.job_id = $1`,
         [jobId],
       );
       const { rows: dispositions } = await pool.query(
@@ -1509,17 +1505,14 @@ reportsRouter.get(
         WHERE ci.job_id=$1 GROUP BY dc.code, dc.label ORDER BY count DESC`,
         [jobId],
       );
-      const totalContacts = totals[0]?.total_contacts ?? 0;
-      const successfulContacts = stats[0]?.successful_contacts ?? 0;
       res.json({
         campaign_id: req.params.id,
         job_id: jobId,
-        total_contacts: totalContacts,
-        successful_contacts: successfulContacts,
-        duplicate_contacts: Math.max(0, totalContacts - successfulContacts),
-        attempted: stats[0]?.attempted ?? 0,
-        connected: stats[0]?.connected ?? 0,
+        total_contacts: stats[0]?.total_contacts ?? 0,
+        queued: stats[0]?.queued ?? 0,
+        with_agent: stats[0]?.with_agent ?? 0,
         completed_total: stats[0]?.completed_total ?? 0,
+        exhausted: stats[0]?.exhausted ?? 0,
         dnc: stats[0]?.dnc ?? 0,
         avg_preview_duration_sec: stats[0]?.avg_preview_duration_sec ?? 0,
         avg_talk_time_sec: stats[0]?.avg_talk_time_sec ?? 0,

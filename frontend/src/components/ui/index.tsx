@@ -710,7 +710,7 @@ interface PagedTableProps<T> {
   maxHeight?: string;
 }
 
-export function PagedTable<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No data', maxHeight = '650px' }: PagedTableProps<T>) {
+export function PagedTable<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No data', maxHeight = '850px' }: PagedTableProps<T>) {
   const { page, pageSize, totalPages, pageItems, goTo, changePageSize, totalItems } = usePagination(rows);
 
   return (

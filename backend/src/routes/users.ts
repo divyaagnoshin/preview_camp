@@ -66,7 +66,7 @@ function assertAllowedRole(role: unknown): asserts role is AllowedRole {
 }
 
 function roleToId(role: AllowedRole): number {
-  return role === 'supervisor' ? 2 : 3;
+  return role === 'supervisor' ? 2 : 4;
 }
 
 /**
@@ -111,8 +111,8 @@ router.get(
 
       // Supervisors only see agents
       const roleFilter = role === 'supervisor'
-        ? 'WHERE role_id = 3'
-        : 'WHERE role_id IN (2, 3)';
+        ? 'WHERE role_id = 4'
+        : 'WHERE role_id IN (2, 4)';
 
       // ── Step 1: fetch agents/supervisors from agnoconnew ──
       // NO cross-DB JOIN — agnoconnew has no "users" table.
@@ -209,7 +209,7 @@ router.get(
           CASE WHEN role_id = 2 THEN 'supervisor' ELSE 'agent' END AS role,
           'agnoconnew'       AS source
         FROM user_details
-        WHERE role_id IN (2, 3)
+        WHERE role_id IN (2, 4)
           AND LOWER(status) = 'active'
         ORDER BY first_name, last_name
       `);
@@ -373,9 +373,9 @@ router.post(
       } = req.body || {};
 
       // ── Validate ──────────────────────────────────────────
-      if (!first_name?.trim())  throw new AppError(400, 'first_name is required');
-      if (!last_name?.trim())   throw new AppError(400, 'last_name is required');
-      if (!email?.trim())       throw new AppError(400, 'email is required');
+      if (!first_name?.trim()) throw new AppError(400, 'first_name is required');
+      if (!last_name?.trim()) throw new AppError(400, 'last_name is required');
+      if (!email?.trim()) throw new AppError(400, 'email is required');
       if (!password || typeof password !== 'string' || password.length < 8)
         throw new AppError(400, 'password must be at least 8 characters');
       assertAllowedRole(role);
@@ -396,9 +396,9 @@ router.post(
       const userid = await nextAgnoUserId();
 
       // ── Parse optional fields ─────────────────────────────
-      const roleId   = roleToId(role);
-      const rtInt    = reportingToInt(reporting_to);     // integer or null
-      const rtText   = reporting_to ? String(reporting_to).trim() : null; // raw string
+      const roleId = roleToId(role);
+      const rtInt = reportingToInt(reporting_to);     // integer or null
+      const rtText = reporting_to ? String(reporting_to).trim() : null; // raw string
 
       const sipExtRaw = sip_extension ? String(sip_extension).trim() : null;
       const sipExtInt: number | null = sipExtRaw ? (parseInt(sipExtRaw, 10) || null) : null;
@@ -606,10 +606,10 @@ router.patch(
         let pi = 1;
 
         if (first_name !== undefined) { pvSet.push(`first_name = $${pi++}`); pvParams.push(String(first_name).trim()); }
-        if (last_name  !== undefined) { pvSet.push(`last_name = $${pi++}`);  pvParams.push(String(last_name).trim()); }
-        if (email      !== undefined) { pvSet.push(`email = $${pi++}`);      pvParams.push(String(email).toLowerCase().trim()); }
-        if (role       !== undefined) { pvSet.push(`role = $${pi++}`);       pvParams.push(role); }
-        if (is_active  !== undefined) { pvSet.push(`is_active = $${pi++}`);  pvParams.push(Boolean(is_active)); }
+        if (last_name !== undefined) { pvSet.push(`last_name = $${pi++}`); pvParams.push(String(last_name).trim()); }
+        if (email !== undefined) { pvSet.push(`email = $${pi++}`); pvParams.push(String(email).toLowerCase().trim()); }
+        if (role !== undefined) { pvSet.push(`role = $${pi++}`); pvParams.push(role); }
+        if (is_active !== undefined) { pvSet.push(`is_active = $${pi++}`); pvParams.push(Boolean(is_active)); }
         if (reporting_to !== undefined) {
           pvSet.push(`reporting_to = $${pi++}`);
           pvParams.push(reporting_to ? String(reporting_to).trim() : null);

@@ -73,7 +73,6 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    // "Campaigns" is a button-only parent — no page at /campaigns itself
     to: '/campaigns-group',
     icon: Megaphone,
     label: 'Campaign Management',
@@ -131,7 +130,7 @@ const navItems: NavItem[] = [
     roles: ['admin', 'supervisor', 'superadmin'],
     children: [
       {
-        to: '/reports-dashboard-sub',   // sentinel — no real page
+        to: '/reports-dashboard-sub',
         icon: LayoutDashboard,
         label: 'Dashboard',
         roles: ['admin', 'supervisor', 'superadmin'],
@@ -174,6 +173,7 @@ const GROUP_ONLY = new Set([
   '/reports-group',
   '/dashboard-group',
   '/contact-lists-group',
+  '/reports-dashboard-sub', // ✅ FIX: also a sentinel
 ]);
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -191,30 +191,37 @@ export default function Layout({ children }: { children: ReactNode }) {
   } | null>(null);
 
   useEffect(() => {
-    // Connect React Admin to the Backend WebSocket
     const socket = io('http://localhost:3001');
-
     socket.on('agent_logged_out_alert', (data) => {
       setAgentLogoutToast({
         name: data.agent_name || data.agent_id,
         time: new Date().toLocaleTimeString(),
       });
-
-      // Auto-hide after 7 seconds
       setTimeout(() => setAgentLogoutToast(null), 7000);
     });
-
-    return () => {
-      socket.disconnect();
-    };
+    return () => { socket.disconnect(); };
   }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
-  const isPathActive = (to: string) =>
-    location.pathname === to || location.pathname.startsWith(to + '/');
+
+  // ✅ FIX: exact match OR starts-with, but NOT sentinel routes
+  const isPathActive = (to: string) => {
+    if (GROUP_ONLY.has(to)) return false;
+    return location.pathname === to || location.pathname.startsWith(to + '/');
+  };
+
+  // ✅ FIX: recursively check if any descendant route is active
+  const isAnyChildActive = (items: NavItem[]): boolean => {
+    return items.some((item) => {
+      if (!GROUP_ONLY.has(item.to) && isPathActive(item.to)) return true;
+      if (item.children) return isAnyChildActive(item.children);
+      return false;
+    });
+  };
+
   const initials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
 
   const visibleNav = navItems.filter((n) => {
@@ -231,7 +238,9 @@ export default function Layout({ children }: { children: ReactNode }) {
             c.roles.includes(user?.role || ''),
           );
           const hasChildren = visibleChildren.length > 0;
-          const childActive = visibleChildren.some((c) => isPathActive(c.to));
+
+          // ✅ FIX: use recursive child-active check
+          const childActive = hasChildren ? isAnyChildActive(visibleChildren) : false;
           const isGroupOnly = GROUP_ONLY.has(n.to);
           const groupOpen = openGroups[n.to] ?? childActive;
 
@@ -247,14 +256,13 @@ export default function Layout({ children }: { children: ReactNode }) {
                 isExpanded
                   ? 'gap-1.5 px-3 py-2.5 w-full'
                   : 'justify-center w-10 h-10',
+                // ✅ FIX: highlight parent when any child is active
                 childActive
                   ? 'bg-gradient-to-r from-[#F4521E] to-[#F5A623] text-white shadow-[0_4px_16px_rgba(244,82,30,0.4)]'
                   : 'text-[#C4956A] hover:bg-white/10 hover:text-white',
               )}
             >
               <n.icon className="w-5 h-5 flex-shrink-0" />
-
-
               {isExpanded && (
                 <div className="flex items-center justify-between flex-1 min-w-0">
                   <span
@@ -263,7 +271,6 @@ export default function Layout({ children }: { children: ReactNode }) {
                   >
                     {n.label}
                   </span>
-
                   <ChevronDown
                     className={clsx(
                       'w-4 h-4 transition-transform duration-200 flex-shrink-0 ml-2',
@@ -294,11 +301,8 @@ export default function Layout({ children }: { children: ReactNode }) {
               <n.icon className='w-5 h-5 flex-shrink-0' />
               {isExpanded && (
                 <span
-                  className='text-[14px] font-medium truncate '
-                  style={{
-                    fontFamily: 'DM Sans, sans-serif',
-                    letterSpacing: '0.01em',
-                  }}
+                  className='text-[14px] font-medium truncate'
+                  style={{ fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.01em' }}
                 >
                   {n.label}
                 </span>
@@ -337,16 +341,16 @@ export default function Layout({ children }: { children: ReactNode }) {
               {hasChildren && isExpanded && groupOpen && (
                 <div className='mt-0.5 space-y-0.5'>
                   {visibleChildren.map((c) => {
-                    // Check if this child itself has children (second level)
                     const subChildren = (c.children || []).filter(sc =>
                       sc.roles.includes(user?.role || '')
                     );
                     const hasSubChildren = subChildren.length > 0;
-                    const subChildActive = subChildren.some(sc => isPathActive(sc.to));
+                    // ✅ FIX: recursive check for sub-children too
+                    const subChildActive = hasSubChildren ? isAnyChildActive(subChildren) : false;
+                    const isSubGroupOnly = GROUP_ONLY.has(c.to);
                     const subGroupOpen = openSubGroups[c.to] ?? subChildActive;
 
                     if (hasSubChildren) {
-                      // Render as a collapsible sub-group
                       return (
                         <div key={c.to}>
                           <button
@@ -356,6 +360,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                             }
                             className={clsx(
                               'flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 w-full',
+                              // ✅ FIX: highlight sub-group header when any of its children are active
                               subChildActive
                                 ? 'text-[#F5A623] bg-[#F5A623]/10 font-semibold'
                                 : 'text-[#906040] hover:text-[#F5C89A] hover:bg-white/6',
@@ -377,7 +382,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                                 <NavLink
                                   key={sc.to}
                                   to={sc.to}
-                                  end={sc.to === '/reports'}
+                                  end
                                   onClick={() => setMobileOpen(false)}
                                   className={({ isActive }) =>
                                     clsx(
@@ -403,7 +408,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                       <React.Fragment key={c.to}>
                         <NavLink
                           to={c.to}
-                          end={c.to === '/reports'}
+                          end
                           onClick={() => setMobileOpen(false)}
                           className={({ isActive }) =>
                             clsx(
@@ -439,7 +444,6 @@ export default function Layout({ children }: { children: ReactNode }) {
             isExpanded ? 'justify-between' : 'justify-center flex-col',
           )}
         >
-          {/* Logo */}
           <div className='flex items-center gap-3 min-w-0'>
             <div className='w-9 h-9 bg-gradient-to-br from-[#F4521E] to-[#F5A623] rounded-xl flex items-center justify-center shadow-[0_4px_14px_rgba(244,82,30,0.55)] flex-shrink-0'>
               <Zap className='w-[18px] h-[18px] text-white' fill='white' />
@@ -463,7 +467,6 @@ export default function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          {/* Toggle arrow */}
           <button
             onClick={() => setExpanded((v) => !v)}
             title={isExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
@@ -477,7 +480,6 @@ export default function Layout({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        {/* Nav label */}
         {isExpanded && (
           <div className='px-4 pt-4 pb-1 flex-shrink-0'>
             <span className='text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5A3A22]'>
@@ -486,7 +488,6 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        {/* Nav */}
         <nav
           className={clsx(
             'flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-0.5',

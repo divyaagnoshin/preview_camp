@@ -31,6 +31,7 @@ router.get(
            CASE WHEN LOWER(s.status) = 'active' THEN true ELSE false END AS supervisor_is_active
          FROM user_details s
          WHERE s.role_id = 2
+         AND LOWER(s.status) = 'active'
          ORDER BY s.first_name`,
       );
 
@@ -45,7 +46,7 @@ router.get(
            a.reporting_to  AS reporting_to,
            CASE WHEN LOWER(a.status) = 'active' THEN true ELSE false END AS agent_is_active
          FROM user_details a
-         WHERE a.role_id = 3
+         WHERE a.role_id = 4
            AND a.reporting_to IS NOT NULL`,
       );
 
