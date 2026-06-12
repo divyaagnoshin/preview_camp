@@ -1786,19 +1786,51 @@ agentsRouter.patch(
   requireRole('admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { is_active, first_name, last_name } = req.body || {};
+      const { is_active, first_name, last_name, email, password, current_password } = req.body || {};
+      
+      const { rows: targetUser } = await pool.query(
+        `SELECT id, password_hash, email FROM users WHERE id = $1 AND org_id = $2`,
+        [req.params.id, req.user!.orgId]
+      );
+      if (!targetUser[0]) throw new AppError(404, 'Agent not found');
+
+      if (password) {
+        if (req.user!.userId === req.params.id) {
+          if (!current_password) throw new AppError(400, 'Current password is required to set a new password');
+          const match = await bcrypt.compare(current_password, targetUser[0].password_hash);
+          if (!match) throw new AppError(400, 'Current password is incorrect');
+        }
+      }
+
+      if (email && email.trim() !== targetUser[0].email) {
+        const { rows: dup } = await pool.query(
+          `SELECT id FROM users WHERE org_id = $1 AND LOWER(email) = $2 AND id <> $3`,
+          [req.user!.orgId, email.trim().toLowerCase(), req.params.id]
+        );
+        if (dup.length > 0) throw new AppError(409, 'Another user with this email already exists');
+      }
+
+      let hash = null;
+      if (password) {
+        hash = await bcrypt.hash(password, 10);
+      }
+
       const { rows } = await pool.query(
         `UPDATE users SET
          is_active = COALESCE($1, is_active),
          first_name = COALESCE($2, first_name),
          last_name = COALESCE($3, last_name),
+         email = COALESCE($4, email),
+         password_hash = COALESCE($5, password_hash),
          updated_at = NOW()
-       WHERE id = $4 AND org_id = $5
+       WHERE id = $6 AND org_id = $7
        RETURNING id, email, first_name, last_name, role, is_active, created_at`,
         [
           is_active === undefined ? null : is_active,
           first_name || null,
           last_name || null,
+          email ? email.trim() : null,
+          hash,
           req.params.id,
           req.user!.orgId,
         ],

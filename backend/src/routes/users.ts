@@ -14,34 +14,32 @@
  *    id          uuid PK               userid       varchar(10) PK ← pure numeric "1001"
  *    email       text                  email_id     varchar(50)
  *    password_hash text                password     varchar(50)  ← plain text (legacy)
- *    role        text                  role_id      integer      ← 2=supervisor, 3=agent
+ *    role        text                  role_id      integer      ← 2=supervisor, 4=agent
  *    is_active   boolean               status       varchar(10)  ← 'Active'|'Inactive'
  *    sip_extension text                extension_id integer      ← SIP extension (int)
  *    sip_password  text                reporting_to integer      ← integer FK (agnocon users)
  *    reporting_to  text  ←─ stores ANY reporting_to (UUID admin or agnocon userid)
+ *                                      username     varchar(50)  ← login username
+ *                                      mobile_no    bigint       ← mobile number
  *
  * WHO LIVES WHERE
  *   • Admin accounts  → preview_campaign.users  (role='admin')
- *   • Agents/Supervisors → agnoconnew.user_details (role_id 2 or 3)
+ *   • Agents/Supervisors → agnoconnew.user_details (role_id 2 or 4)
  *                          + mirrored into preview_campaign.users for SIP + reporting_to storage
  *
  * CREATE FLOW  (POST /v1/users)
- *   1. Validate inputs
+ *   1. Validate inputs (all required fields enforced)
  *   2. Generate numeric userid (e.g. "1001") by MAX(userid)+1 from agnoconnew
  *   3. INSERT into agnoconnew.user_details  (primary record — AgnoCon login)
  *   4. UPSERT into preview_campaign.users   (mirror — stores sip_password + reporting_to text)
  *
- * SIP EXTENSION
- *   • Sent by frontend as a string e.g. "1001"
- *   • Stored as integer in agnoconnew.extension_id
- *   • Stored as text   in preview_campaign.users.sip_extension
- *   • sip_password stored ONLY in preview_campaign.users (agnoconnew has no such column)
+ * REQUIRED FIELDS
+ *   first_name, last_name, mobile_no, email, password, role,
+ *   username, sip_extension
  *
- * REPORTING_TO
- *   • Frontend sends a string: either a UUID (admin) or a numeric agnocon userid string
- *   • preview_campaign.users.reporting_to  stores the raw string (text column) ← always
- *   • agnoconnew.user_details.reporting_to stores the integer  ← only when it's a numeric id
- *     (UUID admin ids cannot be stored in the integer column — they are skipped there)
+ * GET /v1/users
+ *   Returns ONLY active users (status = 'Active').
+ *   No status column in response — all returned users are active.
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
@@ -96,11 +94,20 @@ function reportingToInt(value: string | null | undefined): number | null {
   return null; // UUID admins — skip the agnoconnew integer column
 }
 
+/**
+ * Validate mobile number: must be a positive integer (7–15 digits).
+ */
+function parseMobileNo(value: unknown): bigint {
+  const s = String(value ?? '').trim();
+  if (!/^\d{7,15}$/.test(s))
+    throw new AppError(400, 'mobile_no must be a valid number (7–15 digits)');
+  return BigInt(s);
+}
 
 // ─────────────────────────────────────────────────────────────
 // GET /v1/users
-// List agents and supervisors.
-// Admin → sees all.  Supervisor → sees agents only.
+// List ACTIVE agents and supervisors only.
+// Admin → sees all active.  Supervisor → sees active agents only.
 // ─────────────────────────────────────────────────────────────
 router.get(
   '/',
@@ -109,21 +116,21 @@ router.get(
     try {
       const { role, orgId } = req.user!;
 
-      // Supervisors only see agents
+      // Supervisors only see agents; always filter to Active only
       const roleFilter = role === 'supervisor'
-        ? 'WHERE role_id = 4'
-        : 'WHERE role_id IN (2, 4)';
+        ? `WHERE role_id = 4 AND LOWER(status) = 'active'`
+        : `WHERE role_id IN (2, 4) AND LOWER(status) = 'active'`;
 
-      // ── Step 1: fetch agents/supervisors from agnoconnew ──
-      // NO cross-DB JOIN — agnoconnew has no "users" table.
+      // ── Step 1: fetch active agents/supervisors from agnoconnew ──
       const { rows: agnoRows } = await agnoPool.query(`
         SELECT
           userid                                                         AS id,
           first_name,
           last_name,
+          mobile_no::text,
           email_id                                                       AS email,
+          username,
           CASE WHEN role_id = 2 THEN 'supervisor' ELSE 'agent' END      AS role,
-          CASE WHEN LOWER(status) = 'active' THEN true ELSE false END   AS is_active,
           reporting_to::text,
           extension_id::text                                             AS sip_extension,
           created_date                                                   AS created_at,
@@ -134,7 +141,6 @@ router.get(
       `);
 
       // ── Step 2: fetch the mirror rows from preview_campaign ──
-      // These hold sip_password and the full reporting_to text (including UUID admins).
       const emails = agnoRows.map((r: any) => r.email.toLowerCase());
       let pvMap: Record<string, { sip_password: string | null; reporting_to: string | null }> = {};
 
@@ -172,7 +178,7 @@ router.get(
 // GET /v1/users/reporting-options
 // Merged dropdown list for "Reporting To":
 //   • Admins from preview_campaign.users
-//   • Supervisors + Agents from agnoconnew.user_details
+//   • Supervisors from agnoconnew.user_details (active only)
 //
 // Must be declared BEFORE /:id to avoid route collision.
 // ─────────────────────────────────────────────────────────────
@@ -199,7 +205,7 @@ router.get(
         ORDER BY first_name, last_name
       `, [orgId]);
 
-      // Agents + supervisors from agnoconnew (not org-scoped in agnoconnew)
+      // Active supervisors from agnoconnew
       const { rows: agnoRows } = await agnoPool.query(`
         SELECT
           userid             AS id,
@@ -240,26 +246,7 @@ router.get(
 // ─────────────────────────────────────────────────────────────
 // GET /v1/users/extensions
 // Returns UNASSIGNED, active SIP extensions from agnoconnew.extensions.
-//
-// Mirrors AgnoCon's own extensionselect logic exactly:
-//   SELECT extension_id FROM extensions
-//   WHERE status = 'Active'
-//     AND extension_id NOT IN (
-//       SELECT CAST(extension_id AS text) FROM user_details
-//       WHERE extension_id IS NOT NULL
-//     )
-//
-// When editing an existing user we also include their currently-assigned
-// extension so it appears pre-selected in the dropdown (pass ?current=<id>).
-//
-// extensions table columns used:
-//   extension_id   — the SIP extension number (PK, text)
-//   effective_name — friendly label e.g. "Sales Line 1"  (nullable)
-//   status         — 'Active' | 'Inactive'
-//
-// NOTE: The agnoconnew extensions table does NOT have an "effetive_number"
-// column — that was a typo in an earlier draft.  Only extension_id and
-// effective_name are returned.
+// Pass ?current=<id> to also include the currently-assigned extension.
 // ─────────────────────────────────────────────────────────────
 router.get(
   '/extensions',
@@ -280,7 +267,6 @@ router.get(
               SELECT CAST(extension_id AS TEXT)
               FROM user_details
               WHERE extension_id IS NOT NULL
-             
             )
             ${current ? `OR extension_id = $1` : ''}
           )
@@ -293,6 +279,7 @@ router.get(
     }
   },
 );
+
 // ─────────────────────────────────────────────────────────────
 // GET /v1/users/:id
 // ─────────────────────────────────────────────────────────────
@@ -303,27 +290,26 @@ router.get(
     try {
       const { orgId } = req.user!;
 
-      // ── Step 1: fetch from agnoconnew (no cross-DB JOIN) ──
       const { rows: agnoRows } = await agnoPool.query(`
         SELECT
           userid                                                         AS id,
           first_name,
           last_name,
+          mobile_no::text,
           email_id                                                       AS email,
+          username,
           CASE WHEN role_id = 2 THEN 'supervisor' ELSE 'agent' END      AS role,
-          CASE WHEN LOWER(status) = 'active' THEN true ELSE false END   AS is_active,
           reporting_to::text,
           extension_id::text                                             AS sip_extension,
           created_date                                                   AS created_at,
           updated_date                                                   AS updated_at
         FROM user_details
         WHERE userid = $1
-          AND role_id IN (2, 3)
+          AND role_id IN (2, 4)
       `, [req.params.id]);
 
       if (!agnoRows[0]) throw new AppError(404, 'User not found');
 
-      // ── Step 2: fetch mirror row from preview_campaign ──
       const { rows: pvRows } = await pool.query(`
         SELECT sip_password, reporting_to
         FROM users
@@ -349,17 +335,13 @@ router.get(
 // Create a new agent or supervisor.
 // Admin only.
 //
-// Body:
-// {
-//   "first_name":    "John",
-//   "last_name":     "Doe",
-//   "email":         "john@example.com",
-//   "password":      "Str0ngPass!",       ← min 8 chars, stored in agnoconnew (plain) + preview (bcrypt not needed for agents)
-//   "role":          "agent",             ← or "supervisor"
-//   "reporting_to":  "550e8400-...",      ← UUID (admin) or numeric string (agnocon user) — optional
-//   "sip_extension": "1001",              ← optional, stored as integer in agnoconnew
-//   "sip_password":  "sippass123"         ← optional, stored ONLY in preview_campaign.users
-// }
+// Required body fields:
+//   first_name, last_name, mobile_no, email, password, role,
+//   username, sip_extension
+//
+// Optional:
+//   reporting_to  — UUID (admin) or numeric string (agnocon user)
+//   sip_password  — stored ONLY in preview_campaign.users
 // ─────────────────────────────────────────────────────────────
 router.post(
   '/',
@@ -368,123 +350,108 @@ router.post(
     try {
       const { orgId, userId: createdBy } = req.user!;
       const {
-        first_name, last_name, email, password, role,
-        reporting_to, sip_extension, sip_password,
+        first_name, last_name, mobile_no, email, password, role,
+        username, reporting_to, sip_extension, sip_password,
       } = req.body || {};
 
-      // ── Validate ──────────────────────────────────────────
+      // ── Validate required fields ───────────────────────────
       if (!first_name?.trim()) throw new AppError(400, 'first_name is required');
       if (!last_name?.trim()) throw new AppError(400, 'last_name is required');
+      if (!mobile_no) throw new AppError(400, 'mobile_no is required');
       if (!email?.trim()) throw new AppError(400, 'email is required');
       if (!password || typeof password !== 'string' || password.length < 8)
         throw new AppError(400, 'password must be at least 8 characters');
+      if (!username?.trim()) throw new AppError(400, 'username is required');
+      if (!sip_extension) throw new AppError(400, 'sip_extension is required');
       assertAllowedRole(role);
 
+      const mobileNoParsed = parseMobileNo(mobile_no);
       const normalizedEmail = String(email).toLowerCase().trim();
+      const normalizedUsername = String(username).trim();
 
-      // ── Duplicate check in agnoconnew ─────────────────────
-      const { rows: dupAgno } = await agnoPool.query(
+      // ── Duplicate checks in agnoconnew ────────────────────
+      const { rows: dupEmail } = await agnoPool.query(
         `SELECT userid FROM user_details WHERE LOWER(email_id) = $1`,
         [normalizedEmail],
       );
-      if (dupAgno.length > 0)
+      if (dupEmail.length > 0)
         throw new AppError(409, 'A user with this email already exists');
 
+      const { rows: dupUsername } = await agnoPool.query(
+        `SELECT userid FROM user_details WHERE LOWER(username) = $1`,
+        [normalizedUsername.toLowerCase()],
+      );
+      if (dupUsername.length > 0)
+        throw new AppError(409, 'A user with this username already exists');
+
       // ── Generate numeric userid for agnoconnew ────────────
-      // agnoconnew.user_details.userid is varchar(10) but historically
-      // stores pure numeric values ("1001", "1002" …).
       const userid = await nextAgnoUserId();
 
-      // ── Parse optional fields ─────────────────────────────
+      // ── Parse optional/computed fields ────────────────────
       const roleId = roleToId(role);
-      const rtInt = reportingToInt(reporting_to);     // integer or null
-      const rtText = reporting_to ? String(reporting_to).trim() : null; // raw string
-
-      const sipExtRaw = sip_extension ? String(sip_extension).trim() : null;
-      const sipExtInt: number | null = sipExtRaw ? (parseInt(sipExtRaw, 10) || null) : null;
+      const rtInt = reportingToInt(reporting_to);
+      const rtText = reporting_to ? String(reporting_to).trim() : null;
+      const sipExtInt: number | null = sip_extension
+        ? (parseInt(String(sip_extension).trim(), 10) || null)
+        : null;
 
       // ── INSERT into agnoconnew.user_details ───────────────
       const { rows: agnoRows } = await agnoPool.query(`
         INSERT INTO user_details (
-          userid, first_name, last_name, email_id,
-          password, role_id, reporting_to, extension_id,
+          userid, first_name, last_name, mobile_no, email_id,
+          username, password, role_id, reporting_to, extension_id,
           status, created_date, created_by
         ) VALUES (
-          $1, $2, $3, $4,
-          $5, $6, $7, $8,
-          'Active', NOW(), $9
+          $1, $2, $3, $4, $5,
+          $6, $7, $8, $9, $10,
+          'Active', NOW(), $11
         )
         RETURNING
-          userid          AS id,
+          userid              AS id,
           first_name,
           last_name,
-          email_id        AS email,
+          mobile_no::text,
+          email_id            AS email,
+          username,
           CASE WHEN role_id = 2 THEN 'supervisor' ELSE 'agent' END AS role,
-          true            AS is_active,
           reporting_to::text,
           extension_id::text  AS sip_extension,
-          created_date    AS created_at,
-          updated_date    AS updated_at
+          created_date        AS created_at,
+          updated_date        AS updated_at
       `, [
         userid,
         first_name.trim(),
         last_name.trim(),
+        mobileNoParsed,
         normalizedEmail,
+        normalizedUsername,
         password,                          // plain text — agnoconnew legacy
         roleId,
-        rtInt,                             // integer reporting_to (null for UUID admins)
-        sipExtInt,                         // integer extension_id
-        String(createdBy).slice(0, 10),   // created_by varchar(10)
+        rtInt,
+        sipExtInt,
+        String(createdBy).slice(0, 10),
       ]);
 
       // ── UPSERT into preview_campaign.users ────────────────
-      // This mirrors the record so that:
-      //   • sip_password is stored (agnoconnew has no such column)
-      //   • reporting_to as full text (UUID admin or numeric string) is stored
-      //   • sip_extension as text is stored for preview_campaign lookups
-      //
-      // password_hash is left empty ('') — agents do NOT log into
-      // preview_campaign, only into AgnoCon. This row exists purely
-      // as a data mirror / credential store.
-      try {
-        await pool.query(`
-          INSERT INTO users (
-            org_id, email, password_hash,
-            first_name, last_name, role,
-            is_active, sip_extension, sip_password, reporting_to
-          ) VALUES (
-            $1, $2, '',
-            $3, $4, $5,
-            true, $6, $7, $8
-          )
-          ON CONFLICT (org_id, email) DO UPDATE SET
-            first_name    = EXCLUDED.first_name,
-            last_name     = EXCLUDED.last_name,
-            role          = EXCLUDED.role,
-            is_active     = true,
-            sip_extension = EXCLUDED.sip_extension,
-            sip_password  = EXCLUDED.sip_password,
-            reporting_to  = EXCLUDED.reporting_to,
-            updated_at    = NOW()
-        `, [
-          orgId,
-          normalizedEmail,
-          first_name.trim(),
-          last_name.trim(),
-          role,
-          sipExtRaw,           // text sip_extension
-          sip_password || null,
-          rtText,              // full text reporting_to (UUID or numeric)
-        ]);
-      } catch (mirrorErr) {
-        // Mirror failure is non-fatal — agnoconnew is the source of truth.
-        // Log and continue so the response still returns the created user.
-        console.error('[users] Mirror to preview_campaign failed:', mirrorErr);
-      }
+      await pool.query(`
+        INSERT INTO users (email, role, is_active, sip_extension, sip_password, reporting_to, org_id, password_hash)
+        VALUES ($1, $2, true, $3, $4, $5, $6, '')
+        ON CONFLICT (email) DO UPDATE
+          SET sip_extension = EXCLUDED.sip_extension,
+              sip_password  = EXCLUDED.sip_password,
+              reporting_to  = EXCLUDED.reporting_to,
+              is_active     = true
+      `, [
+        normalizedEmail,
+        role,
+        String(sipExtInt ?? ''),
+        sip_password || null,
+        rtText,
+        orgId,
+      ]);
 
       res.status(201).json({
         ...agnoRows[0],
-        // Overlay the richer text values from what we just stored
         reporting_to: rtText,
         sip_password: sip_password || null,
       });
@@ -498,6 +465,9 @@ router.post(
 // PATCH /v1/users/:id
 // Update an agent or supervisor.
 // Admin only.
+//
+// All fields optional; only provided fields are updated.
+// username and email uniqueness are checked excluding self.
 // ─────────────────────────────────────────────────────────────
 router.patch(
   '/:id',
@@ -506,25 +476,26 @@ router.patch(
     try {
       const { orgId } = req.user!;
       const {
-        first_name, last_name, email, role, is_active,
-        password, reporting_to, sip_extension, sip_password,
+        first_name, last_name, mobile_no, email, role, is_active,
+        password, username, reporting_to, sip_extension, sip_password,
       } = req.body || {};
 
       // ── Verify user exists in agnoconnew ──────────────────
       const { rows: existing } = await agnoPool.query(
-        `SELECT userid, email_id FROM user_details WHERE userid = $1 AND role_id IN (2, 3)`,
+        `SELECT userid, email_id FROM user_details WHERE userid = $1 AND role_id IN (2, 4)`,
         [req.params.id],
       );
       if (!existing[0]) throw new AppError(404, 'User not found');
 
-      const currentEmail = existing[0].email_id as string;
-
-      // ── Validate ──────────────────────────────────────────
+      // ── Validate provided fields ───────────────────────────
       if (role !== undefined) assertAllowedRole(role);
       if (email !== undefined && !String(email).trim())
         throw new AppError(400, 'email must be a non-empty string');
       if (password !== undefined && (typeof password !== 'string' || password.length < 8))
         throw new AppError(400, 'password must be at least 8 characters');
+      if (username !== undefined && !String(username).trim())
+        throw new AppError(400, 'username must be a non-empty string');
+      if (mobile_no !== undefined) parseMobileNo(mobile_no); // validates format
 
       // ── Build agnoconnew SET clause ───────────────────────
       const agnoSet: string[] = ['updated_date = NOW()'];
@@ -539,9 +510,12 @@ router.patch(
         agnoSet.push(`last_name = $${ai++}`);
         agnoParams.push(String(last_name).trim());
       }
+      if (mobile_no !== undefined) {
+        agnoSet.push(`mobile_no = $${ai++}`);
+        agnoParams.push(parseMobileNo(mobile_no));
+      }
       if (email !== undefined) {
         const ne = String(email).toLowerCase().trim();
-        // Duplicate check excluding self
         const { rows: dup } = await agnoPool.query(
           `SELECT userid FROM user_details WHERE LOWER(email_id) = $1 AND userid <> $2`,
           [ne, req.params.id],
@@ -550,6 +524,17 @@ router.patch(
           throw new AppError(409, 'Another user with this email already exists');
         agnoSet.push(`email_id = $${ai++}`);
         agnoParams.push(ne);
+      }
+      if (username !== undefined) {
+        const nu = String(username).trim();
+        const { rows: dupU } = await agnoPool.query(
+          `SELECT userid FROM user_details WHERE LOWER(username) = $1 AND userid <> $2`,
+          [nu.toLowerCase(), req.params.id],
+        );
+        if (dupU.length > 0)
+          throw new AppError(409, 'Another user with this username already exists');
+        agnoSet.push(`username = $${ai++}`);
+        agnoParams.push(nu);
       }
       if (role !== undefined) {
         agnoSet.push(`role_id = $${ai++}`);
@@ -561,10 +546,9 @@ router.patch(
       }
       if (password !== undefined) {
         agnoSet.push(`password = $${ai++}`);
-        agnoParams.push(password);  // plain text in agnoconnew
+        agnoParams.push(password);
       }
       if (reporting_to !== undefined) {
-        // Store integer in agnoconnew only if it's numeric
         agnoSet.push(`reporting_to = $${ai++}`);
         agnoParams.push(reportingToInt(reporting_to));
       }
@@ -583,65 +567,59 @@ router.patch(
         SET ${agnoSet.join(', ')}
         WHERE userid = $${ai}
         RETURNING
-          userid          AS id,
+          userid              AS id,
           first_name,
           last_name,
-          email_id        AS email,
+          mobile_no::text,
+          email_id            AS email,
+          username,
           CASE WHEN role_id = 2 THEN 'supervisor' ELSE 'agent' END AS role,
           CASE WHEN LOWER(status) = 'active' THEN true ELSE false END AS is_active,
           reporting_to::text,
-          extension_id::text AS sip_extension,
-          created_date    AS created_at,
-          updated_date    AS updated_at
+          extension_id::text  AS sip_extension,
+          created_date        AS created_at,
+          updated_date        AS updated_at
       `, agnoParams);
 
-      // ── Mirror changes to preview_campaign.users ──────────
-      try {
-        const updatedEmail = (email
+      // ── Update preview_campaign mirror if relevant fields changed ──
+      const pvSet: string[] = [];
+      const pvParams: unknown[] = [];
+      let pi = 1;
+
+      if (sip_extension !== undefined) {
+        pvSet.push(`sip_extension = $${pi++}`);
+        pvParams.push(sip_extension ? String(sip_extension) : null);
+      }
+      if (sip_password !== undefined) {
+        pvSet.push(`sip_password = $${pi++}`);
+        pvParams.push(sip_password || null);
+      }
+      if (reporting_to !== undefined) {
+        pvSet.push(`reporting_to = $${pi++}`);
+        pvParams.push(reporting_to ? String(reporting_to).trim() : null);
+      }
+      if (is_active !== undefined) {
+        pvSet.push(`is_active = $${pi++}`);
+        pvParams.push(Boolean(is_active));
+      }
+
+      if (pvSet.length > 0) {
+        const lookupEmail = email
           ? String(email).toLowerCase().trim()
-          : currentEmail).toLowerCase();
-
-        const pvSet: string[] = ['updated_at = NOW()'];
-        const pvParams: unknown[] = [];
-        let pi = 1;
-
-        if (first_name !== undefined) { pvSet.push(`first_name = $${pi++}`); pvParams.push(String(first_name).trim()); }
-        if (last_name !== undefined) { pvSet.push(`last_name = $${pi++}`); pvParams.push(String(last_name).trim()); }
-        if (email !== undefined) { pvSet.push(`email = $${pi++}`); pvParams.push(String(email).toLowerCase().trim()); }
-        if (role !== undefined) { pvSet.push(`role = $${pi++}`); pvParams.push(role); }
-        if (is_active !== undefined) { pvSet.push(`is_active = $${pi++}`); pvParams.push(Boolean(is_active)); }
-        if (reporting_to !== undefined) {
-          pvSet.push(`reporting_to = $${pi++}`);
-          pvParams.push(reporting_to ? String(reporting_to).trim() : null);
-        }
-        if (sip_extension !== undefined) {
-          pvSet.push(`sip_extension = $${pi++}`);
-          pvParams.push(sip_extension ? String(sip_extension).trim() : null);
-        }
-        if (sip_password !== undefined && sip_password) {
-          pvSet.push(`sip_password = $${pi++}`);
-          pvParams.push(sip_password);
-        }
-
-        pvParams.push(orgId, updatedEmail);
-
+          : existing[0].email_id.toLowerCase();
+        pvParams.push(orgId, lookupEmail);
         await pool.query(`
           UPDATE users
           SET ${pvSet.join(', ')}
-          WHERE org_id = $${pi++} AND LOWER(email) = $${pi}
+          WHERE org_id = $${pi} AND LOWER(email) = $${pi + 1}
         `, pvParams);
-      } catch (mirrorErr) {
-        console.error('[users] Mirror update to preview_campaign failed:', mirrorErr);
       }
 
-      // Return with the richer reporting_to text if it was updated
       const result = agnoRows[0];
-      if (reporting_to !== undefined) {
+      if (reporting_to !== undefined)
         result.reporting_to = reporting_to ? String(reporting_to).trim() : null;
-      }
-      if (sip_password !== undefined) {
+      if (sip_password !== undefined)
         result.sip_password = sip_password || null;
-      }
 
       res.json(result);
     } catch (err) {
@@ -663,7 +641,7 @@ router.delete(
       const { orgId } = req.user!;
 
       const { rows: existing } = await agnoPool.query(
-        `SELECT userid, email_id FROM user_details WHERE userid = $1 AND role_id IN (2, 3)`,
+        `SELECT userid, email_id FROM user_details WHERE userid = $1 AND role_id IN (2, 4)`,
         [req.params.id],
       );
       if (!existing[0]) throw new AppError(404, 'User not found');
@@ -688,29 +666,22 @@ router.delete(
           `UPDATE user_details SET status = 'Inactive', updated_date = NOW() WHERE userid = $1`,
           [req.params.id],
         );
-        try {
-          await pool.query(
-            `UPDATE users SET is_active = false, updated_at = NOW()
-             WHERE org_id = $1 AND LOWER(email) = $2`,
-            [orgId, userEmail.toLowerCase()],
-          );
-        } catch (e) { console.error('[users] Mirror deactivate failed:', e); }
+        await pool.query(
+          `UPDATE users SET is_active = false WHERE org_id = $1 AND LOWER(email) = $2`,
+          [orgId, userEmail.toLowerCase()],
+        );
 
         return res.json({
           message: 'User deactivated (has existing interactions, cannot be fully removed)',
         });
       }
 
-      // Hard-delete from agnoconnew
+      // Hard-delete from both DBs
       await agnoPool.query(`DELETE FROM user_details WHERE userid = $1`, [req.params.id]);
-
-      // Also remove the mirror row from preview_campaign
-      try {
-        await pool.query(
-          `DELETE FROM users WHERE org_id = $1 AND LOWER(email) = $2 AND role IN ('agent','supervisor')`,
-          [orgId, userEmail.toLowerCase()],
-        );
-      } catch (e) { console.error('[users] Mirror delete failed:', e); }
+      await pool.query(
+        `DELETE FROM users WHERE org_id = $1 AND LOWER(email) = $2`,
+        [orgId, userEmail.toLowerCase()],
+      );
 
       res.json({ message: 'User deleted successfully' });
     } catch (err) {

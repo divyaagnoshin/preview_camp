@@ -15,7 +15,7 @@ import cloudImportConfigsRouter from './routes/cloudImportConfigs';
 import fieldLibraryRouter from './routes/fieldLibrary';
 import campaignsRouter from './routes/campaigns';
 import holidayCalendarsRouter from './routes/holidayCalendars';
-import telephonyRouter from './routes/telephony';
+
 import systemConfigRouter from './routes/systemConfig';
 // Agent workspace + session-mutation routes moved to backend-queue service.
 import {
@@ -61,7 +61,7 @@ export const io = new Server(httpServer, {
 
 io.on('connection', (socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
-  
+
   socket.on('agent_logout', (data) => {
     console.log(`[Socket] Agent Logged Out:`, data);
     // Forward this to the React Admin Dashboard
@@ -121,7 +121,7 @@ app.use('/v1/reports', reportsRouter);
 app.use('/v1/agents', agentsRouter);
 app.use('/v1/sessions', sessionsRouter);
 app.use('/v1/timezones', timezonesRouter);
-app.use('/v1/telephony', telephonyRouter);
+
 app.use('/v1/system-config', systemConfigRouter);
 
 app.use('/v1/users', usersRouter);
@@ -145,7 +145,7 @@ app.use(errorHandler);
 httpServer.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   // startScheduler();
- // startEslListener();
+  // startEslListener();
   // Fire-and-forget; the seed is idempotent and safe to run on every boot.
   seedTimezones();
   seedSuperadmin();

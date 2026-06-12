@@ -1,82 +1,77 @@
--- ── Migration 028: CCS cleanup — summary + archive ────────────────────────
---
--- Creates two tables:
---
--- 1. campaign_summary  — written BEFORE CCS rows are deleted so counts are
---    permanently preserved for reporting. One row per cleanup event.
---
--- 2. ccs_archive — stores only NON-COMPLETED contacts removed from live CCS
---    (exhausted, dnc for periodic infinite cleanup;
---     queued, exhausted, dnc for finite stop/complete).
---    Completed rows are discarded — contact_status_history has their trail.
---
--- NO columns added to system_config.
--- Cleanup timing for infinite campaigns is managed entirely inside
--- backend-injector process memory via CLEANUP_INTERVAL_HOURS env var.
+CREATE TABLE IF NOT EXISTS public.campaign_summary
+(
+    id               uuid        NOT NULL DEFAULT gen_random_uuid(),
+    campaign_id      uuid        NOT NULL,
+    job_id           uuid        NOT NULL,
+    org_id           uuid        NOT NULL,
+    total_in_ccs     integer     NOT NULL DEFAULT 0,
+    completed_count  integer     NOT NULL DEFAULT 0,
+    exhausted_count  integer     NOT NULL DEFAULT 0,
+    dnc_count        integer     NOT NULL DEFAULT 0,
+    queued_count     integer     NOT NULL DEFAULT 0,
+    trigger          text        NOT NULL DEFAULT 'stop',
+    date             date        NOT NULL DEFAULT CURRENT_DATE,
+    snapshot_at      timestamptz NOT NULL DEFAULT now(),
+    created_at       timestamptz NOT NULL DEFAULT now(),
 
--- ── 1. campaign_summary ──────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS campaign_summary (
-  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  campaign_id         UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-  job_id              UUID        NOT NULL REFERENCES campaign_jobs(id) ON DELETE CASCADE,
-  org_id              UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    CONSTRAINT campaign_summary_pkey PRIMARY KEY (id),
 
-  -- Counts snapshotted just before CCS rows are deleted
-  total_in_ccs        INT         NOT NULL DEFAULT 0,
-  completed_count     INT         NOT NULL DEFAULT 0,
-  exhausted_count     INT         NOT NULL DEFAULT 0,
-  dnc_count           INT         NOT NULL DEFAULT 0,
-  queued_count        INT         NOT NULL DEFAULT 0,
+    CONSTRAINT campaign_summary_campaign_id_fkey
+        FOREIGN KEY (campaign_id)
+        REFERENCES public.campaigns (id)
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
 
-  -- How cleanup was triggered
-  trigger             TEXT        NOT NULL DEFAULT 'stop',
-  -- stop | auto_complete | periodic_cleanup
-
-  snapshot_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    CONSTRAINT campaign_summary_job_id_fkey
+        FOREIGN KEY (job_id)
+        REFERENCES public.campaign_jobs (id)
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_campaign_summary_campaign
-  ON campaign_summary(campaign_id, snapshot_at DESC);
 
 
+CREATE TABLE IF NOT EXISTS public.ccs_archive
+(
+    id                  uuid        NOT NULL DEFAULT gen_random_uuid(),
+    original_ccs_id     uuid        NOT NULL,
+    contact_id          uuid        NOT NULL,
+    job_id              uuid        NOT NULL,
+    campaign_id         uuid        NOT NULL,
+    org_id              uuid        NOT NULL,
+    status              text        NOT NULL,
+    priority            integer     NOT NULL DEFAULT 100,
+    assigned_agent_id   uuid,
+    attempts_made       integer     NOT NULL DEFAULT 0,
+    last_attempted_at   timestamptz,
+    next_attempt_at     timestamptz,
+    archive_trigger     text        NOT NULL DEFAULT 'stop',
+    date                date        NOT NULL DEFAULT CURRENT_DATE,
+    archived_at         timestamptz NOT NULL DEFAULT now(),
+    original_created_at timestamptz,
+    original_updated_at timestamptz,
 
--- ── 2. ccs_archive ───────────────────────────────────────────────────────────
--- Stores non-completed CCS rows evicted from the live table.
--- Only statuses: queued | exhausted | dnc  (never 'completed' or 'with_agent').
-CREATE TABLE IF NOT EXISTS ccs_archive (
-  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  original_ccs_id     UUID        NOT NULL,
-  contact_id          UUID        NOT NULL REFERENCES contacts(id)       ON DELETE CASCADE,
-  job_id              UUID        NOT NULL REFERENCES campaign_jobs(id)  ON DELETE CASCADE,
-  campaign_id         UUID        NOT NULL REFERENCES campaigns(id)      ON DELETE CASCADE,
-  org_id              UUID        NOT NULL REFERENCES organizations(id)  ON DELETE CASCADE,
+    CONSTRAINT ccs_archive_pkey PRIMARY KEY (id),
 
-  status              TEXT        NOT NULL,
-  -- queued | exhausted | dnc
+    CONSTRAINT ccs_archive_campaign_id_fkey
+        FOREIGN KEY (campaign_id)
+        REFERENCES public.campaigns (id)
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
 
-  priority            INT         NOT NULL DEFAULT 100,
-  assigned_agent_id   UUID        REFERENCES users(id) ON DELETE SET NULL,
-  attempts_made       INT         NOT NULL DEFAULT 0,
-  last_attempted_at   TIMESTAMPTZ,
-  next_attempt_at     TIMESTAMPTZ,
+    CONSTRAINT ccs_archive_contact_id_fkey
+        FOREIGN KEY (contact_id)
+        REFERENCES public.contacts (id)
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE,
 
-  archive_trigger     TEXT        NOT NULL DEFAULT 'stop',
-  archived_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  original_created_at TIMESTAMPTZ,
-  original_updated_at TIMESTAMPTZ
+    CONSTRAINT ccs_archive_job_id_fkey
+        FOREIGN KEY (job_id)
+        REFERENCES public.campaign_jobs (id)
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_ccs_archive_job
-  ON ccs_archive(job_id);
-
-CREATE INDEX IF NOT EXISTS idx_ccs_archive_campaign
-  ON ccs_archive(campaign_id, archived_at DESC);
-
-  ALTER TABLE system_config
-  ADD COLUMN IF NOT EXISTS recheck_interval INTEGER NOT NULL DEFAULT 60
-  
-  #delete the dnc list source column
-
-  ALTER TABLE dnc_lists DROP COLUMN IF EXISTS source;
-
+-- ★ Unique index that drives the ON CONFLICT upsert (one row per job per day)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_summary_job_date
+    ON public.campaign_summary (job_id, date);

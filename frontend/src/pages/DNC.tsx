@@ -31,6 +31,7 @@ import {
   Download,
 } from 'lucide-react';
 import { deleteAllDncNumbers, deleteDncNumbersBulk } from '../api/client';
+import { ModalOverlay } from '../components/ui';
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 
@@ -137,7 +138,7 @@ function isValidPhone(raw: string): boolean {
   const digitOnly = digits.replace('+', '');
 
   return digitOnly.length >= 7 &&
-         digitOnly.length <= 15;
+    digitOnly.length <= 15;
 }
 
 // ─── View stack type ──────────────────────────────────────────────────────────
@@ -217,14 +218,14 @@ function DncGroupsView({ onOpenGroup }: { onOpenGroup: (g: any) => void }) {
   const openEdit = (g: any) => { setEditTarget(g); setEditName(g.name || ''); setEditDescription(g.description || ''); };
 
   const createMut = useMutation({
-  mutationFn: () =>
-    api.post('/dnc-groups', { name: groupName, description: groupDescription || null }).then((r) => r.data),
-  onSuccess: (newGroup: any) => {
-    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
-    resetCreate();
-    onOpenGroup(newGroup);  // ← go straight inside the new group
-  },
-});
+    mutationFn: () =>
+      api.post('/dnc-groups', { name: groupName, description: groupDescription || null }).then((r) => r.data),
+    onSuccess: (newGroup: any) => {
+      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+      resetCreate();
+      onOpenGroup(newGroup);
+    },
+  });
 
   const editMut = useMutation({
     mutationFn: () =>
@@ -492,15 +493,15 @@ function DncListsView({
   const openEdit = (l: any) => { setEditTarget(l); setEditName(l.name || ''); };
 
   const createMut = useMutation({
-  mutationFn: () =>
-    api.post(`/dnc-groups/${group.id}/lists`, { name: listName }).then((r) => r.data),
-  onSuccess: (newList: any) => {
-    qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
-    qc.invalidateQueries({ queryKey: ['dnc-groups'] });
-    resetCreate();
-    onOpenList(newList);  // ← go straight inside the new list
-  },
-});
+    mutationFn: () =>
+      api.post(`/dnc-groups/${group.id}/lists`, { name: listName }).then((r) => r.data),
+    onSuccess: (newList: any) => {
+      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+      resetCreate();
+      onOpenList(newList);
+    },
+  });
 
   const editMut = useMutation({
     mutationFn: () =>
@@ -743,12 +744,12 @@ function DncNumbersView({
   const [singlePhone, setSinglePhone] = useState('');
   const [singleNotes, setSingleNotes] = useState('');
   const [bulkRows, setBulkRows] = useState<
-  { phone_number: string; notes: string }[]
->([
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-]);
+    { phone_number: string; notes: string }[]
+  >([
+    { phone_number: '', notes: '' },
+    { phone_number: '', notes: '' },
+    { phone_number: '', notes: '' },
+  ]);
   const [bulkProgress, setBulkProgress] = useState<{
     done: number; failed: number; total: number;
     errors: { row: number; error: string }[];
@@ -813,13 +814,13 @@ function DncNumbersView({
   // Derive last-added date
   const lastAddedDate = numbers.length
     ? numbers.reduce((latest: string | null, r: any) => {
-        const raw = r.created_at ?? r.added_at;
-        if (!raw) return latest;
-        const d = typeof raw === 'number' ? new Date(raw) : new Date(raw);
-        if (isNaN(d.getTime())) return latest;
-        if (!latest) return d.toISOString();
-        return d > new Date(latest) ? d.toISOString() : latest;
-      }, null)
+      const raw = r.created_at ?? r.added_at;
+      if (!raw) return latest;
+      const d = typeof raw === 'number' ? new Date(raw) : new Date(raw);
+      if (isNaN(d.getTime())) return latest;
+      if (!latest) return d.toISOString();
+      return d > new Date(latest) ? d.toISOString() : latest;
+    }, null)
     : null;
 
   // ── Select helpers ────────────────────────────────────────────────────────
@@ -856,13 +857,12 @@ function DncNumbersView({
     setShowAddNumbers(false);
     setAddMode('single');
     setSinglePhone('');
-setSingleNotes('');
-
-setBulkRows([
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-]);
+    setSingleNotes('');
+    setBulkRows([
+      { phone_number: '', notes: '' },
+      { phone_number: '', notes: '' },
+      { phone_number: '', notes: '' },
+    ]);
     setBulkProgress(null);
     setUploadStatus('');
   };
@@ -888,12 +888,12 @@ setBulkRows([
         return;
       }
       const numbers = nums
-  .filter((r) => isValidPhone(r.phone_number))
-  .map((r) => ({
-    phone_number: r.phone_number,
-    notes: r.notes || null,
-    added_reason: 'import',
-  }));
+        .filter((r) => isValidPhone(r.phone_number))
+        .map((r) => ({
+          phone_number: r.phone_number,
+          notes: r.notes || null,
+          added_reason: 'import',
+        }));
       const result = await api
         .post(`/dnc-lists/${list.id}/numbers`, { numbers })
         .then((r) => r.data);
@@ -915,22 +915,20 @@ setBulkRows([
   // ── Single add mutation ───────────────────────────────────────────────────
   const addSingleMut = useMutation({
     mutationFn: () => {
-
-  if (!isValidPhone(singlePhone)) {
-    setUploadStatus('Please enter a valid phone number');
-    return Promise.reject();
-  }
-
-  return api.post(`/dnc-lists/${list.id}/numbers`, {
-    numbers: [
-      {
-        phone_number: singlePhone.trim(),
-        added_reason: 'manual',
-        notes: singleNotes.trim() || null,
-      },
-    ],
-  }).then((r) => r.data);
-},
+      if (!isValidPhone(singlePhone)) {
+        setUploadStatus('Please enter a valid phone number');
+        return Promise.reject();
+      }
+      return api.post(`/dnc-lists/${list.id}/numbers`, {
+        numbers: [
+          {
+            phone_number: singlePhone.trim(),
+            added_reason: 'manual',
+            notes: singleNotes.trim() || null,
+          },
+        ],
+      }).then((r) => r.data);
+    },
   });
 
   // ── Bulk add mutation ─────────────────────────────────────────────────────
@@ -938,43 +936,25 @@ setBulkRows([
     mutationFn: async () => {
       const candidates = bulkRows
         .map((r, i) => ({
-  phone: r.phone_number.trim(),
-  notes: r.notes?.trim() || null,
-  idx: i,
-}))
+          phone: r.phone_number.trim(),
+          notes: r.notes?.trim() || null,
+          idx: i,
+        }))
         .filter(({ phone }) => phone !== '');
       const total = candidates.length;
       setBulkProgress({ done: 0, failed: 0, total, errors: [] });
       let done = 0; let failed = 0;
       const errors: { row: number; error: string }[] = [];
-      for (const { phone, notes, idx } of candidates){
+      for (const { phone, notes, idx } of candidates) {
         if (!isValidPhone(phone)) {
-
-            failed += 1;
-
-            errors.push({
-              row: idx + 1,
-              error: 'Invalid phone number',
-            });
-
-            setBulkProgress({
-              done,
-              failed,
-              total,
-              errors,
-            });
-
-            continue;
-          }
+          failed += 1;
+          errors.push({ row: idx + 1, error: 'Invalid phone number' });
+          setBulkProgress({ done, failed, total, errors });
+          continue;
+        }
         try {
           await api.post(`/dnc-lists/${list.id}/numbers`, {
-            numbers: [
-  {
-    phone_number: phone,
-    added_reason: 'manual',
-    notes,
-  },
-],
+            numbers: [{ phone_number: phone, added_reason: 'manual', notes }],
           });
           done += 1;
         } catch (e: any) {
@@ -1110,7 +1090,6 @@ setBulkRows([
 
         {/* Action buttons */}
         <div className='flex items-center gap-2 flex-wrap justify-end'>
-          {/* CSV Template download */}
           <Button
             variant='secondary'
             icon={<Download className='w-4 h-4' />}
@@ -1145,13 +1124,12 @@ setBulkRows([
       {/* Header CSV upload status banner */}
       {headerUploadStatus && (
         <div
-          className={`p-3 rounded-lg text-sm flex items-center justify-between ${
-            headerUploadStatus.startsWith('✓')
+          className={`p-3 rounded-lg text-sm flex items-center justify-between ${headerUploadStatus.startsWith('✓')
               ? 'bg-green-50 text-green-700'
               : headerUploadStatus.startsWith('⚠')
                 ? 'bg-amber-50 text-amber-700'
                 : 'bg-red-50 text-red-700'
-          }`}
+            }`}
         >
           <span>{headerUploadStatus}</span>
           <button onClick={() => setHeaderUploadStatus(null)} className='ml-2 opacity-60 hover:opacity-100'>
@@ -1161,7 +1139,7 @@ setBulkRows([
       )}
 
       {/* Stat cards */}
-      <div className='grid grid-cols-2 gap-4'>  
+      <div className='grid grid-cols-2 gap-4'>
         <StatCard label='Total Numbers' value={totalNumbers.toLocaleString()} color='red' />
         <StatCard label='Last Added' value={formatDateTime(lastAddedDate)} color='orange' />
       </div>
@@ -1260,9 +1238,9 @@ setBulkRows([
                   <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
                     Phone Number
                   </th>
-                                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
-                  Notes
-                </th>
+                  <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
+                    Notes
+                  </th>
                   <th className='px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide'>
                     Added Reason
                   </th>
@@ -1293,9 +1271,8 @@ setBulkRows([
                       key={r.id}
                       onMouseEnter={() => setHoveredId(r.id)}
                       onMouseLeave={() => setHoveredId(null)}
-                      className={`transition-colors ${
-                        isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''
-                      }`}
+                      className={`transition-colors ${isSelected ? 'bg-indigo-50' : isHovered ? 'bg-gray-50' : ''
+                        }`}
                     >
                       <td className='px-4 py-2.5 w-10'>
                         {checkboxVisible ? (
@@ -1313,10 +1290,8 @@ setBulkRows([
                         <span className='font-mono font-medium text-gray-900'>{r.phone_number}</span>
                       </td>
                       <td className='px-4 py-2.5'>
-  <span className='text-sm text-gray-600'>
-    {r.notes || '—'}
-  </span>
-</td>
+                        <span className='text-sm text-gray-600'>{r.notes || '—'}</span>
+                      </td>
                       <td className='px-4 py-2.5'>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${reasonCls}`}>
                           {reason.replace(/_/g, ' ')}
@@ -1368,10 +1343,10 @@ setBulkRows([
                 setAddMode(e.target.value as 'single' | 'bulk');
                 setSinglePhone('');
                 setBulkRows([
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-  { phone_number: '', notes: '' },
-]);
+                  { phone_number: '', notes: '' },
+                  { phone_number: '', notes: '' },
+                  { phone_number: '', notes: '' },
+                ]);
                 setBulkProgress(null);
                 setUploadStatus('');
               }}
@@ -1391,25 +1366,21 @@ setBulkRows([
                 placeholder='+12125550101'
               />
               <div>
-  <label className='block text-xs font-medium text-gray-500 mb-1'>
-    Notes
-  </label>
-
-  <textarea
-    value={singleNotes}
-    onChange={(e) => setSingleNotes(e.target.value)}
-    placeholder='Optional notes'
-    rows={3}
-    className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
-  />
-</div>
+                <label className='block text-xs font-medium text-gray-500 mb-1'>Notes</label>
+                <textarea
+                  value={singleNotes}
+                  onChange={(e) => setSingleNotes(e.target.value)}
+                  placeholder='Optional notes'
+                  rows={3}
+                  className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
+                />
+              </div>
               <p className='text-xs text-gray-400'>
                 Saved with reason <span className='font-medium text-blue-600'>manual</span>.
               </p>
               {uploadStatus && (
-                <div className={`p-3 rounded-lg text-sm ${
-                  uploadStatus.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
-                }`}>
+                <div className={`p-3 rounded-lg text-sm ${uploadStatus.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'
+                  }`}>
                   {uploadStatus}
                 </div>
               )}
@@ -1455,7 +1426,7 @@ setBulkRows([
       </Modal>
 
       {/* ── Delete single confirmation ───────────────────────────────────────── */}
-      {deleteTarget && (
+      <ModalOverlay open={!!deleteTarget}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
@@ -1475,7 +1446,7 @@ setBulkRows([
                 <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
                 <div>
                   <p className='text-sm font-semibold text-red-800'>
-                    Remove <span className='font-mono'>{deleteTarget.phone_number}</span> from this list?
+                    Remove <span className='font-mono'>{deleteTarget?.phone_number}</span> from this list?
                   </p>
                   <p className='text-xs text-red-600 mt-1'>This number will be permanently removed from the DNC list.</p>
                 </div>
@@ -1498,10 +1469,10 @@ setBulkRows([
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
 
       {/* ── Delete selected confirmation ─────────────────────────────────────── */}
-      {showDeleteSelected && (
+      <ModalOverlay open={showDeleteSelected}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
@@ -1549,10 +1520,10 @@ setBulkRows([
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
 
       {/* ── Delete all confirmation ──────────────────────────────────────────── */}
-      {showDeleteAll && (
+      <ModalOverlay open={showDeleteAll}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
@@ -1601,7 +1572,7 @@ setBulkRows([
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
 
       {/* ── Edit number modal ────────────────────────────────────────────────── */}
       <Modal title='Edit DNC Number' open={!!editTarget} onClose={resetEdit} size='sm'>
@@ -1615,18 +1586,15 @@ setBulkRows([
             autoFocus
           />
           <div>
-        <label className='block text-xs font-medium text-gray-500 mb-1'>
-          Notes
-        </label>
-
-        <textarea
-          value={editNotes}
-          onChange={(e) => setEditNotes(e.target.value)}
-          placeholder='Optional notes'
-          rows={3}
-          className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
-        />
-      </div>
+            <label className='block text-xs font-medium text-gray-500 mb-1'>Notes</label>
+            <textarea
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+              placeholder='Optional notes'
+              rows={3}
+              className='w-full border border-gray-200 rounded-lg px-3 py-2 text-sm'
+            />
+          </div>
           {editNumMut.isError && (
             <p className='text-xs text-red-500'>
               {(editNumMut.error as any)?.response?.data?.error || 'Save failed'}
@@ -1656,53 +1624,20 @@ function DncBulkGrid({
   progress,
   disabled,
 }: {
-  rows: {
-  phone_number: string;
-  notes: string;
-}[];
-  setRows: React.Dispatch<
-  React.SetStateAction<
-    {
-      phone_number: string;
-      notes: string;
-    }[]
-  >
->;
+  rows: { phone_number: string; notes: string }[];
+  setRows: React.Dispatch<React.SetStateAction<{ phone_number: string; notes: string }[]>>;
   progress: { done: number; failed: number; total: number; errors: { row: number; error: string }[] } | null;
   disabled: boolean;
 }) {
- const updatePhone = (
-  i: number,
-  value: string,
-) =>
-  setRows((rs) =>
-    rs.map((r, idx) =>
-      idx === i
-        ? { ...r, phone_number: value }
-        : r
-    )
-  );
+  const updatePhone = (i: number, value: string) =>
+    setRows((rs) => rs.map((r, idx) => idx === i ? { ...r, phone_number: value } : r));
 
-const updateNotes = (
-  i: number,
-  value: string,
-) =>
-  setRows((rs) =>
-    rs.map((r, idx) =>
-      idx === i
-        ? { ...r, notes: value }
-        : r
-    )
-  );
+  const updateNotes = (i: number, value: string) =>
+    setRows((rs) => rs.map((r, idx) => idx === i ? { ...r, notes: value } : r));
 
-const addRow = () =>
-  setRows((rs) => [
-    ...rs,
-    {
-      phone_number: '',
-      notes: '',
-    },
-  ]);
+  const addRow = () =>
+    setRows((rs) => [...rs, { phone_number: '', notes: '' }]);
+
   const removeRow = (i: number) =>
     setRows((rs) => (rs.length === 1 ? rs : rs.filter((_, idx) => idx !== i)));
 
@@ -1735,9 +1670,7 @@ const addRow = () =>
             <tr>
               <th className={thCls + ' w-10'}>#</th>
               <th className={thCls + ' min-w-[220px]'}>Phone Number *</th>
-              <th className={thCls + ' min-w-[220px]'}>
-              Notes
-            </th>
+              <th className={thCls + ' min-w-[220px]'}>Notes</th>
               <th className={thCls + ' w-10'}></th>
             </tr>
           </thead>
@@ -1749,26 +1682,22 @@ const addRow = () =>
                   <input
                     type='tel'
                     value={row.phone_number}
-                    onChange={(e) =>
-                      updatePhone(i, e.target.value)
-                    }
+                    onChange={(e) => updatePhone(i, e.target.value)}
                     placeholder='+12125550101'
                     disabled={disabled}
                     className={cellCls}
                   />
                 </td>
                 <td className={tdCls}>
-                <input
-                  type='text'
-                  value={row.notes}
-                  onChange={(e) =>
-                    updateNotes(i, e.target.value)
-                  }
-                  placeholder='Optional notes'
-                  disabled={disabled}
-                  className={cellCls}
-                />
-              </td>
+                  <input
+                    type='text'
+                    value={row.notes}
+                    onChange={(e) => updateNotes(i, e.target.value)}
+                    placeholder='Optional notes'
+                    disabled={disabled}
+                    className={cellCls}
+                  />
+                </td>
                 <td className={tdCls + ' px-2 py-1.5 text-right'}>
                   <button
                     onClick={() => removeRow(i)}

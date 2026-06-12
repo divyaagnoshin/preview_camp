@@ -193,10 +193,21 @@ export function Table<T>({ cols, rows, keyFn, onRowClick, emptyMessage = 'No dat
   );
 }
 
+// ── Body scroll lock hook ────────────────────────────────────────────────────
+function useBodyScrollLock(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+}
+
 // ── Modal ───────────────────────────────────────────────────────────────────
 export function Modal({ title, open, onClose, children, size = 'md' }: {
   title: string; open: boolean; onClose: () => void; children: ReactNode; size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
+  useBodyScrollLock(open);
   if (!open) return null;
   const widths = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-5xl' };
   return createPortal(
@@ -224,6 +235,15 @@ export function Modal({ title, open, onClose, children, size = 'md' }: {
     </div>,
     document.body,
   );
+}
+
+// ── ModalOverlay — portal wrapper for inline modals ─────────────────────────
+// Use this to wrap any hand-rolled "fixed inset-0" modal so the background
+// cannot be scrolled or interacted with while the modal is open.
+export function ModalOverlay({ open, children }: { open: boolean; children: ReactNode }) {
+  useBodyScrollLock(open);
+  if (!open) return null;
+  return createPortal(<>{children}</>, document.body);
 }
 
 // ── Input / Select / Textarea ─────────────────────────────────────────────

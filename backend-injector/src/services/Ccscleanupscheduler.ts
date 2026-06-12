@@ -2,34 +2,33 @@
 //
 // Daily CCS cleanup — fires at 02:00 server-local time every day.
 //
-// What it does on each tick
-// ──────────────────────────
-// For INFINITE campaigns (active jobs):
-//   1. Snapshot counts into campaign_summary (before any deletion).
-//   2. Copy exhausted + dnc rows into ccs_archive.
-//   3. Delete completed + exhausted + dnc rows from campaign_contact_status.
-//   queued rows are LEFT ALONE — the campaign is still running.
+// Changes vs previous version
+// ────────────────────────────
+// • Both tables now receive a `date` column (CURRENT_DATE at run time).
+// • campaign_summary uses an UPSERT on (job_id, date) — re-running the
+//   scheduler on the same calendar day overwrites the row instead of
+//   appending a duplicate.  Requires the unique index:
+//     CREATE UNIQUE INDEX uq_campaign_summary_job_date
+//       ON campaign_summary (job_id, date);
+// • ccs_archive.date is set from archived_at::date (the same calendar day
+//   the archive row is written).
+// • `runNow()` is exported so you can trigger a manual test run without
+//   waiting for 02:00.
 //
-// For FINITE campaigns (any job, any status):
-//   1. Snapshot counts into campaign_summary.
-//   2. Copy exhausted + dnc rows into ccs_archive.
-//   3. Delete completed + exhausted + dnc rows from campaign_contact_status.
-//   Same logic — just no schedule_type filter applied.
-//
-// Daily aggregation (both types):
-//   At exactly 02:00, per job_id, all removable-status rows are aggregated
-//   into campaign_summary with trigger = 'daily_aggregation' before cleanup.
-//
-// Timing
-// ──────
-// Controlled by CLEANUP_HOUR env var (default: 2 → 02:00 local time).
-// Uses a ms-precise setTimeout chain to land exactly on the clock hour.
-// No DB-level lock needed — this is a singleton process.
+// Condition for archiving from campaign_contact_status → ccs_archive
+// ──────────────────────────────────────────────────────────────────
+// Only rows with status IN ('exhausted', 'dnc') are archived.
+// Rationale:
+//   • 'completed' rows are already captured in call history — no need to
+//     archive them; they are simply deleted.
+//   • 'queued' rows are LEFT ALONE entirely — the campaign is still running
+//     and agents need those rows.
+//   • 'exhausted' and 'dnc' are dead-end states that need a long-term audit
+//     trail but should be removed from the hot CCS table.
 
 import pool, { withTransaction } from '../db/pool';
 import { PoolClient } from 'pg';
 
-// Hour of day (0-23) at which cleanup runs. Default: 2 (02:00).
 const CLEANUP_HOUR = parseInt(process.env.CLEANUP_HOUR || '2', 10);
 
 interface CleanupTarget {
@@ -39,7 +38,7 @@ interface CleanupTarget {
   schedule_type: 'infinite' | 'finite' | string;
 }
 
-// ── Entry point — called once from index.ts ───────────────────────────────────
+// ── Entry point ───────────────────────────────────────────────────────────────
 export function startCleanupScheduler() {
   console.log(
     `[ccs-cleanup] scheduler started — will run daily at ${String(CLEANUP_HOUR).padStart(2, '0')}:00`,
@@ -47,24 +46,25 @@ export function startCleanupScheduler() {
   scheduleNextRun();
 }
 
-// ── Schedule the next 02:00 tick using an exact ms offset ────────────────────
+// ── Manual test trigger — call this from a dev route or script ────────────────
+export async function runNow(): Promise<void> {
+  console.log('[ccs-cleanup] manual run triggered');
+  await cleanupTick();
+  console.log('[ccs-cleanup] manual run complete');
+}
+
+// ── Schedule the next CLEANUP_HOUR tick ──────────────────────────────────────
 function scheduleNextRun() {
-  const now  = new Date();
+  const now = new Date();
   const next = new Date(now);
-
   next.setHours(CLEANUP_HOUR, 0, 0, 0);
-
-  // If 02:00 already passed today, aim for tomorrow
-  if (next <= now) {
-    next.setDate(next.getDate() + 1);
-  }
+  if (next <= now) next.setDate(next.getDate() + 1);
 
   const msUntilNext = next.getTime() - now.getTime();
-  const hh = String(next.getHours()).padStart(2, '0');
-  const mm = String(next.getMinutes()).padStart(2, '0');
   console.log(
-    `[ccs-cleanup] next run scheduled at ${next.toDateString()} ${hh}:${mm}` +
-    ` (in ${Math.round(msUntilNext / 60000)} min)`,
+    `[ccs-cleanup] next run at ${next.toDateString()} ` +
+    `${String(next.getHours()).padStart(2, '0')}:00 ` +
+    `(in ${Math.round(msUntilNext / 60000)} min)`,
   );
 
   setTimeout(() => {
@@ -72,7 +72,7 @@ function scheduleNextRun() {
   }, msUntilNext);
 }
 
-// ── Tick ─────────────────────────────────────────────────────────────────────
+// ── Tick ──────────────────────────────────────────────────────────────────────
 async function cleanupTick() {
   const startedAt = new Date();
   console.log(`[ccs-cleanup] tick started at ${startedAt.toISOString()}`);
@@ -91,14 +91,10 @@ async function cleanupTick() {
   }
 
   const infinite = targets.filter(t => t.schedule_type === 'infinite');
-  const finite   = targets.filter(t => t.schedule_type !== 'infinite');
-  console.log(
-    `[ccs-cleanup] targets — infinite=${infinite.length} finite=${finite.length}`,
-  );
+  const finite = targets.filter(t => t.schedule_type !== 'infinite');
+  console.log(`[ccs-cleanup] targets — infinite=${infinite.length} finite=${finite.length}`);
 
-  let success = 0;
-  let failed  = 0;
-
+  let success = 0, failed = 0;
   for (const t of targets) {
     try {
       await cleanupJob(t);
@@ -106,38 +102,26 @@ async function cleanupTick() {
     } catch (err) {
       failed++;
       console.error(
-        `[ccs-cleanup] campaign ${t.campaign_id} job ${t.job_id}` +
-        ` (${t.schedule_type}) failed:`,
+        `[ccs-cleanup] campaign ${t.campaign_id} job ${t.job_id} (${t.schedule_type}) failed:`,
         err,
       );
     }
   }
 
-  console.log(
-    `[ccs-cleanup] tick done — success=${success} failed=${failed}`,
-  );
+  console.log(`[ccs-cleanup] tick done — success=${success} failed=${failed}`);
 }
 
-// ── Query: all eligible jobs ─────────────────────────────────────────────────
-//
-// INFINITE  → campaign active + job active   (running campaigns, queued rows
-//             must survive, only dead-end statuses removed)
-//
-// FINITE    → any campaign/job status        (campaign may already be finished;
-//             we still clean up leftover completed/exhausted/dnc rows)
-//
+// ── Find all eligible jobs ────────────────────────────────────────────────────
 async function findAllEligibleJobs(): Promise<CleanupTarget[]> {
   const { rows } = await pool.query(
     `-- Infinite: latest active job per active campaign
      SELECT DISTINCT ON (c.id)
-            c.id             AS campaign_id,
-            j.id             AS job_id,
+            c.id          AS campaign_id,
+            j.id          AS job_id,
             c.org_id,
             c.schedule_type
        FROM campaigns c
-       JOIN campaign_jobs j
-         ON j.campaign_id = c.id
-        AND j.status = 'active'
+       JOIN campaign_jobs j ON j.campaign_id = c.id AND j.status = 'active'
       WHERE c.schedule_type = 'infinite'
         AND c.status = 'active'
 
@@ -145,8 +129,8 @@ async function findAllEligibleJobs(): Promise<CleanupTarget[]> {
 
      -- Finite: latest job per campaign (any status), only if removable rows exist
      SELECT DISTINCT ON (c.id)
-            c.id             AS campaign_id,
-            j.id             AS job_id,
+            c.id          AS campaign_id,
+            j.id          AS job_id,
             c.org_id,
             c.schedule_type
        FROM campaigns c
@@ -162,11 +146,11 @@ async function findAllEligibleJobs(): Promise<CleanupTarget[]> {
   return rows;
 }
 
-// ── Core cleanup for one job (single transaction) ────────────────────────────
+// ── Core cleanup for one job (single transaction) ─────────────────────────────
 async function cleanupJob(t: CleanupTarget): Promise<void> {
   await withTransaction(async (client: PoolClient) => {
 
-    // ── Step 1: Snapshot counts per job_id (daily aggregation) ───────────────
+    // ── Step 1: Count current CCS rows ────────────────────────────────────────
     const { rows: countRows } = await client.query(
       `SELECT
          COUNT(*)                                          ::int AS total_in_ccs,
@@ -179,50 +163,61 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
       [t.job_id],
     );
     const counts = countRows[0];
+    const removable = counts.completed_count + counts.exhausted_count + counts.dnc_count;
 
-    const removable =
-      counts.completed_count + counts.exhausted_count + counts.dnc_count;
+    // ── Step 2: Upsert summary row (one row per job per calendar date) ─────────
+    // If the scheduler runs twice on the same day (e.g. manual re-run after a
+    // failure) the existing row is updated rather than a duplicate being added.
+    await writeSummary(client, t, counts, 'daily_aggregation');
 
-    // Nothing removable — still write a daily aggregation row so we have a
-    // full-picture record for this job even on quiet days.
     if (removable === 0) {
       console.log(
-        `[ccs-cleanup] job ${t.job_id} (${t.schedule_type})` +
-        ` — nothing to remove; writing aggregation row only`,
+        `[ccs-cleanup] job ${t.job_id} (${t.schedule_type}) — nothing to remove`,
       );
-      await writeSummary(client, t, counts, 'daily_aggregation');
       return;
     }
 
-    // Write aggregation snapshot BEFORE deletion so counts are accurate
-    await writeSummary(client, t, counts, 'daily_aggregation');
-
-    // ── Step 2: Archive exhausted + dnc rows ──────────────────────────────────
-    // completed rows are already tracked in call history — skip archiving them
+    // ── Step 3: Archive exhausted + dnc rows into ccs_archive ────────────────
+    //
+    // WHO gets archived:   exhausted, dnc
+    // WHO does NOT:        completed  → already in call history, no archive needed
+    //                      queued     → NEVER touched; agents still need to call them
+    //
     const { rowCount: archivedCount } = await client.query(
       `INSERT INTO ccs_archive
          (original_ccs_id, contact_id, job_id, campaign_id, org_id,
           status, priority, assigned_agent_id, attempts_made,
           last_attempted_at, next_attempt_at,
-          archive_trigger, original_created_at, original_updated_at)
+          archive_trigger,
+          date,
+          archived_at,
+          original_created_at, original_updated_at)
        SELECT
           id, contact_id, $1, $2, $3,
           status, priority, assigned_agent_id, attempts_made,
           last_attempted_at, next_attempt_at,
-          'daily_cleanup', created_at, updated_at
+          'daily_cleanup',
+          now()::date,
+          now(),
+          created_at, updated_at
        FROM campaign_contact_status
        WHERE job_id = $4
-         AND status IN ('exhausted', 'dnc')`,
+         AND status NOT IN ('queued', 'completed')
+         -- NOT queued   → agents still need these rows to make calls
+         -- NOT completed → already captured in call history, skip archive`,
       [t.job_id, t.campaign_id, t.org_id, t.job_id],
     );
 
-    // ── Step 3: Delete completed + exhausted + dnc ────────────────────────────
-    // For INFINITE campaigns: queued rows are intentionally kept — agents need them.
-    // For FINITE campaigns:   same rule — queued rows still in-flight are kept.
+    // ── Step 4: Delete all non-queued rows from CCS ───────────────────────────
+    //
+    // WHO gets deleted:    completed, exhausted, dnc  (dead-end statuses)
+    // WHO stays:           queued → NEVER deleted; agents call from these rows
+    //
     const { rowCount: deletedCount } = await client.query(
       `DELETE FROM campaign_contact_status
        WHERE job_id = $1
-         AND status IN ('completed', 'exhausted', 'dnc')`,
+         AND status != 'queued'
+         -- queued rows are intentionally kept so agents can continue calling`,
       [t.job_id],
     );
 
@@ -237,7 +232,7 @@ async function cleanupJob(t: CleanupTarget): Promise<void> {
   });
 }
 
-// ── Helper: insert one campaign_summary row ───────────────────────────────────
+// ── Upsert one campaign_summary row (one per job per calendar date) ───────────
 async function writeSummary(
   client: PoolClient,
   t: CleanupTarget,
@@ -254,8 +249,22 @@ async function writeSummary(
     `INSERT INTO campaign_summary
        (campaign_id, job_id, org_id,
         total_in_ccs, completed_count, exhausted_count,
-        dnc_count, queued_count, trigger)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        dnc_count, queued_count,
+        trigger,
+        date,            -- ← calendar date of this snapshot
+        snapshot_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+             CURRENT_DATE,   -- ← date
+             now())
+     ON CONFLICT (job_id, date)           -- ← upsert: one row per job per day
+     DO UPDATE SET
+       total_in_ccs    = EXCLUDED.total_in_ccs,
+       completed_count = EXCLUDED.completed_count,
+       exhausted_count = EXCLUDED.exhausted_count,
+       dnc_count       = EXCLUDED.dnc_count,
+       queued_count    = EXCLUDED.queued_count,
+       trigger         = EXCLUDED.trigger,
+       snapshot_at     = EXCLUDED.snapshot_at`,
     [
       t.campaign_id, t.job_id, t.org_id,
       counts.total_in_ccs,

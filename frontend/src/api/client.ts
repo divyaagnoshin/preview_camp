@@ -40,10 +40,16 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401) {
+    const isLoginRequest = err.config?.url?.includes('/auth/login');
+
+    // Only redirect to /login on 401 for authenticated requests.
+    // Never redirect when the 401 came FROM the login endpoint itself —
+    // that just means wrong credentials and LoginPage should show the error.
+    if (err.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
+
     return Promise.reject(err);
   },
 );
@@ -320,12 +326,12 @@ export const uploadCSV = (
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: onProgress
         ? (e) => {
-            // e.total is undefined on some axios builds; fall back to e.loaded
-            // alone so the bar still animates instead of staying stuck at 0.
-            const total = e.total ?? 0;
-            const percent = total ? Math.round((e.loaded / total) * 100) : 0;
-            onProgress(percent);
-          }
+          // e.total is undefined on some axios builds; fall back to e.loaded
+          // alone so the bar still animates instead of staying stuck at 0.
+          const total = e.total ?? 0;
+          const percent = total ? Math.round((e.loaded / total) * 100) : 0;
+          onProgress(percent);
+        }
         : undefined,
     })
     .then((r) => r.data);
@@ -488,7 +494,7 @@ export const getSystemConfig = (): Promise<SystemConfig> =>
 export const updateSystemConfig = (
   body: Partial<{
     inject_poll_minutes: number;
-    recheck_interval: number; 
+    recheck_interval: number;
     time_guard_enabled: boolean;
     time_guard_windows: Record<string, { start: string; end: string }>;
   }>,
@@ -613,10 +619,10 @@ export const deleteDncNumbersBulk = (listId: string, ids: string[]) =>
 // System attributes come from org_field_library where org_id IS NULL (source = 'system').
 // Custom attributes come from org_field_library where org_id = org  (source = 'library' / field_type = 'custom').
 // The GET /field-library endpoint already returns both — we just reuse it here.
- 
+
 export const getGlobalAttributes = (): Promise<{ data: any[] }> =>
   api.get('/field-library').then((r) => r.data);
- 
+
 export const updateGlobalAttribute = (id: string, patch: {
   name?: string;
   data_type?: string;
@@ -625,7 +631,7 @@ export const updateGlobalAttribute = (id: string, patch: {
   is_editable_agent?: boolean;
 }) =>
   api.patch(`/field-library/${id}`, patch).then((r) => r.data);
- 
+
 export const deleteGlobalAttribute = (id: string): Promise<void> =>
   api.delete(`/field-library/${id}`).then((r) => r.data);
 

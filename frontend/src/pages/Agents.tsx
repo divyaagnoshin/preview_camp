@@ -1,12 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  AgentSession,
   AgentUser,
   createAgent,
   deleteAgent,
   listAgents,
-  listAgentSessions,
   updateAgent,
 } from '../api/client';
 import {
@@ -22,19 +20,12 @@ import {
   Modal,
   PageLoader,
   SearchInput,
-  Select,
-  StatusBadge,
   PagedTable,
 } from '../components/ui';
 import { useAuth } from '../hooks/useAuth';
-import { Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
+import { Pencil, Plus, Trash2, UserPlus, Eye, EyeOff } from 'lucide-react';
 
-// Heartbeat is considered stale after this many seconds; matches the backend
-// HEARTBEAT_STALE_SECONDS default so the UI label flips at the same time the
-// recovery worker would tear the session down.
-const HEARTBEAT_STALE_SEC = 60;
-
-type Row = AgentUser & { session: AgentSession | null };
+type Row = AgentUser;
 
 export default function AgentsPage() {
   const { isAdmin, user } = useAuth();
@@ -42,6 +33,7 @@ export default function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<AgentUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<AgentUser | null>(null);
+  const [editSelfOpen, setEditSelfOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterActive, setFilterActive] = useState('');
@@ -50,31 +42,8 @@ export default function AgentsPage() {
     queryKey: ['agents'],
     queryFn: listAgents,
   });
-  const { data: sessions } = useQuery({
-    queryKey: ['agent-sessions'],
-    queryFn: listAgentSessions,
-    // Poll every 5s so "Current Contact" and "Last Heartbeat" reflect live
-    // workspace activity without the user having to refresh the page.
-    refetchInterval: 5000,
-    refetchIntervalInBackground: false,
-  });
 
-  // Force re-render every second so the relative "Xs ago" heartbeat label
-  // ticks even between server fetches.
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const sessionMap: Record<string, AgentSession> = {};
-  (sessions?.data || []).forEach((s) => {
-    sessionMap[s.agent_id] = s;
-  });
-  const agents: Row[] = (data?.data || []).map((a) => ({
-    ...a,
-    session: sessionMap[a.id] || null,
-  }));
+  const agents: Row[] = data?.data || [];
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -97,11 +66,15 @@ export default function AgentsPage() {
   const hasActiveFilters = !!(search || filterRole || filterActive);
   const clearAll = () => { setSearch(''); setFilterRole(''); setFilterActive(''); };
 
+  const selfRow = agents.find((a) => a.id === user?.id) ?? null;
+
   return (
     <div className='p-6 space-y-5'>
       <div className='page-header-bar'>
         <div>
-          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: "Sora, sans-serif" }}>Admins</h1>
+          <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
+            Admins
+          </h1>
           <p className='text-sm text-[#7A5C44] mt-0.5'>
             {hasActiveFilters
               ? `${filtered.length} of ${agents.length} member(s)`
@@ -123,17 +96,6 @@ export default function AgentsPage() {
         <div className='filter-bar'>
           <SearchInput value={search} onChange={setSearch} placeholder='Search by name or email…' />
           <div className='flex items-center gap-2 flex-wrap'>
-            {/* <FilterDropdown
-              label='Role'
-              value={filterRole}
-              onChange={setFilterRole}
-              color='purple'
-              options={[
-                { value: 'admin', label: 'Admin' },
-                { value: 'supervisor', label: 'Supervisor' },
-                { value: 'agent', label: 'Agent' },
-              ]}
-            /> */}
             <FilterDropdown
               label='Status'
               value={filterActive}
@@ -169,6 +131,7 @@ export default function AgentsPage() {
             cols={[
               {
                 header: 'Name',
+                width: '220px',
                 render: (r: Row) => {
                   const initials = `${r.first_name?.[0] || ''}${r.last_name?.[0] || ''}`;
                   const gradients = [
@@ -180,30 +143,30 @@ export default function AgentsPage() {
                     'linear-gradient(135deg,#06B6D4,#0891B2)',
                   ];
                   const grad = gradients[(r.first_name?.charCodeAt(0) || 0) % gradients.length];
-                  const gmailLink = r.email ? `https://mail.google.com/mail/u/0/#search/${r.email}` : null;
                   return (
                     <div className='flex items-center gap-3'>
-                      <div className='w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md flex-shrink-0' style={{ background: grad }}>
+                      <div
+                        className='w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shadow-md flex-shrink-0'
+                        style={{ background: grad }}
+                      >
                         {initials}
                       </div>
-                      <div>
-                        <div className='font-semibold text-[#0F1117]'>{r.first_name} {r.last_name}</div>
-                        {r.email && gmailLink ? (
-                          <a href={gmailLink} target='_blank' rel='noopener noreferrer'
-                            className='text-xs text-[#E8470A] hover:underline flex items-center gap-1'
-                            onClick={e => e.stopPropagation()}>
-                            ✉ {r.email}
-                          </a>
-                        ) : (
-                          <div className='text-xs text-[#9CA3AF]'>{r.email}</div>
-                        )}
+                      <div className='font-semibold text-[#0F1117] truncate'>
+                        {r.first_name} {r.last_name}
                       </div>
                     </div>
                   );
                 },
               },
               {
+                header: 'Email',
+                render: (r: Row) => (
+                  <span className='text-sm text-[#6B7280]'>{r.email || '—'}</span>
+                ),
+              },
+              {
                 header: 'Role',
+                width: '120px',
                 render: (r: Row) => (
                   <Badge
                     label={r.role}
@@ -219,61 +182,46 @@ export default function AgentsPage() {
               },
               {
                 header: 'Active',
+                width: '100px',
                 render: (r: Row) =>
                   r.is_active ? (
                     <Badge label='active' color='green' />
                   ) : (
                     <Badge label='disabled' color='red' />
                   ),
-                width: '100px',
-              },
-              {
-                header: 'Session',
-                render: (r: Row) =>
-                  r.session ? (
-                    <StatusBadge status={r.session.status} />
-                  ) : (
-                    <span className='text-xs text-gray-400'>No session</span>
-                  ),
-                width: '140px',
-              },
-              {
-                header: 'Current Contact',
-                render: (r: Row) => <CurrentContactCell session={r.session} />,
-              },
-              {
-                header: 'Last Heartbeat',
-                render: (r: Row) => <HeartbeatCell session={r.session} />,
-                width: '160px',
               },
               ...(isAdmin
                 ? [
                   {
                     header: 'Actions',
-                    render: (r: Row) =>
-                      r.id === user?.id ? (
-                        <span className='text-xs text-gray-400'>You</span>
-                      ) : (
+                    width: '160px',
+                    render: (r: Row) => {
+                      const isSelf = r.id === user?.id;
+                      return (
                         <div className='flex items-center gap-1.5'>
                           <button
-                            onClick={() => setEditUser(r)}
-                            title='Edit user'
+                            onClick={() =>
+                              isSelf ? setEditSelfOpen(true) : setEditUser(r)
+                            }
+                            title={isSelf ? 'Edit your profile' : 'Edit user'}
                             className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition'
                           >
                             <Pencil className='w-3 h-3' />
-                            Edit
+                            {isSelf ? 'Edit profile' : 'Edit'}
                           </button>
-                          <button
-                            onClick={() => setDeleteUser(r)}
-                            title='Delete user'
-                            className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
-                          >
-                            <Trash2 className='w-3 h-3' />
-                            Delete
-                          </button>
+                          {!isSelf && (
+                            <button
+                              onClick={() => setDeleteUser(r)}
+                              title='Delete user'
+                              className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'
+                            >
+                              <Trash2 className='w-3 h-3' />
+                              Delete
+                            </button>
+                          )}
                         </div>
-                      ),
-                    width: '180px',
+                      );
+                    },
                   },
                 ]
                 : []),
@@ -313,7 +261,17 @@ export default function AgentsPage() {
           onDeleted={() => {
             setDeleteUser(null);
             qc.invalidateQueries({ queryKey: ['agents'] });
-            qc.invalidateQueries({ queryKey: ['agent-sessions'] });
+          }}
+        />
+      )}
+
+      {editSelfOpen && selfRow && (
+        <EditSelfModal
+          target={selfRow}
+          onClose={() => setEditSelfOpen(false)}
+          onSaved={() => {
+            setEditSelfOpen(false);
+            qc.invalidateQueries({ queryKey: ['agents'] });
           }}
         />
       )}
@@ -321,56 +279,63 @@ export default function AgentsPage() {
   );
 }
 
-function CurrentContactCell({ session }: { session: AgentSession | null }) {
-  if (!session?.current_contact_id)
-    return <span className='text-gray-400'>—</span>;
-  const name = [session.current_first_name, session.current_last_name]
-    .filter(Boolean)
-    .join(' ');
+// ─── Password field with eye toggle ───────────────────────────────────────────
+
+function PasswordInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+  minLength,
+  autoFocus,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  minLength?: number;
+  autoFocus?: boolean;
+}) {
+  const [show, setShow] = useState(false);
   return (
-    <div className='leading-tight'>
-      <div className='text-sm font-medium text-gray-900'>
-        {name || 'Unnamed contact'}
-      </div>
-      <div className='text-xs text-gray-500 font-mono'>
-        {session.current_phone_number || '—'}
-        {session.current_campaign_name && (
-          <span className='ml-2 text-gray-400'>
-            · {session.current_campaign_name}
-          </span>
-        )}
-      </div>
+    <div className='relative'>
+      <Input
+        label={label}
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        minLength={minLength}
+        autoFocus={autoFocus}
+      />
+      <button
+        type='button'
+        onClick={() => setShow((v) => !v)}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className='absolute right-3 top-7 text-gray-400 hover:text-gray-600 transition'
+      >
+        {show ? <EyeOff className='w-4 h-4' /> : <Eye className='w-4 h-4' />}
+      </button>
     </div>
   );
 }
 
-function HeartbeatCell({ session }: { session: AgentSession | null }) {
-  if (!session?.last_heartbeat_at)
-    return <span className='text-gray-400'>—</span>;
-  const ageSec = Math.max(
-    0,
-    Math.round((Date.now() - new Date(session.last_heartbeat_at).getTime()) / 1000),
-  );
-  const stale = ageSec > HEARTBEAT_STALE_SEC && session.status !== 'offline';
-  const label =
-    ageSec < 60
-      ? `${ageSec}s ago`
-      : ageSec < 3600
-        ? `${Math.floor(ageSec / 60)}m ago`
-        : new Date(session.last_heartbeat_at).toLocaleTimeString();
+// ─── Password match hint ───────────────────────────────────────────────────────
+
+function PasswordMatchHint({ password, confirm }: { password: string; confirm: string }) {
+  if (!confirm) return null;
+  const match = password === confirm;
   return (
-    <div className='leading-tight'>
-      <div
-        className={
-          stale ? 'text-sm text-red-600 font-medium' : 'text-sm text-gray-700'
-        }
-      >
-        {label}
-      </div>
-      {stale && <div className='text-xs text-red-500'>stale</div>}
-    </div>
+    <p className={`text-xs flex items-center gap-1 -mt-1 ${match ? 'text-green-600' : 'text-red-500'}`}>
+      {match ? '✓ Passwords match' : '✗ Passwords do not match'}
+    </p>
   );
 }
+
+// ─── Create Admin Modal ────────────────────────────────────────────────────────
 
 function CreateAgentModal({
   onClose,
@@ -383,7 +348,7 @@ function CreateAgentModal({
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin'>('admin');  // ← only admin
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
 
   const m = useMutation({
@@ -393,53 +358,70 @@ function CreateAgentModal({
       setError(e?.response?.data?.error || 'Failed to create user'),
   });
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    m.mutate({
+      email: email.trim(),
+      password,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      role: 'admin',
+    });
+  };
+
   return (
-    <Modal title='New user' open={true} onClose={onClose}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          m.mutate({
-            email: email.trim(),
-            password,
-            first_name: firstName.trim(),
-            last_name: lastName.trim(),
-            role,
-          });
-        }}
-        className='space-y-3'
-      >
+    <Modal title='New Admin' open={true} onClose={onClose}>
+      <form onSubmit={handleSubmit} className='space-y-3'>
         <div className='grid grid-cols-2 gap-3'>
           <Input
-            label='First name'
+            label='First name *'
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             required
             autoFocus
           />
           <Input
-            label='Last name'
+            label='Last name *'
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             required
           />
         </div>
+
         <Input
-          label='Email'
+          label='Email *'
           type='email'
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
         />
-        <Input
+
+        <PasswordInput
           label='Password (min 8 chars)'
-          type='password'
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={setPassword}
           required
           minLength={8}
         />
 
-        {/* Role is fixed to Admin — no dropdown shown */}
+        <PasswordInput
+          label='Confirm password'
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          required
+        />
+
+        <PasswordMatchHint password={password} confirm={confirmPassword} />
+
         <div className='space-y-1'>
           <label className='block text-xs text-gray-500'>Role</label>
           <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500 capitalize'>
@@ -448,6 +430,7 @@ function CreateAgentModal({
         </div>
 
         {error && <p className='text-xs text-red-500'>{error}</p>}
+
         <div className='flex justify-end gap-2 pt-2'>
           <Button type='button' variant='secondary' onClick={onClose}>
             Cancel
@@ -455,15 +438,19 @@ function CreateAgentModal({
           <Button
             type='submit'
             loading={m.isPending}
+            disabled={!firstName.trim() || !lastName.trim() || !email.trim() || !password || !confirmPassword || password !== confirmPassword}
             icon={<UserPlus className='w-3.5 h-3.5' />}
           >
-            Create user
+            Create Admin
           </Button>
         </div>
       </form>
     </Modal>
   );
 }
+
+// ─── Edit Other Admin Modal ────────────────────────────────────────────────────
+
 function EditAgentModal({
   target,
   onClose,
@@ -476,30 +463,52 @@ function EditAgentModal({
   const [firstName, setFirstName] = useState(target.first_name || '');
   const [lastName, setLastName] = useState(target.last_name || '');
   const [isActive, setIsActive] = useState(!!target.is_active);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
 
+  const wantsPasswordReset = newPassword.length > 0;
+
   const m = useMutation({
-    mutationFn: () =>
-      updateAgent(target.id, {
-        first_name: firstName,
-        last_name: lastName,
+    mutationFn: () => {
+      const payload: any = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         is_active: isActive,
-      }),
+      };
+      if (wantsPasswordReset) {
+        payload.password = newPassword;
+      }
+      return updateAgent(target.id, payload);
+    },
     onSuccess: () => onSaved(),
     onError: (e: any) =>
       setError(e?.response?.data?.error || 'Failed to update user'),
   });
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (wantsPasswordReset) {
+      if (newPassword.length < 8) {
+        setError('Password must be at least 8 characters.');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError('Passwords do not match.');
+        return;
+      }
+    }
+    m.mutate();
+  };
+
   return (
-    <Modal title={`Edit ${target.first_name} ${target.last_name}`} open={true} onClose={onClose}>
-      <form
-        className='space-y-4'
-        onSubmit={(e) => {
-          e.preventDefault();
-          setError('');
-          m.mutate();
-        }}
-      >
+    <Modal
+      title={`Edit ${target.first_name} ${target.last_name}`}
+      open={true}
+      onClose={onClose}
+    >
+      <form className='space-y-4' onSubmit={handleSubmit}>
         <div className='grid grid-cols-2 gap-3'>
           <Input
             label='First name *'
@@ -514,18 +523,21 @@ function EditAgentModal({
             required
           />
         </div>
+
         <div className='space-y-1'>
           <label className='block text-xs text-gray-500'>Email</label>
           <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500'>
             {target.email}
           </div>
         </div>
+
         <div className='space-y-1'>
           <label className='block text-xs text-gray-500'>Role</label>
           <div className='px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500 capitalize'>
             {target.role}
           </div>
         </div>
+
         <label className='flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition'>
           <input
             type='checkbox'
@@ -537,7 +549,32 @@ function EditAgentModal({
             Active — user can sign in and be assigned to campaigns
           </span>
         </label>
+
+        <div className='space-y-3 pt-1 border-t border-gray-100'>
+          <p className='text-xs font-medium text-gray-500 pt-2'>
+            Reset password{' '}
+            <span className='font-normal text-gray-400'>(leave blank to keep unchanged)</span>
+          </p>
+
+          <PasswordInput
+            label='New password (min 8 chars)'
+            value={newPassword}
+            onChange={setNewPassword}
+            placeholder='Enter new password'
+          />
+
+          <PasswordInput
+            label='Confirm new password'
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            placeholder='Re-enter new password'
+          />
+
+          <PasswordMatchHint password={newPassword} confirm={confirmPassword} />
+        </div>
+
         {error && <p className='text-xs text-red-500'>{error}</p>}
+
         <div className='flex justify-end gap-2 pt-2 border-t border-gray-100'>
           <Button variant='secondary' onClick={onClose} type='button'>
             Cancel
@@ -545,7 +582,11 @@ function EditAgentModal({
           <Button
             type='submit'
             loading={m.isPending}
-            disabled={!firstName.trim() || !lastName.trim()}
+            disabled={
+              !firstName.trim() ||
+              !lastName.trim() ||
+              (wantsPasswordReset && newPassword !== confirmPassword)
+            }
           >
             Save Changes
           </Button>
@@ -554,6 +595,162 @@ function EditAgentModal({
     </Modal>
   );
 }
+
+// ─── Edit Self Modal ───────────────────────────────────────────────────────────
+
+function EditSelfModal({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: AgentUser;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [firstName, setFirstName] = useState(target.first_name || '');
+  const [lastName, setLastName] = useState(target.last_name || '');
+  const [email, setEmail] = useState(target.email || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const wantsPasswordChange = newPassword.length > 0 || currentPassword.length > 0;
+
+  const m = useMutation({
+    mutationFn: () => {
+      const payload: any = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        email: email.trim(),
+      };
+      if (wantsPasswordChange) {
+        payload.current_password = currentPassword;
+        payload.password = newPassword;
+      }
+      return updateAgent(target.id, payload);
+    },
+    onSuccess: () => onSaved(),
+    onError: (e: any) =>
+      setError(e?.response?.data?.error || 'Failed to update profile'),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (wantsPasswordChange) {
+      if (!currentPassword) {
+        setError('Please enter your current password.');
+        return;
+      }
+      if (newPassword.length < 8) {
+        setError('New password must be at least 8 characters.');
+        return;
+      }
+      if (newPassword !== confirmNewPassword) {
+        setError('New passwords do not match.');
+        return;
+      }
+    }
+    m.mutate();
+  };
+
+  const initials = `${target.first_name?.[0] || ''}${target.last_name?.[0] || ''}`.toUpperCase();
+
+  return (
+    <Modal title='Edit my profile' open={true} onClose={onClose}>
+      <form onSubmit={handleSubmit} className='space-y-4'>
+
+        <div className='flex items-center gap-3 pb-3 border-b border-gray-100'>
+          <div className='w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white bg-indigo-500 flex-shrink-0'>
+            {initials}
+          </div>
+          <div>
+            <div className='text-sm font-semibold text-gray-800'>
+              {target.first_name} {target.last_name}
+            </div>
+            <div className='text-xs text-gray-400 capitalize'>{target.role}</div>
+          </div>
+        </div>
+
+        <div className='grid grid-cols-2 gap-3'>
+          <Input
+            label='First name *'
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            required
+          />
+          <Input
+            label='Last name *'
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            required
+          />
+        </div>
+
+        <Input
+          label='Email *'
+          type='email'
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+
+        <div className='space-y-3 pt-1 border-t border-gray-100'>
+          <p className='text-xs font-medium text-gray-500 pt-2'>
+            Change password{' '}
+            <span className='font-normal text-gray-400'>(leave blank to keep current)</span>
+          </p>
+
+          <PasswordInput
+            label='Current password'
+            value={currentPassword}
+            onChange={setCurrentPassword}
+            placeholder='Enter current password'
+          />
+
+          <PasswordInput
+            label='New password (min 8 chars)'
+            value={newPassword}
+            onChange={setNewPassword}
+            placeholder='Enter new password'
+          />
+
+          <PasswordInput
+            label='Confirm new password'
+            value={confirmNewPassword}
+            onChange={setConfirmNewPassword}
+            placeholder='Re-enter new password'
+          />
+
+          <PasswordMatchHint password={newPassword} confirm={confirmNewPassword} />
+        </div>
+
+        {error && <p className='text-xs text-red-500'>{error}</p>}
+
+        <div className='flex justify-end gap-2 pt-2 border-t border-gray-100'>
+          <Button variant='secondary' onClick={onClose} type='button'>
+            Cancel
+          </Button>
+          <Button
+            type='submit'
+            loading={m.isPending}
+            disabled={
+              !firstName.trim() ||
+              !lastName.trim() ||
+              !email.trim() ||
+              (wantsPasswordChange && newPassword !== confirmNewPassword)
+            }
+          >
+            Save Changes
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ─── Delete Other Admin Modal ──────────────────────────────────────────────────
 
 function DeleteAgentModal({
   target,
@@ -580,20 +777,16 @@ function DeleteAgentModal({
     >
       <div className='space-y-4'>
         <p className='text-sm text-gray-600'>
-          This removes <strong>{target.email}</strong> from your organization.
-          If the user has historical activity, the account is deactivated
-          instead of hard-deleted so audit history is preserved.
+          This removes <strong>{target.email}</strong> from your organization. If the user
+          has historical activity, the account is deactivated instead of hard-deleted so
+          audit history is preserved.
         </p>
         {error && <p className='text-xs text-red-500'>{error}</p>}
         <div className='flex justify-end gap-2'>
           <Button variant='secondary' onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant='danger'
-            loading={m.isPending}
-            onClick={() => m.mutate()}
-          >
+          <Button variant='danger' loading={m.isPending} onClick={() => m.mutate()}>
             Delete
           </Button>
         </div>

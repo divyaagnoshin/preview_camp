@@ -10,7 +10,7 @@ import {
   deleteAllContacts,
   updateContactList,
 } from '../api/client';
-import { Card, PagedTable, Button, Modal, Input, PageLoader, EmptyState } from '../components/ui';
+import { Card, PagedTable, Button, Modal, Input, PageLoader, EmptyState, ModalOverlay } from '../components/ui';
 import { Plus, Trash2, AlertCircle, X, Pencil, Eye, MoreVertical, XCircle } from 'lucide-react';
 
 // ── Dropdown component ────────────────────────────────────────────────────────
@@ -121,21 +121,16 @@ export default function ContactListsPage() {
   });
 
   const createMut = useMutation({
-  mutationFn: () => createContactList({ name }),
-  onSuccess: (newList: any) => {
-    // The API returns the newly created list object with its id
-    // We invalidate the cache so the list page is fresh when user comes back
-    qc.invalidateQueries({ queryKey: ['contact-lists'] });
-    setShowCreate(false);
-    setName('');
-
-    // KEY CONCEPT: navigate to attributes page, passing state so attributes
-    // page knows this is a "new list" flow and can show "Go to List" after save
-    navigate(`/contact-lists/${newList.id}/attributes`, {
-      state: { fromCreate: true }  // ← this is the secret envelope
-    });
-  },
-});
+    mutationFn: () => createContactList({ name }),
+    onSuccess: (newList: any) => {
+      qc.invalidateQueries({ queryKey: ['contact-lists'] });
+      setShowCreate(false);
+      setName('');
+      navigate(`/contact-lists/${newList.id}/attributes`, {
+        state: { fromCreate: true }
+      });
+    },
+  });
 
   const deleteListMut = useMutation({
     mutationFn: (lid: string) => deleteContactList(lid),
@@ -285,13 +280,13 @@ export default function ContactListsPage() {
       </Modal>
 
       {/* ── Edit / rename list modal ───────────────────────────────────────── */}
-      {editTarget && (
+      <ModalOverlay open={!!editTarget}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
               <div>
                 <h3 className='text-base font-semibold text-gray-900'>Edit Contact List</h3>
-                <p className='text-xs text-gray-500 mt-0.5'>Rename "{editTarget.name}"</p>
+                <p className='text-xs text-gray-500 mt-0.5'>Rename "{editTarget?.name}"</p>
               </div>
               <button
                 onClick={() => { setEditTarget(null); setEditName(''); editMut.reset(); }}
@@ -322,7 +317,7 @@ export default function ContactListsPage() {
               </Button>
               <Button
                 loading={editMut.isPending}
-                disabled={!editName.trim() || editName === editTarget.name}
+                disabled={!editName.trim() || editName === editTarget?.name}
                 onClick={() => editMut.mutate()}
               >
                 Save
@@ -330,10 +325,10 @@ export default function ContactListsPage() {
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
 
       {/* ── Delete all contacts confirm modal ─────────────────────────────── */}
-      {deleteContactsTarget && (
+      <ModalOverlay open={!!deleteContactsTarget}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
@@ -353,7 +348,7 @@ export default function ContactListsPage() {
                 <AlertCircle className='w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5' />
                 <div>
                   <p className='text-sm font-semibold text-amber-800'>
-                    Delete all {deleteContactsTarget.contact_count ?? ''} contacts from "{deleteContactsTarget.name}"?
+                    Delete all {deleteContactsTarget?.contact_count ?? ''} contacts from "{deleteContactsTarget?.name}"?
                   </p>
                   <p className='text-xs text-amber-700 mt-1 leading-relaxed'>
                     All contacts in this list will be permanently removed. The list itself will remain intact.
@@ -370,7 +365,7 @@ export default function ContactListsPage() {
               </Button>
               <Button
                 loading={deleteAllContactsMut.isPending}
-                onClick={() => deleteAllContactsMut.mutate(deleteContactsTarget.id)}
+                onClick={() => deleteAllContactsMut.mutate(deleteContactsTarget?.id)}
                 className='!bg-amber-600 hover:!bg-amber-700 !text-white'
               >
                 Delete All Contacts
@@ -378,10 +373,10 @@ export default function ContactListsPage() {
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
 
       {/* ── Delete list confirm modal ──────────────────────────────────────── */}
-      {deleteListTarget && (
+      <ModalOverlay open={!!deleteListTarget}>
         <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4'>
           <div className='bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden'>
             <div className='flex items-start justify-between px-5 py-4 border-b border-gray-100'>
@@ -401,10 +396,10 @@ export default function ContactListsPage() {
                 <AlertCircle className='w-5 h-5 text-red-500 flex-shrink-0 mt-0.5' />
                 <div>
                   <p className='text-sm font-semibold text-red-800'>
-                    Delete "{deleteListTarget.name}"?
+                    Delete "{deleteListTarget?.name}"?
                   </p>
                   <p className='text-xs text-red-600 mt-1 leading-relaxed'>
-                    This will permanently delete the list and all {deleteListTarget.contact_count ?? ''} contacts inside it.
+                    This will permanently delete the list and all {deleteListTarget?.contact_count ?? ''} contacts inside it.
                   </p>
                 </div>
               </div>
@@ -420,7 +415,7 @@ export default function ContactListsPage() {
               </Button>
               <Button
                 loading={deleteListMut.isPending}
-                onClick={() => deleteListMut.mutate(deleteListTarget.id)}
+                onClick={() => deleteListMut.mutate(deleteListTarget?.id)}
                 className='!bg-red-600 hover:!bg-red-700 !text-white'
               >
                 Delete List
@@ -428,7 +423,7 @@ export default function ContactListsPage() {
             </div>
           </div>
         </div>
-      )}
+      </ModalOverlay>
     </div>
   );
 }
