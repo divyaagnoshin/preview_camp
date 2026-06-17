@@ -2,6 +2,7 @@ import { Router } from 'express';
 import axios from 'axios';
 import { CookieJar } from 'tough-cookie';
 import { wrapper } from 'axios-cookiejar-support';
+import { pool } from '../db/pool';
 
 const router = Router();
 
@@ -150,6 +151,67 @@ router.post('/guest-token', async (req, res) => {
   } catch (error: any) {
     console.error('Error generating guest token:', error?.response?.data || error?.message);
     res.status(500).json({ success: false, message: error?.message });
+  }
+});
+
+// 3. Dashboard Folders API
+router.get('/folders', async (req, res) => {
+  try {
+    const foldersRes = await pool.query('SELECT * FROM dashboard_folders ORDER BY created_at ASC');
+    const assignmentsRes = await pool.query('SELECT * FROM dashboard_folder_assignments');
+    
+    const folders = foldersRes.rows.map(f => ({ id: f.id, name: f.name }));
+    const assignments: Record<string, string> = {};
+    assignmentsRes.rows.forEach(a => {
+      assignments[a.dashboard_id] = a.folder_id;
+    });
+
+    res.json({ success: true, folders, assignments });
+  } catch (error: any) {
+    console.error('Error fetching dashboard folders:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/folders', async (req, res) => {
+  try {
+    const { name } = req.body;
+    const result = await pool.query(
+      'INSERT INTO dashboard_folders (name) VALUES ($1) RETURNING id, name',
+      [name]
+    );
+    res.json({ success: true, folder: result.rows[0] });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.delete('/folders/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM dashboard_folders WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/folders/assign', async (req, res) => {
+  try {
+    const { dashboardId, folderId } = req.body;
+    if (folderId === 'uncategorized' || !folderId) {
+      await pool.query('DELETE FROM dashboard_folder_assignments WHERE dashboard_id = $1', [dashboardId]);
+    } else {
+      await pool.query(
+        `INSERT INTO dashboard_folder_assignments (dashboard_id, folder_id) 
+         VALUES ($1, $2) 
+         ON CONFLICT (dashboard_id) DO UPDATE SET folder_id = $2`,
+        [dashboardId, folderId]
+      );
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

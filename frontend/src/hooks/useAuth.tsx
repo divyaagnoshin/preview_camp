@@ -13,7 +13,7 @@ interface User {
 }
 interface AuthCtx {
   user: User | null; token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   isAdmin: boolean; isSupervisor: boolean; isSuperadmin: boolean;
   // Superadmin "act-as" helpers; null when no organization is selected.
@@ -34,8 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (stored) try { setUser(JSON.parse(stored)); } catch {}
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const data = await apiLogin(email, password);
+  const login = async (username: string, password: string) => {
+    const data = await apiLogin(username, password);
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(data.user));
     setToken(data.token);

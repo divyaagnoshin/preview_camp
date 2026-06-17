@@ -57,6 +57,12 @@ const TABS = [
     icon: FileText,
     pal: PALETTE[0],
   },
+  {
+    id: 'dashboard-folders',
+    label: 'Dashboard Folders',
+    icon: Settings,
+    pal: PALETTE[1],
+  },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -149,6 +155,12 @@ export default function ReportsPage() {
     pathTab && TABS.some((t) => t.id === pathTab) ? (pathTab as TabId) : null;
   const isOverview =
     activeTab === null && !location.pathname.includes('/settings');
+    
+  React.useEffect(() => {
+    if (isOverview) {
+      navigate('/reports/active-campaigns', { replace: true });
+    }
+  }, [isOverview, navigate]);
   const setActiveTab = (id: TabId | null) =>
     navigate(id ? `/reports/${id}` : '/reports');
 
@@ -232,7 +244,7 @@ export default function ReportsPage() {
           Reports
         </h1>
 
-        {activeTab !== 'historical-reports' && (
+        {activeTab !== 'historical-reports' && activeTab !== 'dashboard-folders' && (
           <button
             onClick={() => navigate('/reports/settings')}
             style={{
@@ -264,7 +276,7 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Tab nav ────────────────────────────────────────────────── */}
-      {activeTab !== 'historical-reports' && (
+      {activeTab !== 'historical-reports' && activeTab !== 'dashboard-folders' && (
         <div
           style={{
             display: 'flex',
@@ -275,15 +287,7 @@ export default function ReportsPage() {
             flexShrink: 0,
           }}
         >
-          <button
-            onClick={() => setActiveTab(null)}
-            style={tabBtn(isOverview, '#6366f1')}
-          >
-            <LayoutDashboard size={15} />
-            Dashboard
-          </button>
-
-          {TABS.filter(t => t.id !== 'historical-reports').map((t) => {
+          {TABS.filter(t => t.id !== 'historical-reports' && t.id !== 'dashboard-folders').map((t) => {
             const Icon = t.icon;
             const active = activeTab === t.id;
             return (
@@ -300,85 +304,13 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* ── OVERVIEW — flex-grow to fill remaining height ───────────── */}
-      {isOverview && (
-        <div
-          style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 0 }}
-        >
-          {/* KPI row */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 16,
-              marginBottom: 20,
-              width: '100%',
-              flexShrink: 0,
-            }}
-          >
-            <KpiCard
-              label='Active Campaigns'
-              value={activeCamps}
-              icon={BarChart2}
-              grad={PALETTE[0].grad}
-            />
-            <KpiCard
-              label='Live Agents'
-              value={liveAgents}
-              icon={Users}
-              grad={PALETTE[1].grad}
-            />
-          </div>
-
-          {/* Tables — grow to fill the rest of the page */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 16,
-              width: '100%',
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
-            {/* fontSize override cascades into all child text nodes */}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-                flex: 1,
-                fontSize: 16,
-              }}
-            >
-              <ActiveCampaignsReport
-                isMini
-                onExpand={() => setActiveTab('active-campaigns')}
-                pal={PALETTE[0]}
-              />
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-                flex: 1,
-                fontSize: 16,
-              }}
-            >
-              <StaffedAgentsReport
-                isMini
-                onExpand={() => setActiveTab('staffed-agents')}
-                pal={PALETTE[1]}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── OVERVIEW REMOVED ───────────── */}
 
       {/* ── Individual tabs ────────────────────────────────────────── */}
       {activeTab === 'active-campaigns' && <ActiveCampaignsReport />}
       {activeTab === 'staffed-agents' && <StaffedAgentsReport />}
       {activeTab === 'historical-reports' && <HistoricalReports />}
+      {activeTab === 'dashboard-folders' && <DashboardFolders />}
     </div>
   );
 }

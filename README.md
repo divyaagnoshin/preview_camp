@@ -51,7 +51,7 @@ npm run dev
 | Role  | Email                 | Password   |
 | ----- | --------------------- | ---------- |
 | Admin | admin@acme.com        | Password1! |
-| Agent | raj.patel@acme.com    | Password1! |
+| Admin | raj@123               | Password1! |
 | Agent | carla.mendes@acme.com | Password1! |
 
 ---

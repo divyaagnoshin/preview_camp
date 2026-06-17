@@ -55,8 +55,8 @@ api.interceptors.response.use(
 );
 
 // ── Auth ──────────────────────────────────────────────────
-export const login = (email: string, password: string) =>
-  api.post('/auth/login', { email, password }).then((r) => r.data);
+export const login = (username: string, password: string) =>
+  api.post('/auth/login', { email: username, password }).then((r) => r.data);
 
 // ── Organizations (superadmin) ────────────────────────────
 export interface Organization {
@@ -654,6 +654,18 @@ export const createGlobalAttribute = (body: {
 export const getSupersetDashboards = (): Promise<{ success: boolean, dashboards: any[] }> =>
   api.get('/analytics/dashboards').then((r) => r.data);
 
-export const getSupersetGuestToken = (dashboardId: string, rls: any[] = []): Promise<{ success: boolean, guestToken: string, uuid: string }> =>
-  api.post('/analytics/guest-token', { dashboardId, rls }).then((r) => r.data);
+export const getSupersetGuestToken = (dashboardId: string, rls?: any[]) =>
+  api.post('/analytics/guest-token', { dashboardId, rls }).then((res) => res.data);
 
+// Dashboard Folders API
+export const getDashboardFolders = (): Promise<{ success: boolean, folders: {id: string, name: string}[], assignments: Record<string, string> }> =>
+  api.get('/analytics/folders').then((res) => res.data);
+
+export const createDashboardFolder = (name: string): Promise<{ success: boolean, folder: {id: string, name: string} }> =>
+  api.post('/analytics/folders', { name }).then((res) => res.data);
+
+export const deleteDashboardFolder = (id: string): Promise<{ success: boolean }> =>
+  api.delete(`/analytics/folders/${id}`).then((res) => res.data);
+
+export const assignDashboardFolder = (dashboardId: string, folderId: string): Promise<{ success: boolean }> =>
+  api.post('/analytics/folders/assign', { dashboardId, folderId }).then((res) => res.data);

@@ -20,7 +20,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
       `SELECT u.*, o.name as org_name
        FROM users u
        JOIN organizations o ON o.id = u.org_id
-       WHERE u.email = $1 AND u.is_active = true`,
+       WHERE (u.email = $1 OR u.username = $1) AND u.is_active = true`,
       [email.toLowerCase()]
     );
 
@@ -112,7 +112,7 @@ router.post('/verify-email', async (req: Request, res: Response, next: NextFunct
     if (!email) throw new AppError(400, 'email is required');
 
     const { rows } = await pool.query(
-      `SELECT id, role, is_active FROM users WHERE email = $1`,
+      `SELECT id, role, is_active FROM users WHERE email = $1 OR username = $1`,
       [email.toLowerCase().trim()]
     );
 
@@ -150,7 +150,7 @@ router.post('/reset-password-inline', async (req: Request, res: Response, next: 
 
     // Re-verify the account is still active (guard against race conditions)
     const { rows } = await pool.query(
-      `SELECT id, role, is_active FROM users WHERE email = $1`,
+      `SELECT id, role, is_active FROM users WHERE email = $1 OR username = $1`,
       [email.toLowerCase().trim()]
     );
 

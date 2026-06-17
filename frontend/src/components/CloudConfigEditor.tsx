@@ -67,6 +67,7 @@ export function CloudConfigEditor({
   const [mapping, setMapping] = useState<Record<string, string[]>>({});
   const [draggedAlias, setDraggedAlias] = useState<{ fieldKey: string; index: number } | null>(null);
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
+  const [expandedFields, setExpandedFields] = useState<Record<string, boolean>>({});
   const mappingInitializedRef = React.useRef(false);
 
   useEffect(() => {
@@ -841,18 +842,39 @@ export function CloudConfigEditor({
             )}
           </div>
 
-          <div className='bg-gray-50 rounded-lg p-4 border border-gray-100 max-h-96 overflow-y-auto space-y-4'>
+          <div className='bg-gray-50 rounded-lg border border-gray-100 max-h-96 overflow-y-auto'>
+            {fields.length > 0 && (
+              <div className='flex items-center gap-3 px-4 py-3 border-b border-gray-200 sticky top-0 bg-gray-50 z-10'>
+                <div className='w-2/5 text-xs font-bold text-gray-500 uppercase tracking-wider'>
+                  {contactList?.name ? `${contactList.name} Columns` : 'Contact List Columns'}
+                </div>
+                <div className='w-3/5 text-xs font-bold text-gray-500 uppercase tracking-wider pl-1'>
+                  CSV Columns
+                </div>
+              </div>
+            )}
+            <div className='p-4 space-y-4'>
             {fields.map((f: any) => {
               const aliases = Array.isArray(mapping[f.field_key])
                 ? (mapping[f.field_key] as any as string[])
                 : [];
               const displayAliases = aliases.length > 0 ? aliases : [''];
+              const isExpanded = expandedFields[f.field_key];
+              const isMapped = displayAliases.length > 1 || displayAliases[0] !== '';
               return (
-                <div key={f.field_key} className='flex items-start gap-3'>
+                <div key={f.field_key} className='flex items-start gap-3 border-b border-gray-100 last:border-0 pb-3 mb-1'>
                   <div className='w-2/5 flex items-center justify-between pt-2'>
-                    <span className='text-sm font-medium text-gray-700'>
-                      {f.field_label}
-                    </span>
+                    <div 
+                      className='flex items-center gap-1.5 cursor-pointer hover:text-indigo-600 transition-colors'
+                      onClick={() => {
+                        setExpandedFields(prev => ({ ...prev, [f.field_key]: !prev[f.field_key] }));
+                      }}
+                    >
+                      <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                      <span className='text-sm font-medium text-gray-700'>
+                        {f.field_label}
+                      </span>
+                    </div>
                     {f.is_required && (
                       <span className='text-[10px] uppercase tracking-wider font-semibold text-red-500 bg-red-50 px-1.5 py-0.5 rounded'>
                         Required
@@ -860,7 +882,26 @@ export function CloudConfigEditor({
                     )}
                   </div>
                   <div className='w-3/5 space-y-2'>
-                    {displayAliases.map((alias, i) => (
+                    {!isExpanded ? (
+                      <div 
+                        className="pt-2 text-xs text-gray-500 cursor-pointer hover:text-indigo-600 flex items-center gap-1 transition-colors"
+                        onClick={() => setExpandedFields(prev => ({ ...prev, [f.field_key]: true }))}
+                      >
+                        {isMapped ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                            {displayAliases.length} column{displayAliases.length > 1 ? 's' : ''} mapped
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-gray-300"></span>
+                            Not mapped (click to map)
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {displayAliases.map((alias, i) => (
                       <div 
                         key={i} 
                         className={`flex items-center gap-2 transition-all ${draggedAlias?.fieldKey === f.field_key && draggedAlias?.index === i ? 'opacity-50 scale-95' : ''}`}
@@ -959,6 +1000,7 @@ export function CloudConfigEditor({
                                         const currentAliases = arr.length > 0 ? arr : [''];
                                         return { ...prev, [f.field_key]: [...currentAliases, ''] as any };
                                       });
+                                      setExpandedFields(prev => ({ ...prev, [f.field_key]: true }));
                                       setOpenDropdownKey(null);
                                     }}
                                   >
@@ -1000,15 +1042,27 @@ export function CloudConfigEditor({
                         </button>
                       </div>
                     ))}
-                  </div>
-                </div>
-              );
-            })}
+                    
+                    <button
+                      type="button"
+                      onClick={() => setExpandedFields(prev => ({ ...prev, [f.field_key]: false }))}
+                      className="text-[11px] text-gray-500 hover:text-gray-700 font-medium flex items-center gap-1 pl-7 pt-0.5 transition-colors"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                      Collapse
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
             {fields.length === 0 && (
               <div className='text-sm text-gray-500 text-center py-4'>
                 Loading fields...
               </div>
             )}
+            </div>
           </div>
           {duplicateAliases.length > 0 && step === 2 && (
             <div className='p-3 rounded-lg text-xs bg-red-50 text-red-700'>

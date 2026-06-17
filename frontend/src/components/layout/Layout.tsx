@@ -130,37 +130,12 @@ const navItems: NavItem[] = [
     roles: ['admin', 'supervisor', 'superadmin'],
     children: [
       {
-        to: '/reports-dashboard-sub',
-        icon: LayoutDashboard,
-        label: 'Dashboard',
-        roles: ['admin', 'supervisor', 'superadmin'],
-        children: [
-          {
-            to: '/reports',
-            icon: LayoutDashboard,
-            label: 'Overview',
-            roles: ['admin', 'supervisor', 'superadmin'],
-          },
-          {
-            to: '/reports/active-campaigns',
-            icon: BarChart2,
-            label: 'Active Campaigns',
-            roles: ['admin', 'supervisor', 'superadmin'],
-          },
-          {
-            to: '/reports/staffed-agents',
-            icon: Users,
-            label: 'Staffed Agents (Live)',
-            roles: ['admin', 'supervisor', 'superadmin'],
-          },
-        ],
-      },
-      {
         to: '/reports/historical-reports',
         icon: FileText,
         label: 'Historical Reports',
         roles: ['admin', 'supervisor', 'superadmin'],
       },
+
     ],
   },
   { to: '/system-configuration', icon: Cog, label: 'System Configuration', roles: ['admin', 'supervisor', 'superadmin'] },
@@ -173,7 +148,6 @@ const GROUP_ONLY = new Set([
   '/reports-group',
   '/dashboard-group',
   '/contact-lists-group',
-  '/reports-dashboard-sub', // ✅ FIX: also a sentinel
 ]);
 
 export default function Layout({ children }: { children: ReactNode }) {

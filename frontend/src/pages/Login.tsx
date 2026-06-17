@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Zap, Mail, Lock, ArrowRight, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
+import { Zap, Mail, Lock, ArrowRight, Eye, EyeOff, CheckCircle, AlertCircle, User } from 'lucide-react';
 
 /* ─────────────────────────────────────────
    Animated SVG: Agent → System → Customers
@@ -504,7 +504,7 @@ function ForgotPasswordView({ onBack }: { onBack: () => void }) {
 export default function LoginPage() {
   const { login }                       = useAuth();
   const navigate                        = useNavigate();
-  const [email, setEmail]               = useState('');
+  const [username, setUsername]         = useState('');
   const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError]               = useState('');
@@ -526,7 +526,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
+      await login(username, password);
       const stored = localStorage.getItem('user');
       const role   = stored ? (JSON.parse(stored).role as string) : '';
       navigate(role === 'superadmin' ? '/organizations' : '/dashboard');
@@ -668,18 +668,18 @@ export default function LoginPage() {
                   </div>
 
                   <form onSubmit={handleSubmit} className='space-y-5'>
-                    {/* Email */}
+                    {/* Username */}
                     <div>
                       <label className='block text-[11px] font-bold text-[#5C4030] mb-2 uppercase tracking-wide'>
-                        Email address
+                        Username
                       </label>
                       <div className='relative'>
-                        <Mail className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4956A]'/>
+                        <User className='absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4956A]'/>
                         <input
-                          type='email' value={email}
-                          onChange={e => setEmail(e.target.value)}
+                          type='text' value={username}
+                          onChange={e => setUsername(e.target.value)}
                           required autoFocus
-                          placeholder='you@company.com'
+                          placeholder='Username or Email'
                           style={{ ...inputBase, paddingRight: '16px' }}
                           onFocus={onFocus} onBlur={onBlur}
                         />
