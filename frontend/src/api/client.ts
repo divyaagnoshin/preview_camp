@@ -537,6 +537,7 @@ export interface AgentUser {
   email: string;
   first_name: string;
   last_name: string;
+  username: string;
   role: string;
   is_active: boolean;
   created_at: string;
@@ -565,11 +566,20 @@ export const createAgent = (body: {
   password: string;
   first_name: string;
   last_name: string;
+  username: string;           // ← add this
   role?: 'agent' | 'supervisor' | 'admin';
 }): Promise<AgentUser> => api.post('/agents', body).then((r) => r.data);
 export const updateAgent = (
   id: string,
-  body: { is_active?: boolean; first_name?: string; last_name?: string },
+  body: {
+    is_active?: boolean;
+    first_name?: string;
+    last_name?: string;
+    username?: string;         // ← add this
+    email?: string;
+    password?: string;
+    current_password?: string;
+  },
 ): Promise<AgentUser> => api.patch(`/agents/${id}`, body).then((r) => r.data);
 export const deleteAgent = (
   id: string,
@@ -658,10 +668,10 @@ export const getSupersetGuestToken = (dashboardId: string, rls?: any[]) =>
   api.post('/analytics/guest-token', { dashboardId, rls }).then((res) => res.data);
 
 // Dashboard Folders API
-export const getDashboardFolders = (): Promise<{ success: boolean, folders: {id: string, name: string}[], assignments: Record<string, string> }> =>
+export const getDashboardFolders = (): Promise<{ success: boolean, folders: { id: string, name: string }[], assignments: Record<string, string> }> =>
   api.get('/analytics/folders').then((res) => res.data);
 
-export const createDashboardFolder = (name: string): Promise<{ success: boolean, folder: {id: string, name: string} }> =>
+export const createDashboardFolder = (name: string): Promise<{ success: boolean, folder: { id: string, name: string } }> =>
   api.post('/analytics/folders', { name }).then((res) => res.data);
 
 export const deleteDashboardFolder = (id: string): Promise<{ success: boolean }> =>

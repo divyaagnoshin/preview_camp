@@ -16,18 +16,15 @@
  *    password_hash text                password     varchar(50)  ← DES-CBC encrypted Base64
  *    role        text                  role_id      integer      ← 2=supervisor, 4=agent
  *    is_active   boolean               status       varchar(10)  ← 'Active'|'Inactive'
- *    sip_extension text                extension_id integer      ← SIP extension (int)
- *    sip_password  text                reporting_to integer      ← integer FK (agnocon users)
- *    reporting_to  text  ←─ stores ANY reporting_to (UUID admin or agnocon userid)
+ *                                      extension_id integer      ← SIP extension (int)
+ *                                      reporting_to integer      ← integer FK (agnocon users)
  *                                      username     varchar(50)  ← login username
  *                                      mobile_no    bigint       ← mobile number
  *
  * WHO LIVES WHERE
  *   • Admin accounts     → preview_campaign.users  (role='admin')
  *   • Agents/Supervisors → agnoconnew.user_details ONLY
- *                          preview_campaign.users is NOT touched on create/update —
- *                          it only stores sip_password + reporting_to for agents
- *                          that were previously mirrored, and is read for GET merges.
+ *                          preview_campaign.users is NOT touched for agents.
  *
  * CREATE FLOW  (POST /v1/users)
  *   1. Validate inputs (all required fields enforced)
@@ -174,42 +171,7 @@ router.get(
         ORDER BY first_name, last_name
       `);
 
-      // ── Step 2: fetch sip_password + reporting_to from preview_campaign mirror ──
-      const emails = agnoRows.map((r: any) => r.email.toLowerCase());
-      let pvMap: Record<
-        string,
-        { sip_password: string | null; reporting_to: string | null }
-      > = {};
-
-      if (emails.length > 0) {
-        const { rows: pvRows } = await pool.query(
-          `
-          SELECT LOWER(email) AS email, sip_password, reporting_to
-          FROM users
-          WHERE org_id = $1
-            AND LOWER(email) = ANY($2::text[])
-        `,
-          [orgId, emails],
-        );
-        pvRows.forEach((r: any) => {
-          pvMap[r.email] = {
-            sip_password: r.sip_password,
-            reporting_to: r.reporting_to,
-          };
-        });
-      }
-
-      // ── Step 3: merge sip_password / reporting_to from preview_campaign ──
-      const rows = agnoRows.map((r: any) => {
-        const pv = pvMap[r.email.toLowerCase()];
-        return {
-          ...r,
-          sip_password: pv?.sip_password ?? null,
-          reporting_to: pv?.reporting_to ?? r.reporting_to ?? null,
-        };
-      });
-
-      res.json({ data: rows });
+      res.json({ data: agnoRows });
     } catch (err) {
       next(err);
     }
@@ -352,24 +314,7 @@ router.get(
 
       if (!agnoRows[0]) throw new AppError(404, 'User not found');
 
-      // Merge sip_password from preview_campaign mirror row (read-only)
-      const { rows: pvRows } = await pool.query(
-        `
-        SELECT sip_password, reporting_to
-        FROM users
-        WHERE org_id = $1 AND LOWER(email) = $2
-      `,
-        [orgId, agnoRows[0].email.toLowerCase()],
-      );
-
-      const pv = pvRows[0];
-      const row = {
-        ...agnoRows[0],
-        sip_password: pv?.sip_password ?? null,
-        reporting_to: pv?.reporting_to ?? agnoRows[0].reporting_to ?? null,
-      };
-
-      res.json(row);
+      res.json(agnoRows[0]);
     } catch (err) {
       next(err);
     }
@@ -390,7 +335,6 @@ router.get(
 //
 // Optional:
 //   reporting_to  — UUID (admin) or numeric string (agnocon user)
-//   sip_password  — stored in preview_campaign.users mirror if present
 // ─────────────────────────────────────────────────────────────
 router.post(
   '/',
@@ -408,7 +352,6 @@ router.post(
         username,
         reporting_to,
         sip_extension,
-        sip_password,
       } = req.body || {};
 
       // ── Validate required fields ───────────────────────────
@@ -541,7 +484,6 @@ router.post(
       res.status(201).json({
         ...agnoRows[0],
         reporting_to: rtText,
-        sip_password: sip_password || null,
       });
     } catch (err) {
       next(err);
@@ -575,7 +517,6 @@ router.patch(
         username,
         reporting_to,
         sip_extension,
-        sip_password,
       } = req.body || {};
 
       // ── Verify user exists ─────────────────────────────────
@@ -730,8 +671,6 @@ router.patch(
         result.reporting_to = reporting_to
           ? String(reporting_to).trim()
           : null;
-      if (sip_password !== undefined)
-        result.sip_password = sip_password || null;
 
       res.json(result);
     } catch (err) {

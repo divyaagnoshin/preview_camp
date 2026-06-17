@@ -1732,8 +1732,8 @@ agentsRouter.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { rows } = await pool.query(
-        `SELECT id, email, first_name, last_name, role, is_active, created_at
-         FROM users WHERE org_id=$1 ORDER BY role, first_name`,
+        `SELECT id, email, username, first_name, last_name, role, is_active, created_at
+   FROM users WHERE org_id=$1 ORDER BY role, first_name`,
         [req.user!.orgId],
       );
       res.json({ data: rows });
@@ -1748,12 +1748,9 @@ agentsRouter.post(
   requireRole('admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { email, password, first_name, last_name, role } = req.body || {};
-      if (!email || !password || !first_name || !last_name)
-        throw new AppError(
-          400,
-          'email, password, first_name, last_name required',
-        );
+      const { email, password, first_name, last_name, role, username } = req.body || {};
+      if (!email || !password || !first_name || !last_name || !username)
+        throw new AppError(400, 'email, password, first_name, last_name, username required');
       if (typeof password !== 'string' || password.length < 8)
         throw new AppError(400, 'password must be at least 8 characters');
       const finalRole =
@@ -1761,18 +1758,18 @@ agentsRouter.post(
           ? role
           : 'agent';
       const hash = await bcrypt.hash(password, 10);
+      const { rows: dupUser } = await pool.query(
+        `SELECT id FROM users WHERE LOWER(username) = $1`,
+        [username.trim().toLowerCase()]
+      );
+      if (dupUser.length > 0) throw new AppError(409, 'Username already taken');
+
       const { rows } = await pool.query(
-        `INSERT INTO users (org_id, email, password_hash, first_name, last_name, role)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, email, first_name, last_name, role, is_active, created_at`,
-        [
-          req.user!.orgId,
-          String(email).toLowerCase().trim(),
-          hash,
-          first_name,
-          last_name,
-          finalRole,
-        ],
+        `INSERT INTO users (org_id, email, password_hash, first_name, last_name, role, username)
+   VALUES ($1, $2, $3, $4, $5, $6, $7)
+   RETURNING id, email, username, first_name, last_name, role, is_active, created_at`,
+        [req.user!.orgId, String(email).toLowerCase().trim(), hash,
+          first_name, last_name, finalRole, username.trim()],
       );
       res.status(201).json(rows[0]);
     } catch (err) {
@@ -1786,8 +1783,8 @@ agentsRouter.patch(
   requireRole('admin'),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { is_active, first_name, last_name, email, password, current_password } = req.body || {};
-      
+      const { is_active, first_name, last_name, email, password, current_password, username } = req.body || {};
+
       const { rows: targetUser } = await pool.query(
         `SELECT id, password_hash, email FROM users WHERE id = $1 AND org_id = $2`,
         [req.params.id, req.user!.orgId]
@@ -1800,6 +1797,14 @@ agentsRouter.patch(
           const match = await bcrypt.compare(current_password, targetUser[0].password_hash);
           if (!match) throw new AppError(400, 'Current password is incorrect');
         }
+      }
+
+      if (username && username.trim() !== targetUser[0].username) {
+        const { rows: dupU } = await pool.query(
+          `SELECT id FROM users WHERE LOWER(username) = $1 AND id <> $2`,
+          [username.trim().toLowerCase(), req.params.id]
+        );
+        if (dupU.length > 0) throw new AppError(409, 'Username already taken');
       }
 
       if (email && email.trim() !== targetUser[0].email) {
@@ -1817,24 +1822,27 @@ agentsRouter.patch(
 
       const { rows } = await pool.query(
         `UPDATE users SET
-         is_active = COALESCE($1, is_active),
-         first_name = COALESCE($2, first_name),
-         last_name = COALESCE($3, last_name),
-         email = COALESCE($4, email),
-         password_hash = COALESCE($5, password_hash),
-         updated_at = NOW()
-       WHERE id = $6 AND org_id = $7
-       RETURNING id, email, first_name, last_name, role, is_active, created_at`,
+     is_active       = COALESCE($1, is_active),
+     first_name      = COALESCE($2, first_name),
+     last_name       = COALESCE($3, last_name),
+     email           = COALESCE($4, email),
+     password_hash   = COALESCE($5, password_hash),
+     username        = COALESCE($6, username),
+     updated_at      = NOW()
+   WHERE id = $7 AND org_id = $8
+   RETURNING id, email, username, first_name, last_name, role, is_active, created_at`,
         [
           is_active === undefined ? null : is_active,
           first_name || null,
           last_name || null,
           email ? email.trim() : null,
           hash,
+          username ? username.trim() : null,
           req.params.id,
           req.user!.orgId,
         ],
       );
+
       if (!rows[0]) throw new AppError(404, 'Agent not found');
       res.json(rows[0]);
     } catch (err) {

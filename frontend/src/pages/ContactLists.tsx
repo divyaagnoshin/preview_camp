@@ -1,6 +1,6 @@
 // ContactListsPage.tsx
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -10,7 +10,7 @@ import {
   deleteAllContacts,
   updateContactList,
 } from '../api/client';
-import { Card, PagedTable, Button, Modal, Input, PageLoader, EmptyState, ModalOverlay } from '../components/ui';
+import { Card, PagedTable, Button, Modal, Input, PageLoader, EmptyState, ModalOverlay, SearchInput, FilterPill, ClearFiltersButton } from '../components/ui';
 import { Plus, Trash2, AlertCircle, X, Pencil, Eye, MoreVertical, XCircle } from 'lucide-react';
 
 // ── Dropdown component ────────────────────────────────────────────────────────
@@ -114,6 +114,7 @@ export default function ContactListsPage() {
   const [deleteContactsTarget, setDeleteContactsTarget] = useState<any | null>(null);
   const [editTarget, setEditTarget] = useState<any | null>(null);
   const [editName, setEditName] = useState('');
+  const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['contact-lists'],
@@ -159,6 +160,15 @@ export default function ContactListsPage() {
 
   const lists: any[] = data?.data || [];
 
+  const filteredLists = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return lists;
+    return lists.filter((list: any) => list.name?.toLowerCase().includes(q));
+  }, [lists, search]);
+
+  const hasActiveFilters = !!search;
+  const clearAll = () => setSearch('');
+
   if (isLoading) return <PageLoader />;
 
   return (
@@ -170,16 +180,35 @@ export default function ContactListsPage() {
           <h1 className='text-2xl font-bold page-heading' style={{ fontFamily: 'Sora, sans-serif' }}>
             Contact Lists
           </h1>
-          <p className='text-sm text-[#7A5C44] mt-0.5'>{lists.length} lists total</p>
+          <p className='text-sm text-[#7A5C44] mt-0.5'>
+            {hasActiveFilters ? `${filteredLists.length} of ${lists.length} lists` : `${lists.length} lists total`}
+          </p>
         </div>
         <Button icon={<Plus className='w-4 h-4' />} onClick={() => setShowCreate(true)}>
           New List
         </Button>
       </div>
 
+      <div className='space-y-3'>
+        <div className='filter-bar'>
+          <SearchInput value={search} onChange={setSearch} placeholder='Search lists by name…' />
+          <div className='flex items-center gap-2 flex-wrap'>
+            {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className='flex items-center gap-2 flex-wrap'>
+            <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
+            {search && <FilterPill label={`Search: "${search}"`} onRemove={() => setSearch('')} />}
+          </div>
+        )}
+      </div>
+
       {/* ── PagedTable ─────────────────────────────────────────────────────────── */}
       <Card>
-        {lists.length === 0 ? (
+        {hasActiveFilters && filteredLists.length === 0 ? (
+          <EmptyState title='No lists match your search' description='Try adjusting or clearing the filters above.' />
+        ) : lists.length === 0 ? (
           <EmptyState
             title='No contact lists yet'
             description='Create a contact list to start managing contacts.'
@@ -237,7 +266,7 @@ export default function ContactListsPage() {
                 ),
               },
             ]}
-            rows={lists}
+            rows={filteredLists}
             keyFn={(r: any) => r.id}
             onRowClick={(r: any) => navigate(`/contact-lists/${r.id}`)}
           />

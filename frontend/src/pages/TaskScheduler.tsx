@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -15,7 +15,7 @@ import {
   type CloudImportConfig,
   type CloudImportRunHistory
 } from '../api/client';
-import { Card, Button, Table, Badge, Modal } from '../components/ui';
+import { Card, Button, Table, Badge, Modal, SearchInput, FilterPill, ClearFiltersButton, EmptyState } from '../components/ui';
 import { CloudConfigEditor } from '../components/CloudConfigEditor';
 import { Plus, Pencil, Trash2, X, Power, PowerOff, Play, BarChart2 } from 'lucide-react';
 
@@ -55,6 +55,7 @@ export default function TaskScheduler() {
   const [editingCfg, setEditingCfg] = useState<CloudImportConfig | null>(null);
   const [statsCfg, setStatsCfg] = useState<CloudImportConfig | null>(null);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   // Fetch configs
   const { data: configs = [], isLoading } = useQuery({
@@ -112,7 +113,16 @@ export default function TaskScheduler() {
     },
   });
 
+  const filteredConfigs = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return configs;
+    return configs.filter((c: CloudImportConfig) => 
+      c.name?.toLowerCase().includes(q) || c.provider?.toLowerCase().includes(q)
+    );
+  }, [configs, search]);
 
+  const hasActiveFilters = !!search;
+  const clearAll = () => setSearch('');
 
   const cols = [
     {
@@ -237,12 +247,27 @@ export default function TaskScheduler() {
             Task Scheduler
           </h1>
           <p className="text-sm text-[#7A5C44] mt-0.5">
-            Configure automated cloud imports across multiple contact lists.
+            {hasActiveFilters ? `${filteredConfigs.length} of ${configs.length} tasks` : 'Configure automated cloud imports across multiple contact lists.'}
           </p>
         </div>
         <Button onClick={() => openCfgEditor()} icon={<Plus className="w-4 h-4" />}>
           New Task
         </Button>
+      </div>
+
+      <div className='space-y-3'>
+        <div className='filter-bar'>
+          <SearchInput value={search} onChange={setSearch} placeholder='Search tasks by name or provider…' />
+          <div className='flex items-center gap-2 flex-wrap'>
+            {hasActiveFilters && <ClearFiltersButton onClick={clearAll} />}
+          </div>
+        </div>
+        {hasActiveFilters && (
+          <div className='flex items-center gap-2 flex-wrap'>
+            <span className='text-xs text-gray-400 font-medium'>Active filters:</span>
+            {search && <FilterPill label={`Search: "${search}"`} onRemove={() => setSearch('')} />}
+          </div>
+        )}
       </div>
 
       {cloudStatus && (
@@ -253,12 +278,16 @@ export default function TaskScheduler() {
       )}
 
       <Card>
-        <Table<CloudImportConfig>
-          keyFn={(r) => r.id}
-          rows={configs}
-          cols={cols}
-          emptyMessage="No tasks configured. Create one to automatically sync contacts from S3 or FTP."
-        />
+        {hasActiveFilters && filteredConfigs.length === 0 ? (
+          <EmptyState title='No tasks match your search' description='Try adjusting or clearing the filters above.' />
+        ) : (
+          <Table<CloudImportConfig>
+            keyFn={(r) => r.id}
+            rows={filteredConfigs}
+            cols={cols}
+            emptyMessage="No tasks configured. Create one to automatically sync contacts from S3 or FTP."
+          />
+        )}
       </Card>
 
       {/* Editor Modal */}

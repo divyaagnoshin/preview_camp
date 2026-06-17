@@ -21,7 +21,6 @@ export interface OrgUser {
   role: 'agent' | 'supervisor';
   reporting_to: string | null;
   sip_extension: string | null;
-  sip_password: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -83,7 +82,6 @@ type EditFormState = {
   is_active?: boolean;
   reporting_to?: string;
   sip_extension?: string;
-  sip_password?: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -385,7 +383,6 @@ export default function UsersPage() {
       is_active: true,            // only active users are listed
       reporting_to: u.reporting_to ?? '',
       sip_extension: u.sip_extension ?? '',
-      sip_password: u.sip_password ?? '',
     });
   };
 
@@ -405,7 +402,6 @@ export default function UsersPage() {
       role: form.role,
       reporting_to: form.reporting_to || null,
       sip_extension: form.sip_extension || null,
-      sip_password: null,
     });
   };
 
@@ -434,7 +430,6 @@ export default function UsersPage() {
     if (editForm.password) body.password = editForm.password;
     body.reporting_to = editForm.reporting_to || null;
     if (editForm.sip_extension !== undefined) body.sip_extension = editForm.sip_extension || null;
-    if (editForm.sip_password) body.sip_password = editForm.sip_password;
 
     updateMut.mutate({ id: editUser!.id, body });
   };
@@ -873,13 +868,6 @@ export default function UsersPage() {
                     required
                   />
                   <FieldError msg={editErrs.sip_extension ?? null} />
-                  <Input
-                    label="SIP Password"
-                    type="password"
-                    value={editForm.sip_password ?? ''}
-                    onChange={(e) => setEditForm((f) => ({ ...f, sip_password: e.target.value }))}
-                    placeholder="Leave blank to keep current"
-                  />
                 </div>
               </div>
 
