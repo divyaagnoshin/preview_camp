@@ -32,6 +32,7 @@ import SystemConfigurationPage from './pages/SystemConfiguration';
 import OrganizationsPage from './pages/Organizations';
 import OrganizationDetailPage from './pages/OrganizationDetail';
 import TaskScheduler from './pages/TaskScheduler';
+import RecordingsPage from './pages/Recordings';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30000 } },
@@ -380,6 +381,16 @@ function AppRoutes() {
           <PrivateRoute roles={['superadmin']}>
             <Layout>
               <OrganizationDetailPage />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path='/recordings'
+        element={
+          <PrivateRoute roles={['admin', 'supervisor', 'superadmin']}>
+            <Layout>
+              <RecordingsPage />
             </Layout>
           </PrivateRoute>
         }

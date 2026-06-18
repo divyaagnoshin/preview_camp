@@ -679,3 +679,26 @@ export const deleteDashboardFolder = (id: string): Promise<{ success: boolean }>
 
 export const assignDashboardFolder = (dashboardId: string, folderId: string): Promise<{ success: boolean }> =>
   api.post('/analytics/folders/assign', { dashboardId, folderId }).then((res) => res.data);
+
+// ── Recordings ────────────────────────────────────────────
+export const getRecordingsList = (params: {
+  fromdate: string;
+  todate: string;
+  option: string;
+  companyid: string;
+}) => api.get('/recordings/list', { params }).then((r) => r.data);
+
+export const getRecordingAudio = (params: {
+  uuid: string;
+  date: string;
+}) => api.get('/recordings/audio', { params }).then((r) => r.data);
+
+export const getRecordingRemarks = (params: {
+  uuid: string;
+}) => api.get('/recordings/remarks', { params }).then((r) => r.data);
+
+export const saveRecordingRemark = (data: {
+  select: string;
+  text: string;
+  company_id: string;
+}) => api.post('/recordings/remark', data).then((r) => r.data);

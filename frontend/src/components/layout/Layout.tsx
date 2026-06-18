@@ -29,6 +29,7 @@ import {
   Cloud,
   ClipboardList,
   FileText,
+  Headphones,
 } from 'lucide-react';
 
 type NavItem = {
@@ -135,8 +136,13 @@ const navItems: NavItem[] = [
         label: 'Historical Reports',
         roles: ['admin', 'supervisor', 'superadmin'],
       },
-
     ],
+  },
+  {
+    to: '/recordings',
+    icon: Headphones,
+    label: 'Recordings',
+    roles: ['admin', 'supervisor', 'superadmin'],
   },
   { to: '/system-configuration', icon: Cog, label: 'System Configuration', roles: ['admin', 'supervisor', 'superadmin'] },
 ];
