@@ -89,10 +89,9 @@ export function JobsPage() {
         ) : (
           <PagedTable
             cols={[
-              { header: 'Campaign', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
-              { header: 'Run #', key: 'job_run_number', width: '70px' },
+              { header: 'Campaign', width: '200px', render: (r: any) => <span className="font-medium text-gray-900">{r.campaign_name}</span> },
               {
-                header: 'Progress', render: (r: any) => {
+                header: 'Progress', width: '180px', render: (r: any) => {
                   const pct = parseFloat(r.prcnt_complete) || 0;
                   return (
                     <div className="flex items-center gap-2">
@@ -102,10 +101,10 @@ export function JobsPage() {
                   );
                 }
               },
-              { header: 'Contacts', render: (r: any) => `${r.processed_contacts ?? 0} / ${r.total_contacts ?? 0}` },
-              { header: 'Status', render: (r: any) => <StatusBadge status={r.status} /> },
-              { header: 'Started', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
-              { header: 'Type', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
+              { header: 'Contacts', width: '110px', render: (r: any) => `${r.processed_contacts ?? 0} / ${r.total_contacts ?? 0}` },
+              { header: 'Status', width: '110px', render: (r: any) => <StatusBadge status={r.status} /> },
+              { header: 'Started', width: '120px', render: (r: any) => new Date(r.start_time).toLocaleDateString() },
+              { header: 'Type', width: '100px', render: (r: any) => <StatusBadge status={r.schedule_type} /> },
             ]}
             rows={filtered}
             keyFn={(r: any) => r.id}
@@ -204,7 +203,7 @@ export function JobDetailPage() {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-[#1A0F00]">{job.campaign_name}</h1>
-            <span className="text-sm text-gray-400">Run #{job.job_run_number}</span>
+            {/* <span className="text-sm text-gray-400">Run #{job.job_run_number}</span> */}
             <StatusBadge status={job.status} />
           </div>
           {job.agent_priority_enabled && (
@@ -231,8 +230,8 @@ export function JobDetailPage() {
             </span>
             {isFinished && (
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${job.status === 'completed'
-                  ? 'bg-green-50 text-green-700'
-                  : 'bg-gray-100 text-gray-600'
+                ? 'bg-green-50 text-green-700'
+                : 'bg-gray-100 text-gray-600'
                 }`}>
                 {job.status}
               </span>

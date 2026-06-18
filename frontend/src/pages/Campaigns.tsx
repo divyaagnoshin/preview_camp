@@ -359,6 +359,7 @@ export default function CampaignsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [step, setStep] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewOnly, setViewOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [errors, setErrors] = useState({
     start_date: '',
@@ -473,10 +474,11 @@ export default function CampaignsPage() {
       dnc_group_ids: [], disposition_group_id: '',
     });
 
-  const closeCreate = () => { setShowCreate(false); setEditingId(null); setStep(1); resetForm(); };
+  const closeCreate = () => { setShowCreate(false); setEditingId(null); setStep(1); setViewOnly(false); resetForm(); };
 
-  const openEdit = (r: any) => {
+  const openEdit = (r: any, readOnly = false) => {
     setEditingId(r.id);
+    setViewOnly(readOnly);
     setForm({
       name: r.name || '',
       schedule_type: r.schedule_type || 'finite',
@@ -704,11 +706,25 @@ export default function CampaignsPage() {
                       </button>
                     )}
                     <div className="w-[32px] flex justify-center">
-                      {r.status !== 'active' && r.status !== 'completed' && r.schedule_type !== 'finite' ? (
+                      {/* infinite: editable when not active/completed */}
+                      {r.schedule_type !== 'finite' && r.status !== 'active' && r.status !== 'completed' ? (
                         <button
                           onClick={() => openEdit(r)}
                           title="Edit campaign"
                           className="inline-flex items-center justify-center p-1.5 rounded-md text-indigo-600 bg-indigo-50 hover:bg-indigo-100"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      ) : r.schedule_type === 'finite' ? (
+                        /* finite: draft → editable; others → view-only */
+                        <button
+                          onClick={() => openEdit(r, r.status !== 'draft')}
+                          title={r.status === 'draft' ? 'Edit campaign' : 'View campaign details'}
+                          className={`inline-flex items-center justify-center p-1.5 rounded-md ${
+                            r.status === 'draft'
+                              ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                              : 'text-gray-400 bg-gray-50 hover:bg-gray-100'
+                          }`}
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
@@ -743,7 +759,7 @@ export default function CampaignsPage() {
 
       {/* ── Create / Edit Modal ── */}
       <Modal
-        title={editingId ? 'Edit Campaign' : 'Create Campaign'}
+        title={editingId ? (viewOnly ? 'Campaign Details (Read-only)' : 'Edit Campaign') : 'Create Campaign'}
         open={showCreate}
         onClose={closeCreate}
         size='lg'
@@ -777,11 +793,19 @@ export default function CampaignsPage() {
             {/* Step 1: Details */}
             {step === 1 && (
               <>
+                {viewOnly && (
+                  <div className='flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium'
+                    style={{ background: 'linear-gradient(135deg,#F8FAFF,#EEF2FF)', border: '1.5px solid #C7D2FE', color: '#4338CA' }}>
+                    <span>🔒</span>
+                    <span>This campaign has already started. Details are read-only.</span>
+                  </div>
+                )}
                 <Input
                   label='Campaign Name *'
                   value={form.name}
                   onChange={(e) => set('name', e.target.value)}
                   placeholder='e.g. Q2 Loan Outreach'
+                  disabled={viewOnly}
                 />
                 <div className='grid grid-cols-2 gap-3'>
                   <Select
@@ -792,6 +816,7 @@ export default function CampaignsPage() {
                       { value: 'finite', label: 'Finite (runs to completion)' },
                       { value: 'infinite', label: 'Infinite (runs until stopped)' },
                     ]}
+                    disabled={viewOnly}
                   />
                   <div>
                     <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>Max Attempts</label>
@@ -808,31 +833,36 @@ export default function CampaignsPage() {
                           value={form.max_attempts}
                           onChange={(e) => set('max_attempts', e.target.value)}
                           placeholder='1 – 20'
-                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${!maxAttemptsValid
-                            ? 'border-red-300 focus:ring-red-200 focus:border-red-400'
-                            : 'border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
-                            }`}
+                          disabled={viewOnly}
+                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${
+                            viewOnly
+                              ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-70'
+                              : !maxAttemptsValid
+                                ? 'bg-white border-red-300 focus:ring-red-200 focus:border-red-400'
+                                : 'bg-white border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
+                          }`}
                         />
-                        {!maxAttemptsValid ? (
+                        {!viewOnly && (!maxAttemptsValid ? (
                           <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
                         ) : (
                           <p className='text-xs text-[#9A6A50] mt-1'>Enter a value between 1 and 20</p>
-                        )}
+                        ))}
                       </>
                     )}
                   </div>
                 </div>
                 <div className='grid grid-cols-2 gap-3'>
-                  <Input label='Wrap-up Time (seconds)' type='number' value={form.wrapup_time_sec} onChange={(e) => set('wrapup_time_sec', e.target.value)} />
-                  <Input label='Auto-dial Delay (seconds)' type='number' value={form.auto_dial_delay_sec} onChange={(e) => set('auto_dial_delay_sec', e.target.value)} />
+                  <Input label='Wrap-up Time (seconds)' type='number' value={form.wrapup_time_sec} onChange={(e) => set('wrapup_time_sec', e.target.value)} disabled={viewOnly} />
+                  <Input label='Auto-dial Delay (seconds)' type='number' value={form.auto_dial_delay_sec} onChange={(e) => set('auto_dial_delay_sec', e.target.value)} disabled={viewOnly} />
                 </div>
                 <Input
                   label='Caller ID (E.164 format)'
                   value={form.caller_id}
                   onChange={(e) => set('caller_id', e.target.value)}
                   placeholder='+18005550100'
+                  disabled={viewOnly}
                 />
-                {editMut.isError && editingId && (
+                {!viewOnly && editMut.isError && editingId && (
                   <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
                 )}
               </>
@@ -841,25 +871,32 @@ export default function CampaignsPage() {
             {/* Step 2: Contacts */}
             {step === 2 && (
               <>
-                <SearchableMultiSelect
-                  label='Contact Lists *'
-                  placeholder='Search contact lists…'
-                  emptyText='No contact lists. Create one first.'
-                  selectedCountLabel={(n) => `${n} list${n !== 1 ? 's' : ''} selected`}
-                  items={(lists?.data || []).map((l: any) => ({ id: l.id, label: l.name, sub: `${l.contact_count ?? 0} contacts` }))}
-                  selectedIds={form.contact_list_ids}
-                  onChange={(ids) => set('contact_list_ids', ids)}
-                />
-                {editingId && (
+                <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
+                  <SearchableMultiSelect
+                    label='Contact Lists *'
+                    placeholder='Search contact lists…'
+                    emptyText='No contact lists. Create one first.'
+                    selectedCountLabel={(n) => `${n} list${n !== 1 ? 's' : ''} selected`}
+                    items={(lists?.data || []).map((l: any) => ({ id: l.id, label: l.name, sub: `${l.contact_count ?? 0} contacts` }))}
+                    selectedIds={form.contact_list_ids}
+                    onChange={(ids) => { if (!viewOnly) set('contact_list_ids', ids); }}
+                  />
+                </div>
+                {editingId && !viewOnly && (
                   <p className='text-xs text-[#9A6A50]'>
                     Changing lists affects only future job runs; in-progress contacts on the current job are unaffected.
                   </p>
                 )}
-                <label className='flex items-center gap-3 cursor-pointer p-3 rounded-xl border-2 border-[#FFE0C8] hover:border-[#FFB890] hover:bg-[#FFFAF7] transition-all'>
+                <label className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                  viewOnly
+                    ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-65'
+                    : 'cursor-pointer border-[#FFE0C8] hover:border-[#FFB890] hover:bg-[#FFFAF7]'
+                }`}>
                   <input
                     type='checkbox'
                     checked={form.agent_priority_enabled}
-                    onChange={(e) => set('agent_priority_enabled', e.target.checked)}
+                    onChange={(e) => { if (!viewOnly) set('agent_priority_enabled', e.target.checked); }}
+                    disabled={viewOnly}
                     className='w-4 h-4 rounded flex-shrink-0'
                     style={{ accentColor: '#F4521E' }}
                   />
@@ -868,7 +905,7 @@ export default function CampaignsPage() {
                     <div className='text-xs text-[#7A5C44]'>Route contacts to their assigned agent</div>
                   </div>
                 </label>
-                {editMut.isError && editingId && (
+                {!viewOnly && editMut.isError && editingId && (
                   <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
                 )}
               </>
@@ -884,11 +921,10 @@ export default function CampaignsPage() {
                       type='date'
                       value={form.start_date}
                       onChange={(e) => set('start_date', e.target.value)}
+                      disabled={viewOnly}
                     />
-                    {errors.start_date && (
-                      <p className='text-xs text-red-500 mt-1'>
-                        {errors.start_date}
-                      </p>
+                    {!viewOnly && errors.start_date && (
+                      <p className='text-xs text-red-500 mt-1'>{errors.start_date}</p>
                     )}
                   </div>
                   {form.schedule_type !== 'infinite' && (
@@ -899,39 +935,41 @@ export default function CampaignsPage() {
                         min={form.start_date}
                         value={form.end_date}
                         onChange={(e) => set('end_date', e.target.value)}
+                        disabled={viewOnly}
                       />
-
-                      {errors.end_date && (
-                        <p className='text-xs text-red-500 mt-1'>
-                          {errors.end_date}
-                        </p>
+                      {!viewOnly && errors.end_date && (
+                        <p className='text-xs text-red-500 mt-1'>{errors.end_date}</p>
                       )}
                     </div>
                   )}
                 </div>
-                <SearchableDropdown
-                  label='Schedule Template'
-                  placeholder='Search templates…'
-                  value={form.schedule_template_id}
-                  onChange={(v) => set('schedule_template_id', v)}
-                  noneLabel='— None —'
-                  options={(templates?.data || []).map((t: any) => ({
-                    value: t.id,
-                    label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
-                  }))}
-                />
-                <SearchableDropdown
-                  label='Holiday Calendar'
-                  placeholder='Search calendars…'
-                  value={form.holiday_calendar_id}
-                  onChange={(v) => set('holiday_calendar_id', v)}
-                  noneLabel='— None —'
-                  options={(calendars?.data || []).map((c: any) => ({
-                    value: c.id,
-                    label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
-                  }))}
-                />
-                {editMut.isError && editingId && (
+                <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
+                  <SearchableDropdown
+                    label='Schedule Template'
+                    placeholder='Search templates…'
+                    value={form.schedule_template_id}
+                    onChange={(v) => { if (!viewOnly) set('schedule_template_id', v); }}
+                    noneLabel='— None —'
+                    options={(templates?.data || []).map((t: any) => ({
+                      value: t.id,
+                      label: `${t.name}${t.timezone ? ` (${t.timezone})` : ''}`,
+                    }))}
+                  />
+                </div>
+                <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
+                  <SearchableDropdown
+                    label='Holiday Calendar'
+                    placeholder='Search calendars…'
+                    value={form.holiday_calendar_id}
+                    onChange={(v) => { if (!viewOnly) set('holiday_calendar_id', v); }}
+                    noneLabel='— None —'
+                    options={(calendars?.data || []).map((c: any) => ({
+                      value: c.id,
+                      label: c.country_code ? `${c.name} (${c.country_code})` : c.name,
+                    }))}
+                  />
+                </div>
+                {!viewOnly && editMut.isError && editingId && (
                   <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
                 )}
               </>
@@ -940,16 +978,18 @@ export default function CampaignsPage() {
             {/* Step 4: DNC */}
             {step === 4 && (
               <>
-                <SearchableMultiSelect
-                  label='DNC Groups'
-                  placeholder='Search DNC groups…'
-                  emptyText='No DNC groups yet.'
-                  selectedCountLabel={(n) => `${n} group${n !== 1 ? 's' : ''} selected — numbers in these lists will be suppressed`}
-                  items={(dncGroups?.data || []).map((g: any) => ({ id: g.id, label: g.name }))}
-                  selectedIds={form.dnc_group_ids}
-                  onChange={(ids) => set('dnc_group_ids', ids)}
-                />
-                {editMut.isError && editingId && (
+                <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
+                  <SearchableMultiSelect
+                    label='DNC Groups'
+                    placeholder='Search DNC groups…'
+                    emptyText='No DNC groups yet.'
+                    selectedCountLabel={(n) => `${n} group${n !== 1 ? 's' : ''} selected — numbers in these lists will be suppressed`}
+                    items={(dncGroups?.data || []).map((g: any) => ({ id: g.id, label: g.name }))}
+                    selectedIds={form.dnc_group_ids}
+                    onChange={(ids) => { if (!viewOnly) set('dnc_group_ids', ids); }}
+                  />
+                </div>
+                {!viewOnly && editMut.isError && editingId && (
                   <p className='text-xs text-red-500'>{(editMut.error as any)?.response?.data?.error || 'Save failed'}</p>
                 )}
               </>
@@ -958,17 +998,19 @@ export default function CampaignsPage() {
             {/* Step 5: Dispositions */}
             {step === 5 && (
               <>
-                <SearchableDropdown
-                  label='Disposition Group'
-                  placeholder='Search disposition groups…'
-                  value={form.disposition_group_id}
-                  onChange={(v) => set('disposition_group_id', v)}
-                  noneLabel='— None (system codes only) —'
-                  options={(dispositionGroups?.data || []).map((g: any) => ({
-                    value: g.id,
-                    label: g.name + (g.description ? ` — ${g.description}` : ''),
-                  }))}
-                />
+                <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
+                  <SearchableDropdown
+                    label='Disposition Group'
+                    placeholder='Search disposition groups…'
+                    value={form.disposition_group_id}
+                    onChange={(v) => { if (!viewOnly) set('disposition_group_id', v); }}
+                    noneLabel='— None (system codes only) —'
+                    options={(dispositionGroups?.data || []).map((g: any) => ({
+                      value: g.id,
+                      label: g.name + (g.description ? ` — ${g.description}` : ''),
+                    }))}
+                  />
+                </div>
                 {(dispositionGroups?.data || []).length === 0 && (
                   <p className='text-xs text-[#9A6A50]'>No disposition groups yet. Create one in the Dispositions page.</p>
                 )}
@@ -977,7 +1019,7 @@ export default function CampaignsPage() {
                     ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
                     : 'Agents will see only the org-wide system dispositions.'}
                 </p>
-                {(editingId ? editMut.isError : createMut.isError) && (
+                {!viewOnly && (editingId ? editMut.isError : createMut.isError) && (
                   <p className='text-xs text-red-500'>
                     {((editingId ? editMut.error : createMut.error) as any)?.response?.data?.error || 'Save failed'}
                   </p>
@@ -989,52 +1031,76 @@ export default function CampaignsPage() {
 
           {/* ── Fixed footer ── */}
           <div className='flex-shrink-0 pt-4 mt-2 border-t border-[#FFE8D6]'>
-            <div className='flex gap-3'>
-              {step === 1 ? (
-                <Button variant='secondary' className='flex-1' onClick={closeCreate}>
-                  Cancel
-                </Button>
-              ) : (
-                <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(step - 1)}>
-                  Back
-                </Button>
-              )}
+            {viewOnly ? (
+              /* View-only footer: navigation + Close only, no save actions */
+              <div className='flex gap-3'>
+                {step === 1 ? (
+                  <Button variant='secondary' className='flex-1' onClick={closeCreate}>
+                    Close
+                  </Button>
+                ) : (
+                  <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(step - 1)}>
+                    Back
+                  </Button>
+                )}
+                {step < 5 ? (
+                  <Button className='flex-1' onClick={() => setStep(step + 1)}>
+                    Next
+                  </Button>
+                ) : (
+                  <Button className='flex-1' onClick={closeCreate}>
+                    Close
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className='flex gap-3'>
+                {step === 1 ? (
+                  <Button variant='secondary' className='flex-1' onClick={closeCreate}>
+                    Cancel
+                  </Button>
+                ) : (
+                  <Button variant='secondary' className='flex-1' icon={<ArrowLeft className='w-4 h-4' />} onClick={() => setStep(step - 1)}>
+                    Back
+                  </Button>
+                )}
 
-              {editingId && step < 5 && (
-                <Button
-                  variant='secondary'
-                  className='flex-1'
-                  loading={editMut.isPending}
-                  disabled={step === 1 ? step1Disabled : (step === 2 ? !form.contact_list_ids.length : false)}
-                  onClick={() => editMut.mutate()}
-                >
-                  Save
-                </Button>
-              )}
+                {editingId && step < 5 && (
+                  <Button
+                    variant='secondary'
+                    className='flex-1'
+                    loading={editMut.isPending}
+                    disabled={step === 1 ? step1Disabled : (step === 2 ? !form.contact_list_ids.length : false)}
+                    onClick={() => editMut.mutate()}
+                  >
+                    Save
+                  </Button>
+                )}
 
-              {step < 5 ? (
-                <Button
-                  className='flex-1'
-                  disabled={
-                    step === 1 ? step1Disabled :
-                      step === 2 ? (!editingId && !form.contact_list_ids.length) :
-                        false
-                  }
-                  onClick={() => setStep(step + 1)}
-                >
-                  Next
-                </Button>
-              ) : (
-                <Button
-                  className='flex-1'
-                  loading={editingId ? editMut.isPending : createMut.isPending}
-                  disabled={!form.name || !form.contact_list_ids.length}
-                  onClick={() => editingId ? editMut.mutate() : createMut.mutate()}
-                >
-                  {editingId ? 'Save Changes' : 'Create Campaign'}
-                </Button>
-              )}
-            </div>
+                {step < 5 ? (
+                  <Button
+                    className='flex-1'
+                    disabled={
+                      step === 1 ? step1Disabled :
+                        step === 2 ? (!editingId && !form.contact_list_ids.length) :
+                          false
+                    }
+                    onClick={() => setStep(step + 1)}
+                  >
+                    Next
+                  </Button>
+                ) : (
+                  <Button
+                    className='flex-1'
+                    loading={editingId ? editMut.isPending : createMut.isPending}
+                    disabled={!form.name || !form.contact_list_ids.length}
+                    onClick={() => editingId ? editMut.mutate() : createMut.mutate()}
+                  >
+                    {editingId ? 'Save Changes' : 'Create Campaign'}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
         </div>

@@ -929,6 +929,15 @@ function DncNumbersView({
         ],
       }).then((r) => r.data);
     },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dnc-numbers', list.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-lists', group.id] });
+      qc.invalidateQueries({ queryKey: ['dnc-groups'] });
+      resetAddModal();
+    },
+    onError: (err: any) => {
+      setUploadStatus(`Error: ${err?.response?.data?.error || 'Failed to add number'}`);
+    },
   });
 
   // ── Bulk add mutation ─────────────────────────────────────────────────────
