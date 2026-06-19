@@ -8,7 +8,7 @@ import {
 import { Badge, Button, Card, CardHeader, Input, Modal, PageLoader, SearchInput, Select, Textarea } from '../components/ui';
 import {
   ArrowLeft, Building2, Users, ShieldCheck, UserPlus, Pencil,
-  CalendarDays, Headphones, Trash2, UserCog, TrendingUp,
+  CalendarDays, Headphones, Trash2, UserCog, TrendingUp, Eye, EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
@@ -103,9 +103,9 @@ export default function OrganizationDetailPage() {
       {/* Stats grid */}
       <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 anim-d1'>
         <StatCard icon={ShieldCheck} label='Admins' value={adminCount} gradient='linear-gradient(135deg,#F4521E,#F5A623)' />
-        <StatCard icon={UserCog} label='Supervisors' value={supervisorCount} gradient='linear-gradient(135deg,#A855F7,#7C3AED)' />
+        {/* <StatCard icon={UserCog} label='Supervisors' value={supervisorCount} gradient='linear-gradient(135deg,#A855F7,#7C3AED)' />
         <StatCard icon={Headphones} label='Agents' value={agentCount} gradient='linear-gradient(135deg,#10B981,#059669)' />
-        <StatCard icon={Users} label='Total Users' value={totalUsers} gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' />
+        <StatCard icon={Users} label='Total Users' value={totalUsers} gradient='linear-gradient(135deg,#3B82F6,#1D4ED8)' /> */}
         <StatCard icon={CalendarDays} label='Created'
           value={new Date(org.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           gradient='linear-gradient(135deg,#6B7280,#4B5563)' />
@@ -120,6 +120,7 @@ export default function OrganizationDetailPage() {
             <div className='flex items-center gap-2 flex-wrap'>
               <SearchInput value={userSearch} onChange={setUserSearch}
                 placeholder='Search name or email…' />
+              {/* Role filter hidden — this page manages admin users only
               <Select label='' value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
                 options={[
                   { value: '', label: 'All roles' },
@@ -127,6 +128,7 @@ export default function OrganizationDetailPage() {
                   { value: 'supervisor', label: 'Supervisor' },
                   { value: 'agent', label: 'Agent' },
                 ]} />
+              */}
               <Button size='sm' icon={<UserPlus className='w-3.5 h-3.5' />} onClick={() => setAddUserOpen(true)}>
                 Add user
               </Button>
@@ -214,32 +216,95 @@ function EditOrgModal({ org, onClose, onSaved }: { org: Organization; onClose: (
   );
 }
 
+// ─── Shared password helpers (mirrors Agents.tsx) ─────────────────────────────
+function PasswordInput({ label, value, onChange, placeholder, required, minLength, autoFocus }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; required?: boolean; minLength?: number; autoFocus?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className='relative'>
+      <Input label={label} type={show ? 'text' : 'password'} value={value}
+        onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        required={required} minLength={minLength} autoFocus={autoFocus} />
+      <button type='button' onClick={() => setShow((v) => !v)}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        className='absolute right-3 top-7 text-gray-400 hover:text-gray-600 transition'>
+        {show ? <EyeOff className='w-4 h-4' /> : <Eye className='w-4 h-4' />}
+      </button>
+    </div>
+  );
+}
+
+function PasswordMatchHint({ password, confirm }: { password: string; confirm: string }) {
+  if (!confirm) return null;
+  const match = password === confirm;
+  return (
+    <p className={`text-xs flex items-center gap-1 -mt-1 ${match ? 'text-green-600' : 'text-red-500'}`}>
+      {match ? '✓ Passwords match' : '✗ Passwords do not match'}
+    </p>
+  );
+}
+
 function CreateUserModal({ org, onClose, onCreated }: { org: Organization; onClose: () => void; onCreated: () => void }) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'supervisor' | 'agent'>('admin');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  // Role is always 'admin' — only admins can be created from this super-admin org page
+  const role = 'admin' as const;
+
   const m = useMutation({
     mutationFn: (body: any) => createOrgUser(org.id, body),
     onSuccess: () => onCreated(),
     onError: (e: any) => setError(e?.response?.data?.error || 'Failed to create user'),
   });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
+    m.mutate({ email: email.trim(), password, first_name: firstName.trim(), last_name: lastName.trim(), username: username.trim(), role });
+  };
+
+  const isDisabled = !firstName.trim() || !lastName.trim() || !username.trim() || !email.trim() || !password || !confirmPassword || password !== confirmPassword;
+
   return (
     <Modal title={`Add user — ${org.name}`} open={true} onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); m.mutate({ email: email.trim(), password, first_name: firstName.trim(), last_name: lastName.trim(), role }); }} className='space-y-3'>
+      <form onSubmit={handleSubmit} className='space-y-3'>
         <div className='grid grid-cols-2 gap-3'>
-          <Input label='First name' value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus />
-          <Input label='Last name' value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+          <Input label='First name *' value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus />
+          <Input label='Last name *' value={lastName} onChange={(e) => setLastName(e.target.value)} required />
         </div>
-        <Input label='Email' type='email' value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Input label='Password (min 8 chars)' type='password' value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
-        <Select label='Role' value={role} onChange={(e) => setRole(e.target.value as any)} options={[{ value: 'admin', label: 'Admin' }, { value: 'supervisor', label: 'Supervisor' }, { value: 'agent', label: 'Agent' }]} />
+
+        <Input label='Username *' value={username} onChange={(e) => setUsername(e.target.value)} required placeholder='e.g. john.doe' />
+
+        <Input label='Email *' type='email' value={email} onChange={(e) => setEmail(e.target.value)} required />
+
+        <PasswordInput label='Password (min 8 chars) *' value={password} onChange={setPassword} required minLength={8} />
+        <PasswordInput label='Confirm password *' value={confirmPassword} onChange={setConfirmPassword} required />
+        <PasswordMatchHint password={password} confirm={confirmPassword} />
+
+        {/* Role is fixed to Admin on this page — only admin accounts are created here */}
+        <div className='space-y-1'>
+          <label className='block text-xs font-medium text-[#5C4030]'>Role</label>
+          <div className='flex items-center gap-2 px-3.5 py-2.5 border-2 border-[#FFD0B0] rounded-xl bg-[#FFF4EE] text-sm font-semibold text-[#E8470A] select-none'>
+            <ShieldCheck className='w-4 h-4 flex-shrink-0' />
+            Admin
+          </div>
+        </div>
+
         {error && <p className='text-xs text-red-500'>{error}</p>}
+
         <div className='flex justify-end gap-2 pt-2'>
           <Button type='button' variant='secondary' onClick={onClose}>Cancel</Button>
-          <Button type='submit' loading={m.isPending}>Create user</Button>
+          <Button type='submit' loading={m.isPending} disabled={isDisabled} icon={<UserPlus className='w-3.5 h-3.5' />}>
+            Create Admin
+          </Button>
         </div>
       </form>
     </Modal>

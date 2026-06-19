@@ -37,6 +37,7 @@ import {
   Filter,
   X,
   ChevronDown,
+  AlertCircle,
 } from 'lucide-react';
 
 // ─── Filter dropdown component ────────────────────────────────────────────────
@@ -361,10 +362,21 @@ export default function CampaignsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  // Search query for the disposition group list in Step 5
+  const [dispSearch, setDispSearch] = useState('');
   const [errors, setErrors] = useState({
     start_date: '',
     end_date: '',
   });
+  // Toast notification state (null = hidden)
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'warning' } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, type: 'error' | 'warning' = 'error') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  };
   const [form, setForm] = useState({
     name: '',
     schedule_type: 'finite',
@@ -415,6 +427,17 @@ export default function CampaignsPage() {
     setFilterMaxAttempts(''); setFilterAgentPriority('');
   };
 
+  // Disposition group list filtered by dispSearch (Step 5)
+  const filteredDispGroups = useMemo(() => {
+    const q = dispSearch.trim().toLowerCase();
+    const all: any[] = dispositionGroups?.data || [];
+    if (!q) return all;
+    return all.filter((g: any) =>
+      g.name?.toLowerCase().includes(q) ||
+      g.description?.toLowerCase().includes(q)
+    );
+  }, [dispositionGroups, dispSearch]);
+
   // ── Mutations ─────────────────────────────────────────────────────────────
   const createMut = useMutation({
     mutationFn: () =>
@@ -458,6 +481,22 @@ export default function CampaignsPage() {
   const runMut = useMutation({
     mutationFn: (id: string) => runCampaign(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onError: (err: any, id: string) => {
+      // Find campaign name for a friendlier message
+      const camp = allCampaigns.find((c: any) => c.id === id);
+      const campName = camp?.name ? `"${camp.name}"` : 'This campaign';
+      const serverMsg: string = err?.response?.data?.error || '';
+
+      if (err?.response?.status === 422 || serverMsg.toLowerCase().includes('no contacts')) {
+        // 422 = Campaign has no contacts in its linked contact list(s)
+        showToast(
+          `${campName} has no contacts in its contact list. Add contacts before running.`,
+          'warning'
+        );
+      } else {
+        showToast(serverMsg || `Failed to start ${campName}. Please try again.`, 'error');
+      }
+    },
   });
   const stopMut = useMutation({
     mutationFn: (id: string) => stopCampaign(id),
@@ -720,11 +759,10 @@ export default function CampaignsPage() {
                         <button
                           onClick={() => openEdit(r, r.status !== 'draft')}
                           title={r.status === 'draft' ? 'Edit campaign' : 'View campaign details'}
-                          className={`inline-flex items-center justify-center p-1.5 rounded-md ${
-                            r.status === 'draft'
+                          className={`inline-flex items-center justify-center p-1.5 rounded-md ${r.status === 'draft'
                               ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
                               : 'text-gray-400 bg-gray-50 hover:bg-gray-100'
-                          }`}
+                            }`}
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
@@ -733,10 +771,20 @@ export default function CampaignsPage() {
                       )}
                     </div>
                     {r.status !== 'active' ? (
-                      <button onClick={() => setDeleteTarget(r)} title='Delete campaign'
-                        className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'>
-                        <Trash2 className='w-3 h-3' />
-                      </button>
+                      r.has_jobs ? (
+                        /* Campaign has job history — delete is disabled to protect data */
+                        <span
+                          title='Cannot delete: this campaign has run history. Stop the campaign and contact an admin if deletion is required.'
+                          className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-gray-400 bg-gray-100 cursor-not-allowed select-none'
+                        >
+                          <Trash2 className='w-3 h-3' />
+                        </span>
+                      ) : (
+                        <button onClick={() => setDeleteTarget(r)} title='Delete campaign'
+                          className='inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 transition'>
+                          <Trash2 className='w-3 h-3' />
+                        </button>
+                      )
                     ) : <span className='inline-block w-[70px] h-[26px]' />}
                     <button onClick={() => navigate(`/campaigns/${r.id}`)} title='View details'
                       className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition'
@@ -809,7 +857,7 @@ export default function CampaignsPage() {
                 />
                 <div className='grid grid-cols-2 gap-3'>
                   <Select
-                    label='Schedule Type'
+                    label={viewOnly ? 'Schedule Type' : 'Schedule Type *'}
                     value={form.schedule_type}
                     onChange={(e) => set('schedule_type', e.target.value)}
                     options={[
@@ -819,7 +867,10 @@ export default function CampaignsPage() {
                     disabled={viewOnly}
                   />
                   <div>
-                    <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>Max Attempts</label>
+                    <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>
+                      Max Attempts
+                      {!viewOnly && form.schedule_type !== 'infinite' && <span className='text-red-500 ml-0.5'>*</span>}
+                    </label>
                     {form.schedule_type === 'infinite' ? (
                       <div className='w-full px-3.5 py-2.5 text-sm border-2 border-[#FFD0B0] rounded-xl bg-[#FFF4EE] text-[#7A5C44] select-none flex items-center' style={{ minHeight: '42px' }}>
                         ∞ Unlimited
@@ -834,13 +885,12 @@ export default function CampaignsPage() {
                           onChange={(e) => set('max_attempts', e.target.value)}
                           placeholder='1 – 20'
                           disabled={viewOnly}
-                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${
-                            viewOnly
+                          className={`w-full px-3.5 py-2.5 text-sm border-2 rounded-xl text-[#1A0F00] focus:outline-none focus:ring-4 transition-all ${viewOnly
                               ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-70'
                               : !maxAttemptsValid
                                 ? 'bg-white border-red-300 focus:ring-red-200 focus:border-red-400'
                                 : 'bg-white border-[#FFD0B0] focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890]'
-                          }`}
+                            }`}
                         />
                         {!viewOnly && (!maxAttemptsValid ? (
                           <p className='text-xs text-red-500 mt-1'>Enter a number between 1 and 20</p>
@@ -887,11 +937,10 @@ export default function CampaignsPage() {
                     Changing lists affects only future job runs; in-progress contacts on the current job are unaffected.
                   </p>
                 )}
-                <label className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                  viewOnly
+                <label className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${viewOnly
                     ? 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-65'
                     : 'cursor-pointer border-[#FFE0C8] hover:border-[#FFB890] hover:bg-[#FFFAF7]'
-                }`}>
+                  }`}>
                   <input
                     type='checkbox'
                     checked={form.agent_priority_enabled}
@@ -917,7 +966,7 @@ export default function CampaignsPage() {
                 <div className={`grid gap-3 ${form.schedule_type === 'infinite' ? 'grid-cols-1' : 'grid-cols-2'}`}>
                   <div>
                     <Input
-                      label='Start Date'
+                      label={viewOnly ? 'Start Date' : 'Start Date *'}
                       type='date'
                       value={form.start_date}
                       onChange={(e) => set('start_date', e.target.value)}
@@ -930,7 +979,7 @@ export default function CampaignsPage() {
                   {form.schedule_type !== 'infinite' && (
                     <div>
                       <Input
-                        label='End Date'
+                        label={viewOnly ? 'End Date' : 'End Date *'}
                         type='date'
                         min={form.start_date}
                         value={form.end_date}
@@ -998,27 +1047,84 @@ export default function CampaignsPage() {
             {/* Step 5: Dispositions */}
             {step === 5 && (
               <>
+                {/* ── Disposition group radio list (same style as DNC in Step 4) ── */}
                 <div style={viewOnly ? { pointerEvents: 'none', opacity: 0.65 } : {}}>
-                  <SearchableDropdown
-                    label='Disposition Group'
-                    placeholder='Search disposition groups…'
-                    value={form.disposition_group_id}
-                    onChange={(v) => { if (!viewOnly) set('disposition_group_id', v); }}
-                    noneLabel='— None (system codes only) —'
-                    options={(dispositionGroups?.data || []).map((g: any) => ({
-                      value: g.id,
-                      label: g.name + (g.description ? ` — ${g.description}` : ''),
-                    }))}
-                  />
+                  <label className='block text-xs font-medium text-[#5C4030] mb-1.5'>
+                    Disposition Group
+                    {!viewOnly && <span className='text-red-500 ml-0.5'>*</span>}
+                  </label>
+
+                  {/* Search input */}
+                  <div className='relative mb-1.5'>
+                    <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none' style={{ color: '#F4521E' }} />
+                    <input
+                      type='text'
+                      value={dispSearch}
+                      onChange={(e) => setDispSearch(e.target.value)}
+                      placeholder='Search disposition groups…'
+                      className='w-full pl-9 pr-8 py-2.5 text-sm border-2 border-[#FFD0B0] rounded-xl bg-white text-[#1A0F00] focus:outline-none focus:ring-4 focus:ring-[#F4521E]/40 focus:border-[#F4521E] hover:border-[#FFB890] transition-all placeholder:text-[#B89070]'
+                    />
+                    {dispSearch && (
+                      <button
+                        onClick={() => setDispSearch('')}
+                        className='absolute right-2.5 top-1/2 -translate-y-1/2 transition'
+                        style={{ color: '#C09070' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#F4521E'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#C09070'; }}
+                      >
+                        <X className='w-3.5 h-3.5' />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Scrollable radio list */}
+                  <div className='border-2 border-[#FFD0B0] rounded-xl divide-y divide-[#FFF0E8] max-h-44 overflow-y-auto bg-white'>
+                    {(dispositionGroups?.data || []).length === 0 ? (
+                      <p className='text-xs text-[#9A6A50] p-3'>No disposition groups yet. Create one in the Dispositions page.</p>
+                    ) : filteredDispGroups.length === 0 ? (
+                      <p className='text-xs text-[#9A6A50] p-3'>No results for "{dispSearch}"</p>
+                    ) : (
+                      filteredDispGroups.map((g: any) => (
+                        <label
+                          key={g.id}
+                          className='flex items-center gap-3 px-3 py-2.5 cursor-pointer transition'
+                          style={form.disposition_group_id === g.id
+                            ? { background: 'linear-gradient(135deg, #FFF4EE, #FFE6D2)' }
+                            : {}}
+                          onMouseEnter={e => { if (form.disposition_group_id !== g.id) (e.currentTarget as HTMLElement).style.background = '#FFFAF7'; }}
+                          onMouseLeave={e => { if (form.disposition_group_id !== g.id) (e.currentTarget as HTMLElement).style.background = ''; }}
+                        >
+                          <input
+                            type='radio'
+                            name='disposition_group'
+                            checked={form.disposition_group_id === g.id}
+                            onChange={() => { if (!viewOnly) set('disposition_group_id', g.id); }}
+                            className='w-4 h-4 flex-shrink-0'
+                            style={{ accentColor: '#F4521E' }}
+                          />
+                          <div className='min-w-0'>
+                            <div className='text-sm font-medium text-[#1A0F00] truncate'>{g.name}</div>
+                            {g.description && (
+                              <div className='text-xs text-[#7A5C44] truncate'>{g.description}</div>
+                            )}
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Selection status / validation hint */}
+                  {form.disposition_group_id ? (
+                    <p className='text-xs font-medium mt-1.5' style={{ color: '#F4521E' }}>
+                      1 group selected — agents will see system dispositions plus this group's custom codes.
+                    </p>
+                  ) : (
+                    !viewOnly && (
+                      <p className='text-xs text-red-500 mt-1.5'>Disposition group is required.</p>
+                    )
+                  )}
                 </div>
-                {(dispositionGroups?.data || []).length === 0 && (
-                  <p className='text-xs text-[#9A6A50]'>No disposition groups yet. Create one in the Dispositions page.</p>
-                )}
-                <p className='text-xs text-[#9A6A50]'>
-                  {form.disposition_group_id
-                    ? 'Agents will see the system dispositions plus this group\u2019s custom codes.'
-                    : 'Agents will see only the org-wide system dispositions.'}
-                </p>
+
                 {!viewOnly && (editingId ? editMut.isError : createMut.isError) && (
                   <p className='text-xs text-red-500'>
                     {((editingId ? editMut.error : createMut.error) as any)?.response?.data?.error || 'Save failed'}
@@ -1085,7 +1191,11 @@ export default function CampaignsPage() {
                         step === 2 ? (!editingId && !form.contact_list_ids.length) :
                           false
                     }
-                    onClick={() => setStep(step + 1)}
+                    onClick={() => {
+                      // Step 3: validate dates before advancing
+                      if (step === 3 && !validateDates()) return;
+                      setStep(step + 1);
+                    }}
                   >
                     Next
                   </Button>
@@ -1093,7 +1203,8 @@ export default function CampaignsPage() {
                   <Button
                     className='flex-1'
                     loading={editingId ? editMut.isPending : createMut.isPending}
-                    disabled={!form.name || !form.contact_list_ids.length}
+                    // disposition_group_id is mandatory for all campaigns
+                    disabled={!form.name || !form.contact_list_ids.length || !form.disposition_group_id}
                     onClick={() => editingId ? editMut.mutate() : createMut.mutate()}
                   >
                     {editingId ? 'Save Changes' : 'Create Campaign'}
@@ -1128,6 +1239,70 @@ export default function CampaignsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* ── Toast notification (run errors) ── */}
+      {toast && (
+        <div
+          role='alert'
+          style={{
+            position: 'fixed',
+            bottom: '28px',
+            right: '28px',
+            zIndex: 9999,
+            minWidth: '320px',
+            maxWidth: '440px',
+            background: toast.type === 'warning'
+              ? 'linear-gradient(135deg, #FFFBEB, #FEF3C7)'
+              : 'linear-gradient(135deg, #FFF5F5, #FEE2E2)',
+            border: `1.5px solid ${toast.type === 'warning' ? '#FCD34D' : '#FCA5A5'}`,
+            borderRadius: '16px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06)',
+            padding: '14px 16px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+            animation: 'campToastSlideIn 0.25s ease',
+          }}
+        >
+          {/* Icon */}
+          <div style={{
+            width: 36, height: 36, borderRadius: '10px', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: toast.type === 'warning' ? '#FEF3C7' : '#FEE2E2',
+            border: `1px solid ${toast.type === 'warning' ? '#FCD34D' : '#FCA5A5'}`,
+          }}>
+            <AlertCircle style={{ width: 18, height: 18, color: toast.type === 'warning' ? '#D97706' : '#DC2626' }} />
+          </div>
+
+          {/* Text */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: '13px', fontWeight: 600, margin: 0, color: toast.type === 'warning' ? '#92400E' : '#991B1B' }}>
+              {toast.type === 'warning' ? 'No Contacts Found' : 'Could Not Start Campaign'}
+            </p>
+            <p style={{ fontSize: '12px', color: toast.type === 'warning' ? '#B45309' : '#B91C1C', margin: '3px 0 0' }}>
+              {toast.message}
+            </p>
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={() => setToast(null)}
+            style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: toast.type === 'warning' ? '#B45309' : '#B91C1C', opacity: 0.7 }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0.7'; }}
+            title='Dismiss'
+          >
+            <X style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes campToastSlideIn {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

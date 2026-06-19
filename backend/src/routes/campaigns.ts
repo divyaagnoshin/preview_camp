@@ -27,7 +27,11 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
                   FILTER (WHERE cdg.dnc_group_id IS NOT NULL),
                 '{}'
               ) AS dnc_group_ids,
-              (SELECT cj.id FROM campaign_jobs cj WHERE cj.campaign_id = c.id AND cj.status='active' LIMIT 1) AS active_job_id
+              (SELECT cj.id FROM campaign_jobs cj WHERE cj.campaign_id = c.id AND cj.status='active' LIMIT 1) AS active_job_id,
+              -- has_jobs: true when at least one campaign_jobs row exists for this campaign.
+              -- Used by the frontend to disable the Delete button (prevents accidental
+              -- loss of call history even though the backend would cascade-delete children).
+              EXISTS (SELECT 1 FROM campaign_jobs cj WHERE cj.campaign_id = c.id) AS has_jobs
        FROM campaigns c
        LEFT JOIN campaign_contact_lists ccl ON ccl.campaign_id = c.id
        LEFT JOIN contact_lists cl ON cl.id = ccl.contact_list_id
