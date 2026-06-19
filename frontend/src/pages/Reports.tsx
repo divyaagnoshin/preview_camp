@@ -28,6 +28,7 @@ import DispositionReport from './Reports/disposition-report';
 import InteractionReport from './Reports/interaction-report';
 import AgentLoginReport from './Reports/agent-login-repor';
 import HistoricalReports from './Reports/historical-reports';
+import DashboardFolders from './Reports/dashboard-folders';
 import { PALETTE } from './Reports/report-utils';
 function fmtNum(v: any) {
   return v == null ? '—' : Number(v).toLocaleString();
